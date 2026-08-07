@@ -91,6 +91,7 @@ export type BoardCapabilities = {
 export type BoardChangeEvent = {
     revision: number;
     changeSet: BoardChangeSet;
+    documentUpdate: BoardDocumentUpdate;
 };
 
 // @public (undocumented)
@@ -106,6 +107,12 @@ export type BoardDocument = {
     assets: AssetRecord[];
     viewport?: ViewportSnapshot;
     metadata?: Record<string, JsonValue>;
+};
+
+// @public (undocumented)
+export type BoardDocumentUpdate = {
+    revision: number;
+    changedNodes: ReadonlyArray<Readonly<BoardNode>>;
 };
 
 // @public (undocumented)
@@ -457,7 +464,7 @@ export type ResizeObserverPort = {
 export type RuntimeRenderer = {
     init(): Promise<void>;
     rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
-    apply(snapshot: Readonly<BoardDocument>, changeSet?: BoardChangeEvent["changeSet"]): Promise<void>;
+    apply(update: BoardDocumentUpdate, changeSet: BoardChangeEvent["changeSet"]): Promise<void>;
     destroy(): Promise<void>;
 };
 
@@ -507,22 +514,22 @@ export type WorldBounds = {
 
 // Warnings were encountered during analysis:
 //
-// dist/types-DHtKouqe.d.ts:45:5 - (ae-forgotten-export) The symbol "AssetRef" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:235:9 - (ae-forgotten-export) The symbol "RequestOptions" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:236:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:236:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:239:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:245:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:245:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:246:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:247:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:250:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:257:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:264:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:292:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:355:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:358:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point index.d.ts
-// dist/types-DHtKouqe.d.ts:359:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:45:5 - (ae-forgotten-export) The symbol "AssetRef" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:240:9 - (ae-forgotten-export) The symbol "RequestOptions" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:241:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:241:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:244:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:250:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:250:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:251:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:252:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:255:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:262:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:269:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:297:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:360:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:363:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point index.d.ts
+// dist/types-BihQuryi.d.ts:364:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

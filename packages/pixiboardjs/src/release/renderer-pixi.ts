@@ -1,4 +1,4 @@
-import type { BoardChangeSet, BoardDocument } from "@pixi-board/core";
+import type { BoardChangeSet, BoardDocument, BoardDocumentUpdate } from "@pixi-board/core";
 
 /** Public, host-agnostic renderer configuration. Internal renderer ports remain bundled implementation details. */
 export type PixiBoardRendererOptions = Readonly<Record<string, unknown>>;
@@ -8,6 +8,6 @@ export declare class PixiBoardRenderer {
   constructor(options: PixiBoardRendererOptions);
   init(): Promise<void>;
   rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
-  apply(snapshot: Readonly<BoardDocument>, changeSet?: BoardChangeSet): Promise<void>;
+  apply(update: BoardDocumentUpdate, changeSet: BoardChangeSet): Promise<void>;
   destroy(): Promise<void>;
 }

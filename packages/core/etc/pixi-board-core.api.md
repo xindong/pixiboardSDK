@@ -37,6 +37,7 @@ export class BoardAssetsController {
 export type BoardChangeEvent = {
     revision: number;
     changeSet: BoardChangeSet;
+    documentUpdate: BoardDocumentUpdate;
 };
 
 // @public (undocumented)
@@ -117,6 +118,12 @@ export class BoardDocumentController {
     // (undocumented)
     validate(input: unknown): BoardDocument;
 }
+
+// @public (undocumented)
+export type BoardDocumentUpdate = {
+    revision: number;
+    changedNodes: ReadonlyArray<Readonly<BoardNode>>;
+};
 
 // @public (undocumented)
 export type BoardNode<Props extends JsonValue = JsonValue> = {
