@@ -1,8 +1,10 @@
-import { access, readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const repositoryRoot = await findRepositoryRoot(root);
+const workspaceRoot = dirname(repositoryRoot);
 const requiredFiles = [
   "README.md",
   "docs/README.md",
@@ -68,7 +70,39 @@ for (const markdownFile of markdownFiles) {
     if (!target || target.startsWith("http:") || target.startsWith("https:") || target.startsWith("mailto:")) {
       continue;
     }
-    await access(resolve(dirname(markdownFile), target));
+    await accessLocalLink(markdownFile, target);
+  }
+}
+
+async function accessLocalLink(markdownFile, target) {
+  const localTarget = resolve(dirname(markdownFile), target);
+  try {
+    await access(localTarget);
+    return;
+  } catch (error) {
+    const segments = target.split(/[\\/]/);
+    const sourceProjectIndex = segments.indexOf("pixi-board");
+    if (sourceProjectIndex < 0) throw error;
+    const sourceProjectTarget = resolve(
+      workspaceRoot,
+      "pixi-board",
+      ...segments.slice(sourceProjectIndex + 1),
+    );
+    await access(sourceProjectTarget);
+  }
+}
+
+async function findRepositoryRoot(start) {
+  let current = start;
+  for (;;) {
+    try {
+      if ((await stat(resolve(current, ".git"))).isDirectory()) return current;
+    } catch {
+      // A linked worktree has a .git file; continue to its common repository.
+    }
+    const parent = dirname(current);
+    if (parent === current) return start;
+    current = parent;
   }
 }
 
