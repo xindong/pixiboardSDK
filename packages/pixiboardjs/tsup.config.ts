@@ -10,7 +10,12 @@ export default defineConfig({
   format: ["esm"],
   target: "es2022",
   outDir: "dist",
-  dts: true,
+  dts: {
+    compilerOptions: {
+      allowImportingTsExtensions: true,
+      noCheck: true,
+    },
+  },
   tsconfig: "tsconfig.build.json",
   sourcemap: true,
   clean: true,

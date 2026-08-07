@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 const root = resolve(new URL("..", import.meta.url).pathname);
 const budgets = [
   ["pixiboardjs", join(root, "packages/pixiboardjs")],
+  ["@pixi-board/core", join(root, "packages/core")],
   ["@pixi-board/plugin-sdk", join(root, "packages/plugin-sdk")],
 ];
 const blockers = [];

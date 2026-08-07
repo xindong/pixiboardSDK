@@ -8,7 +8,7 @@
       "@pixi-board/adapter-browser": ["../adapter-browser/src/index.ts"],
       "@pixi-board/capabilities": ["../capabilities/src/index.ts"],
       "@pixi-board/core": ["../core/src/index.ts"],
-      "@pixi-board/renderer-pixi": ["../renderer-pixi/src/index.ts"]
+      "@pixi-board/renderer-pixi": ["src/release/renderer-pixi.ts"]
     },
     "strict": true,
     "declaration": true,

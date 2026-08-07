@@ -17,15 +17,12 @@
   "types": "./dist/index.d.ts",
   "dependencies": {},
   "devDependencies": {
-    "@pixi-board/plugin-api-v3": "workspace:*",
-    "@pixi-board/capabilities": "workspace:*",
-    "@pixi-board/core": "workspace:*",
     "tsup": "^8.5.0",
     "typescript": "^5.9.2"
   },
   "scripts": {
     "build": "tsup",
-    "api:report": "api-extractor run --verbose"
+    "api:report": "api-extractor run --local --verbose"
   },
   "publishConfig": { "access": "public" }
 }

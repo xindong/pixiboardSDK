@@ -11,7 +11,10 @@
   "dtsRollup": { "enabled": false },
   "compiler": { "tsconfigFilePath": "<projectFolder>/tsconfig.json" },
   "messages": {
-    "extractorMessageReporting": { "default": { "logLevel": "warning" } },
+    "extractorMessageReporting": {
+      "default": { "logLevel": "warning" },
+      "ae-missing-release-tag": { "logLevel": "none" }
+    },
     "tsdocMessageReporting": { "default": { "logLevel": "warning" } }
   }
 }

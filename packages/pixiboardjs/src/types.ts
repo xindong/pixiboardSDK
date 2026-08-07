@@ -23,6 +23,8 @@ import type {
 } from "@pixi-board/capabilities";
 import type { PixiBoardRendererOptions } from "@pixi-board/renderer-pixi";
 
+export type { PixiBoardRendererOptions } from "@pixi-board/renderer-pixi";
+
 export type {
   BoardCapabilities,
   BoardChangeEvent,

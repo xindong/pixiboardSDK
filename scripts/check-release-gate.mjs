@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
@@ -123,19 +123,31 @@ async function verifyApiReports() {
 
 async function verifyExternalConsumers(tarball, gateDir) {
   const fixture = join(gateDir, "consumer");
-  await cp(resolve(root, "apps/examples-vanilla"), fixture, { recursive: true });
-  const fixtureManifest = JSON.parse(await readFile(join(fixture, "package.json"), "utf8"));
+  await mkdir(join(fixture, "src"), { recursive: true });
   const publicTarballs = { pixiboardjs: tarball };
   for (const pkg of publicPackages.slice(1)) {
     const { stdout } = await run("pnpm", ["pack", "--pack-destination", gateDir, "--json"], { cwd: pkg.dir });
     const info = JSON.parse(stdout);
     publicTarballs[pkg.name] = resolve((Array.isArray(info) ? info[0] : info).filename);
   }
-  fixtureManifest.dependencies = Object.fromEntries(Object.entries(publicTarballs).map(([name, file]) => [name, `file:${file}`]));
-  fixtureManifest.devDependencies = Object.fromEntries(
-    Object.entries(fixtureManifest.devDependencies ?? {}).filter(([, version]) => !String(version).startsWith("workspace:")),
-  );
+  const fixtureManifest = {
+    name: "pixiboardjs-release-consumer",
+    private: true,
+    type: "module",
+    scripts: { build: "vite build" },
+    dependencies: Object.fromEntries(Object.entries(publicTarballs).map(([name, file]) => [name, `file:${file}`])),
+    devDependencies: { vite: "^7.0.0" },
+  };
   await writeFile(join(fixture, "package.json"), `${JSON.stringify(fixtureManifest, null, 2)}\n`);
+  await writeFile(join(fixture, "index.html"), '<div id="app"></div><script type="module" src="/src/main.js"></script>\n');
+  await writeFile(join(fixture, "src/main.js"), [
+    'import { createPixiBoard } from "pixiboardjs/browser";',
+    'import { createBoardCore } from "@pixi-board/core";',
+    'import { PLUGIN_API_VERSION, assertV3Manifest } from "@pixi-board/plugin-sdk";',
+    'const core = createBoardCore();',
+    'assertV3Manifest({ id: "consumer", name: "Consumer", version: "1.0.0", apiVersion: PLUGIN_API_VERSION, permissions: [] });',
+    'document.querySelector("#app").textContent = `${typeof createPixiBoard}:${core.document.get().schemaVersion}:${PLUGIN_API_VERSION}`;',
+  ].join("\n"));
   await run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: fixture });
 
   const imports = ["pixiboardjs", "pixiboardjs/browser", "pixiboardjs/node", "pixiboardjs/types", "@pixi-board/core", "@pixi-board/plugin-sdk"];

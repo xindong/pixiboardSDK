@@ -197,9 +197,9 @@ class PixiBoardFacade implements PixiBoard {
         this.core.document.load(input, loadOptions);
         await this.pendingRuntimeWork;
       },
-      validate: (input, validateOptions) => {
+      validate: (input) => {
         this.assertAlive();
-        return this.core.document.validate(input, validateOptions);
+        return this.core.document.validate(input);
       },
     };
 

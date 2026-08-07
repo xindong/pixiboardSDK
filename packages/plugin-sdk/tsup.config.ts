@@ -10,11 +10,4 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   splitting: false,
-  esbuildOptions(options) {
-    options.alias = {
-      "@pixi-board/plugin-api-v3": "../plugin-api-v3/src/index.ts",
-      "@pixi-board/capabilities": "../capabilities/src/index.ts",
-      "@pixi-board/core": "../core/src/index.ts"
-    };
-  }
 });
