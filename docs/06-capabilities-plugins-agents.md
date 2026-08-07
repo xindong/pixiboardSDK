@@ -158,7 +158,7 @@ await tools.call("canvas.write", input);
 - document read/write。
 - node CRUD。
 - history/transaction。
-- schema migration。
+- current-format schema validation；不兼容 Document 明确拒绝。
 - 纯数据布局。
 
 需要 mounted renderer 或 preview backend：

@@ -79,7 +79,7 @@ Public beta 起公开给高级和 headless 用户：
 - store、transaction、history。
 - selection/viewport state。
 - node type definitions 的数据部分。
-- events、serialization、migration。
+- events、serialization、current-format validation。
 - geometry。
 
 ### `@pixi-board/renderer-pixi`

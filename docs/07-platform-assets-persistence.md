@@ -67,7 +67,7 @@ type RuntimeCapabilities = {
 
 ### 文档与二进制数据
 
-- IndexedDB 保存 document、asset metadata、索引、迁移和小型配置。
+- IndexedDB 保存 document、asset metadata、索引和小型配置。
 - OPFS 保存原始媒体与 derivatives；不支持 OPFS 时回退到 IndexedDB Blob store。
 - 导入默认复制到 SDK 管理存储；外部大文件引用属于 experimental capability。
 - document、asset metadata 和 derivative 更新需要可恢复 transaction 或明确补偿策略。
@@ -143,7 +143,7 @@ type AssetRef = {
 };
 ```
 
-节点使用命名引用：`assetRefs.primary`、`assetRefs.poster` 等；旧顶层 `assetId` 迁移为 `assetRefs.primary`。
+节点使用命名引用：`assetRefs.primary`、`assetRefs.poster` 等；旧顶层 `assetId` 不属于 SDK Document，输入时明确拒绝。
 
 Asset GC 使用 mark-and-sweep，根集合为当前 document、history、活跃 jobs 和显式 leases。未引用资产默认 quarantine 24 小时后才允许 prune。
 
@@ -183,22 +183,24 @@ transaction commit
 - 支持重试和显式 `flush()`。
 - 应用在切换项目/关闭窗口前等待 flush 或提示用户。
 
-## Schema 与 Migration
+## Schema 与格式边界
 
-SDK 的 canonical document schema 和 migration 位于 TypeScript core。Rust/Tauri 负责安全文件 IO，不应成为唯一理解 schema 的实现。
+SDK 的 canonical `BoardDocument` schema 位于 TypeScript core。Rust/Tauri 负责安全文件 IO，不应成为另一套解释或转换 schema 的实现。
 
 加载顺序：
 
 ```text
 parse JSON
- -> document schema migration
- -> basic validation
- -> node type migrations
+ -> reject legacy/non-current document shape or schemaVersion
+ -> current document validation
+ -> current node typeVersion validation
  -> asset reference validation
  -> load into core
 ```
 
 未知 node type 保留原始数据，不因当前 runtime 未注册而删除。
+
+旧 snapshot、schema-v4 和旧项目目录由旧应用继续管理。SDK adapter 不读取、转换或写回这些数据，也不提供 legacy adapter、自动 migration 或 backup-before-migration。
 
 ## 验收
 
@@ -212,7 +214,7 @@ parse JSON
 
 ### Tauri
 
-- 旧 schema v4 项目可迁移和保存。
+- SDK 新格式项目可以保存和重新打开；旧格式输入在任何写入前被明确拒绝。
 - 原始文件、preview、waveform 和 metadata 不丢失。
 - project switch 后前一个 runtime 完全销毁。
 - Finder/dialog/process/MCP 不进入 Web bundle。

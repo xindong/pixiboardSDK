@@ -38,7 +38,7 @@ Desktop App / Web App / Embedded Product
 - commands、transactions 和 history。
 - selection、viewport state 和坐标转换。
 - revision、ChangeSet 和 typed events。
-- serialization、validation 和 migrations。
+- serialization、current-format validation 和 incompatible-format rejection。
 
 Core 可以在没有 renderer 的情况下运行，用于文档检查、Agent 批处理和测试。
 
@@ -221,7 +221,7 @@ type BoardPointerEvent = {
 |---|---:|---:|
 | 文档 CRUD | 支持 | 支持 |
 | history/transaction | 支持 | 支持 |
-| JSON validate/migrate | 支持 | 支持 |
+| JSON validate/reject incompatible format | 支持 | 支持 |
 | Agent read/write | 支持 | 支持 |
 | 选择与 viewport state | 支持 | 支持 |
 | hit test | 不支持 | 支持 |

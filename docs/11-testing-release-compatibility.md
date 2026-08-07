@@ -1,4 +1,4 @@
-# 测试、发布与兼容策略
+# 测试、发布与格式边界策略
 
 ## 当前基线缺口
 
@@ -25,10 +25,10 @@
 - transaction atomicity。
 - undo/redo 和 transient commit。
 - selection/viewport。
-- schema validation/migration。
+- current-format schema/typeVersion validation。
 - NodeTypeRegistry、unknown node。
 - ChangeSet 确定性。
-- 旧 snapshot fixtures。
+- legacy/non-current Document rejection fixtures。
 
 不使用 DOM 测试环境。
 
@@ -48,7 +48,7 @@
 
 同一 suite 运行在 memory、browser 和 Tauri adapter：
 
-- document load/save/round-trip。
+- SDK 新 Document load/save/reload。
 - asset put/get/delete/resolve。
 - derivative 保存。
 - cancellation/error recovery。
@@ -70,7 +70,7 @@ Playwright 至少覆盖 Chromium；beta 后增加 WebKit：
 
 ### Desktop Integration
 
-- 旧项目打开和迁移。
+- SDK 新格式项目打开、保存和 project switch；旧格式输入明确拒绝。
 - import/preview/playback/export。
 - project switch。
 - plugin zip、panel、tool、process。
@@ -93,7 +93,7 @@ Playwright 至少覆盖 Chromium；beta 后增加 WebKit：
 - formatting/lint（实现后引入）。
 - core/renderer unit。
 - package dependency boundary check。
-- migration fixtures。
+- current-format validation 与 legacy/non-current rejection fixtures。
 - package contract 和 TypeScript API check。
 - Chromium basic smoke。
 
@@ -109,7 +109,7 @@ Playwright 至少覆盖 Chromium；beta 后增加 WebKit：
 
 - `npm pack` external consumer。
 - macOS/Windows Tauri smoke。
-- old project fixtures。
+- SDK 新 Document load/save/reload 与旧格式拒绝 fixtures。
 - 新 Plugin API v3 fixture；旧插件被拒绝或标记 deprecated 的行为。
 - public API diff。
 - bundle size 和 performance gates。
@@ -154,7 +154,7 @@ pixiboardjs
 
 - 删除/重命名公共方法属于 major。
 - 改变事件顺序、transaction atomicity 或错误类别属于 breaking。
-- document migration 必须支持所有仍在支持窗口内的 schema。
+- document schemaVersion/typeVersion 不匹配必须明确拒绝；SDK 不承诺跨格式支持窗口或自动转换。
 
 ### Experimental API
 
@@ -168,15 +168,16 @@ pixiboardjs
 - 自定义 renderer 插件必须声明 `renderer:trusted`。
 - 插件包体积设置预算，大型 sidecar/模型不应全部内嵌主 bundle。
 
-## Document 兼容
+## Document 格式边界
 
-- 永不静默丢弃未知 node type 或未来字段。
-- 加载未来 schema 默认拒绝并给出明确错误，除非定义 forward-compatible policy。
-- migration fixture 必须覆盖真实旧项目，不只覆盖人工最小 JSON。
-- 保存新格式前可生成备份，具体由 Tauri/browser persistence policy 实现。
+- SDK 只接受自身当前 `BoardDocument` 格式；旧 snapshot、schema-v4、旧项目目录、旧 `assetId` 和旧 node data shape 明确拒绝。
+- schemaVersion 或已注册 node 的 typeVersion 不匹配时返回明确错误，不运行 document/node migration。
+- 未注册 node type 的原始数据只在其外层结构已经符合当前 SDK Document 时保留，不代表支持 legacy document。
+- 旧应用继续读取、保存和管理旧数据；SDK 不提供 legacy adapter、旧项目 round-trip 或 backup-before-migration。
+- Release Candidate 只验证新 Document 的确定性 load/save/reload 和不兼容格式拒绝行为。
 
 ## Alpha/Beta/Stable 支持策略
 
 - Alpha：内部使用，允许频繁 API 调整。
-- Beta：公开使用，breaking change 需 changelog 和 migration note。
-- Stable：semver、弃用周期、document 支持窗口和 API report 强制执行。
+- Beta：公开使用，breaking change 需 changelog 和 API upgrade note。
+- Stable：semver、弃用周期、当前 Document 格式边界和 API report 强制执行。

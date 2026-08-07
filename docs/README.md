@@ -34,6 +34,7 @@
 - [adr/0008-browser-storage.md](adr/0008-browser-storage.md)
 - [adr/0009-plugin-api-v3.md](adr/0009-plugin-api-v3.md)
 - [adr/0010-public-package-scope.md](adr/0010-public-package-scope.md)
+- [adr/0011-new-document-format-only.md](adr/0011-new-document-format-only.md)
 
 ## 完成定义
 
@@ -45,4 +46,5 @@
 - 公共 API、自定义节点、插件和 Agent 路径有具体契约草案。
 - 每个迁移阶段都有交付物、验收项、风险门和回滚策略。
 - 性能目标由可重复 benchmark 定义，而不是只使用“比 Konva 快”等口号。
+- SDK 只支持自身新 Document 格式；旧格式明确拒绝且不进入迁移、desktop 或 release 验收。
 - 文档通过 `pnpm docs:check`。

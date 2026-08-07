@@ -162,7 +162,6 @@ const snapshot = board.document.snapshot();
 const json = board.document.toJSON();
 
 await board.document.load(json, {
-  migrate: true,
   replaceHistory: true,
 });
 
@@ -170,6 +169,8 @@ board.document.validate(json);
 ```
 
 snapshot 必须是不可变视图或结构化克隆，外部修改不能影响内部状态。
+
+`load()` 和 `validate()` 只接受当前 SDK 定义的 `BoardDocument` 格式。旧 snapshot、schema-v4、旧项目目录或其他 legacy shape 必须返回明确的 `DocumentValidationError`，不得通过 adapter 或隐式转换进入 Core。
 
 ## Capture
 
@@ -213,7 +214,6 @@ board.find({ type: "task-card" });
 - `NodeTypeNotRegisteredError`
 - `NodeValidationError`
 - `DocumentValidationError`
-- `MigrationError`
 - `AssetUnavailableError`
 - `CapabilityUnavailableError`
 - `PermissionDeniedError`

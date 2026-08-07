@@ -4,7 +4,8 @@
 
 | 目标 | 设计文档 | 主要迁移来源 | 验收位置 |
 |---|---|---|---|
-| 扁平文档 | [目标架构](02-target-architecture.md) | `board-domain/types.ts` | P1 core、schema fixture |
+| 扁平文档 | [目标架构](02-target-architecture.md) | `board-domain/types.ts` | P1 core、新 Document schema fixture |
+| 仅支持 SDK 新 Document | [ADR 0011](adr/0011-new-document-format-only.md) | 新 Core validation boundary；无 legacy adapter | current-format load/save/reload + legacy/non-current rejection tests + requirement audit |
 | 数据为真相 | [ADR 0002](adr/0002-document-source-pixi-cache.md) | Store/Scene/ViewRegistry | 离屏销毁重建测试 |
 | 自定义节点 | [自定义节点](05-custom-node-system.md) | `nodeView.ts`、domain union | custom task-card E2E |
 | 高性能稀疏画布 | [性能基准](10-performance-benchmarks.md) | RBush、View cache、TextureCache | 10k/50k/100k benchmark |
@@ -12,7 +13,7 @@
 | Desktop/Web 共用 | [平台适配](07-platform-assets-persistence.md) | runtime adapter/repositories | Browser/Tauri contract tests |
 | 插件化 | [插件与 Agent](06-capabilities-plugins-agents.md) | new plugin SDK/tool runtime/host | new Plugin API v3 fixture; legacy plugin deprecation |
 | Agent 核心能力 | [插件与 Agent](06-capabilities-plugins-agents.md) | canvas plugin/MCP host | direct vs MCP equivalence |
-| 渐进迁移 | [迁移计划](08-migration-plan.md) | `MediaWhiteboard` composition | desktop parity gates |
+| Desktop 渐进接入 | [迁移计划](08-migration-plan.md) | `MediaWhiteboard` composition | SDK 新格式 desktop parity gates；旧项目不进入 SDK |
 | 稳定公开 API | [公共 API](04-public-api.md) | 新 facade | API report/semver |
 
 ## 当前热点文件追踪
@@ -46,3 +47,4 @@
 - 性能：[10-performance-benchmarks.md](10-performance-benchmarks.md)
 - 测试发布：[11-testing-release-compatibility.md](11-testing-release-compatibility.md)
 - 风险决策：[12-risks-open-decisions.md](12-risks-open-decisions.md)
+- Document 格式决策：[adr/0011-new-document-format-only.md](adr/0011-new-document-format-only.md)

@@ -5,7 +5,7 @@
 | 风险 | 概率 | 影响 | 预防措施 | 触发信号 | 降级方案 |
 |---|---:|---:|---|---|---|
 | Public Node API 过早冻结 | 中 | 高 | alpha 先内部使用；API report | NodeHandle 不断增加 escape hatch | 缩小 stable API，其余 experimental |
-| 内置媒体行为迁移回归 | 中 | 高 | parity 清单、旧 fixture、分阶段 desktop 接入 | preview/playback/import 行为不同 | 暂保留旧 service adapter |
+| 内置媒体行为接入回归 | 中 | 高 | parity 清单、新格式 fixture、分阶段 desktop 接入 | preview/playback/import 行为不同 | 暂保留旧应用路径，不把其数据接入 SDK |
 | Web 资产持久化复杂度超期 | 高 | 高 | IndexedDB+OPFS 分层、fallback、quota/GC 测试 | quota/Blob 恢复策略反复变化 | 降级到 IndexedDB Blob 或 remote adapter |
 | 自定义 renderer 破坏性能 | 高 | 中高 | renderer context、diagnostics、资源 lease | active view/texture 不回落 | 标记 unsafe renderer，提供禁用/隔离策略 |
 | 多实例输入串台 | 中 | 高 | focus scope 和 E2E | 两个实例同时响应快捷键 | 默认仅 focused board 开启 keyboard/clipboard |
@@ -27,13 +27,14 @@
 - MCP 是 transport，不属于 core。
 - Desktop/Web 共用 renderer；真正原生 renderer 不在 v1。
 - 现有 desktop 采用渐进迁移，不做大爆炸重写。
+- PixiBoardJS 只支持自身新 `BoardDocument` 格式；旧数据由旧应用管理，SDK 明确拒绝旧格式且不实现 legacy adapter。
 
 ## 已冻结实现决策
 
 ### Document 结构
 
 - `nodes` 序列化使用数组，运行时使用 Map/index。
-- 节点使用可选命名 `assetRefs`；旧 `assetId` 迁移到 `assetRefs.primary`。
+- 节点使用可选命名 `assetRefs`；输入必须直接符合该结构，不转换旧 `assetId`。
 - zIndex 允许重复，以序列化数组顺序稳定决胜；reorder API 负责规范化。
 - selection 不进入 BoardDocument，只属于 session state。
 

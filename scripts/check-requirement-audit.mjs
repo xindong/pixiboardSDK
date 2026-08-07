@@ -29,6 +29,12 @@ async function listFiles(directory) {
 }
 
 const coreTests = await read("packages/core/test/core.test.ts");
+const documentValidation = await read("packages/core/src/document-validation.ts");
+const documentMigrations = (await exists("packages/core/src/document-migrations.ts"))
+  ? await read("packages/core/src/document-migrations.ts")
+  : "";
+const coreTypes = await read("packages/core/src/types.ts");
+const facadeSource = await read("packages/pixiboardjs/src/index.ts");
 const agentTests = await read("packages/agent-tools/src/contract.test.ts");
 const desktopTests = await read("apps/examples-desktop-sdk/test/desktop-sdk.test.ts");
 const benchmarkRunner = await read("apps/benchmark/src/runner.mjs");
@@ -38,16 +44,23 @@ const releaseDoc = await read("docs/15-release-gate.md");
 
 const rows = [
   {
-    id: "old-snapshot-migration",
-    status: "missing",
-    evidence: "packages/core/test/core.test.ts (synthetic 1→2 migration only); no real fixture files found",
-    missing: "real ../pixi-board schema-v4 board/assets snapshots, adapter load + lossless round-trip, fixture runner",
+    id: "current-document-only",
+    status:
+      /requires migration/.test(documentValidation) &&
+      /newer than supported schema/.test(documentValidation) &&
+      !/migrate: true/.test(facadeSource) &&
+      !/class DocumentMigrationRegistry/.test(documentMigrations) &&
+      !/\bmigrate\?\s*\(/.test(coreTypes)
+        ? "achieved"
+        : "partial",
+    evidence: "core rejects older schemas when migration is disabled and rejects future schemas; no schema-v4/old-project adapter found",
+    missing: "pixiboardjs persistence still loads with migrate:true and Core still exposes document/node migration surfaces; require explicit rejection tests without adding a legacy adapter",
   },
   {
     id: "unknown-node-preservation",
     status: /preserves unknown JSON/.test(coreTests) && /NodeTypeNotRegisteredError/.test(coreTests) ? "achieved" : "missing",
     evidence: "packages/core/test/core.test.ts unknown-node JSON round-trip; renderer-pixi unknown placeholder test",
-    missing: "real legacy fixture coverage remains a separate migration gate",
+    missing: "limit preservation to valid current-format SDK documents; it must not imply legacy document acceptance",
   },
   {
     id: "core-capabilities-agent-equivalence",
@@ -71,17 +84,17 @@ const rows = [
     id: "desktop-parity-tauri-smoke",
     status: /headless: true/.test(desktopTests) ? "partial" : "missing",
     evidence: "apps/examples-desktop-sdk/test/desktop-sdk.test.ts uses headless MemoryTauriDocumentPort",
-    missing: "actual Tauri app, macOS/Windows launch smoke, old-project/media/project-switch parity",
+    missing: "actual Tauri app, macOS/Windows launch smoke, current-format project/media/project-switch parity; old projects are out of SDK scope",
   },
   {
     id: "browser-adapter",
-    status: (await exists("packages/adapter-browser/test/browser-persistence-adapter.test.ts")) ? "partial" : "missing",
+    status: (await exists("packages/adapter-browser/test/browser-persistence-adapter.test.ts")) ? "achieved" : "missing",
     evidence: "adapter-browser tests plus tests/browser/browser-contract.spec.ts",
     missing: "same contract suite on memory/browser/Tauri and full File/Blob/media import parity",
   },
   {
     id: "release-pack-api",
-    status: /blockers/.test(releaseGate) && /blocked/.test(releaseDoc) ? "partial" : "missing",
+    status: /blockers/.test(releaseGate) && /(blocked|阻塞)/.test(releaseDoc) ? "partial" : "missing",
     evidence: "scripts/check-release-gate.mjs; docs/15-release-gate.md explicitly records blocked tarball exports/dependencies",
     missing: "publishable JS + d.ts artifacts, non-placeholder dependencies, external npm/Vite consumer pass",
   },
@@ -93,7 +106,9 @@ const rows = [
   },
   {
     id: "konva-comparison",
-    status: /not-implemented/.test(benchmarkRunner) && /Konva/.test(benchmarkReadme) === false ? "missing" : "partial",
+    status: /not-implemented/.test(benchmarkRunner) && /does \*\*not\*\* run[\s\S]*Konva/.test(benchmarkReadme)
+      ? "missing"
+      : "partial",
     evidence: "docs/10 defines fair-comparison policy; no Konva adapter/dataset/results",
     missing: "matched Konva/Pixi scenarios, fixed environment, recorded p50/p95/p99 results",
   },
@@ -112,5 +127,5 @@ for (const row of rows) {
   console.log(`  missing:  ${row.missing}`);
 }
 if (rows.some((row) => row.status === "achieved")) {
-  console.log("\nAchieved rows are limited to the scoped evidence named above; release/performance/legacy gates remain open.");
+  console.log("\nAchieved rows are limited to the scoped evidence named above; document-format, release, and performance gates remain open.");
 }

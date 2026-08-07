@@ -14,8 +14,7 @@ NodeTypeDefinition<Props>       PixiNodeRenderer<Props, ViewState>
   version                         update
   defaults                        destroy
   validate                        optional hitTest
-  migrate                         optional capture
-  getBounds
+  getBounds                       optional capture
 ```
 
 Core 只认识前者；renderer-pixi 认识后者。
@@ -28,14 +27,12 @@ export type NodeTypeDefinition<Props> = {
   version: number;
   defaults?: Partial<Props>;
   validate(value: unknown): Props;
-  migrate?(input: {
-    fromVersion: number;
-    props: unknown;
-  }): { version: number; props: Props };
   getBounds(node: BoardNode<Props>): WorldBounds;
   resize?: ResizePolicy<Props>;
 };
 ```
+
+Node definition 只验证当前 `typeVersion`。版本不匹配时明确拒绝；SDK 不调用 node data migration callback，也不为旧 node props 提供 legacy adapter。
 
 ### Type 命名
 
@@ -214,4 +211,3 @@ selection outline 默认使用 bounds。自定义 outline、控制点和旋转�
 4. 离屏销毁，回屏重建。
 5. Agent read/write props。
 6. 未注册时 placeholder，注册后恢复。
-

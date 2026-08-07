@@ -87,17 +87,19 @@
 
 ## 分阶段迁移
 
-### M0：冻结兼容基线
+### M0：冻结 SDK Document 边界
 
 工作：
 
-- 保存现有 schema v4 board/assets fixtures。
+- 固化 SDK 自身新 `BoardDocument` 的有效与无效 fixtures。
 - 列出 desktop 功能 parity 清单。
 - 固化现有 unit tests；记录旧插件清单为 deprecated，不将旧插件 fixture 作为 SDK 验收输入。
 - 确认扁平模型、不做场景树。
 - 确认 public API draft 和 ADR。
+- 确认旧 snapshot、schema-v4、旧项目目录和旧 node data shape 明确拒绝；旧应用继续自行管理旧数据。
+- 确认 SDK 不实现 legacy document adapter、数据 migration 或 backup-before-migration。
 
-退出条件：旧数据和现有关键行为有可重复基线；Node/Asset/ChangeSet 语义允许进入实现。
+退出条件：新 Document 契约、拒绝边界和现有关键行为有可重复基线；Node/Asset/ChangeSet 语义允许进入实现。
 
 ### M1：Headless Core
 
@@ -107,11 +109,11 @@
 - 迁移 domain/store/editor/history/viewport。
 - 引入 schemaVersion、revision、transaction 和 ChangeSet。
 - Node type 与 Asset kind 解耦。
-- 新旧 snapshot migration。
+- 新 Document 的确定性 serialization/validation；拒绝非当前 schemaVersion、typeVersion 和 legacy shape。
 
-并行兼容：desktop 暂时通过 adapter 使用新 core，renderer 仍在原位置。
+并行接入：desktop 暂时通过宿主 adapter 使用新 core，renderer 仍在原位置。该 adapter 只做 runtime 接线，不读取或转换旧数据。
 
-退出条件：core 依赖图无 DOM/Pixi/Tauri/plugin；旧 fixture round-trip；CRUD/transaction/undo/migration 测试通过。
+退出条件：core 依赖图无 DOM/Pixi/Tauri/plugin；新 Document load/save/reload 与不兼容格式拒绝测试通过；CRUD/transaction/undo 测试通过。
 
 ### M2：NodeTypeRegistry 与 Renderer
 
@@ -158,7 +160,7 @@
 - PluginRuntimeHost 改用 capabilities。
 - 保持 Agent/MCP 能力语义；现有插件 zip 不作为 SDK parity 目标。
 
-退出条件：desktop 不再实例化第二套 BoardStore/BoardScene/BoardEditor；功能 parity 完成；旧项目可打开和保存。
+退出条件：desktop 不再实例化第二套 BoardStore/BoardScene/BoardEditor；新 SDK Document 项目的功能 parity 完成。旧项目仍由旧应用路径打开和保存，不进入 SDK 验收。
 
 ### M6：Browser 完整能力
 
@@ -185,9 +187,9 @@
 
 ## 每阶段回滚策略
 
-- 新 core/renderer 在 desktop 中通过 feature flag 或薄 adapter 接入，parity 前保留旧调用入口。
+- 新 core/renderer 在 desktop 中通过 feature flag 或薄宿主 adapter 接入，parity 前保留旧应用调用入口；该 adapter 不承担旧数据转换。
 - 同一个项目会话不得同时维护两套文档真相；切换以实例级 feature flag 完成。
-- 新 schema 写回前保留备份和显式 migration version。
+- SDK 只写自身新 Document 格式；旧格式在写入前拒绝，因此没有 migration 写回或迁移前备份流程。
 - 现有官方/内部插件直接废弃；未来新插件按 v3 重新开发，不维护 v2 adapter。
 - Browser adapter 与 Tauri adapter 使用同一 contract suite，任何一端失败不通过共同接口验收。
 

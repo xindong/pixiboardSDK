@@ -33,7 +33,7 @@ PixiBoardJS 是面向大型媒体与 AI 工作流的高性能无限画布 SDK：
 - 内置媒体节点通过相同 registry 注册。
 - Web 和 Tauri 的资产、持久化适配接口。
 - BoardCapabilities：供 UI、插件和 Agent 使用的统一受控能力。
-- 文档 JSON 导入导出和迁移。
+- SDK 自身 `BoardDocument` JSON 的导入导出、校验与不兼容格式明确拒绝。
 - viewport/node/bounds 截图。
 - 多实例输入隔离和完整 destroy 生命周期。
 - 可重复性能 benchmark 和最小示例。
@@ -48,6 +48,8 @@ PixiBoardJS 是面向大型媒体与 AI 工作流的高性能无限画布 SDK：
 - 实时多人协作协议。
 - 把插件 zip、MCP server、项目切换和产品 UI 打入主 SDK。
 - 第一阶段公开所有内部 workspace package。
+- 旧 snapshot、schema-v4 或旧项目格式兼容与数据迁移；旧应用继续自行管理旧数据。
+- legacy document adapter、自动升级或 backup-before-migration 流程。
 
 ## 设计原则
 
@@ -79,5 +81,4 @@ Three.js 模型预览、HTML 文档栅格化、视频运行时、插件宿主和
 - 10k、50k、100k 节点 benchmark 可重复运行并输出 frame time、内存、view 和 texture 指标。
 - 网页示例可以导入 File/Blob、保存、刷新后恢复并导出。
 - 多个画布实例不会抢夺快捷键、剪贴板或 pointer 状态。
-- SDK 的公开 API 有稳定版本、迁移说明和兼容测试。
-
+- SDK 的公开 API 有稳定版本、升级说明和兼容测试；Document 格式边界有明确拒绝测试。

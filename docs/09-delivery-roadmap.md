@@ -19,19 +19,20 @@
 ### 交付物
 
 - ADR 和 public API draft。
-- 现有功能/兼容矩阵。
-- schema v4、典型媒体项目；现有插件清单标记 deprecated，不作为 SDK 迁移输入。
+- 现有功能 parity 与 SDK Document 格式支持/拒绝矩阵。
+- SDK 新格式典型媒体项目 fixtures；现有插件清单标记 deprecated，不作为 SDK 迁移输入。
 - 统一基线测试命令。
 
 ### 验收
 
 - 当前 TS 和 Rust 测试可统一执行并记录结果。
-- 旧项目 fixture 可无损读取和 round-trip。
+- SDK 新 Document fixture 可确定性 load/save/reload；旧 snapshot、schema-v4 和旧项目格式被明确拒绝。
 - 扁平模型、单一主要用户包加公开 Core、数据为真相、capabilities 边界被接受。
+- 旧应用继续管理旧数据；不存在 legacy document adapter、数据 migration 或 backup-before-migration 交付项。
 
 ### 风险门
 
-Node、Asset、ChangeSet、transaction 和 migration 语义未冻结，不开始大规模搬包。
+Node、Asset、ChangeSet、transaction 和 Document 拒绝边界未冻结，不开始大规模搬包。
 
 ## P1：Headless Core（约 1 周）
 
@@ -39,14 +40,14 @@ Node、Asset、ChangeSet、transaction 和 migration 语义未冻结，不开始
 
 - `@pixi-board/core`。
 - document/store/editor/history/selection/viewport/events。
-- schema migration 和 NodeTypeRegistry 数据定义。
+- current-format schema validation 和 NodeTypeRegistry 数据定义。
 
 ### 验收
 
 - 无 DOM、Pixi、Tauri、plugin SDK import。
 - CRUD、batch transaction、undo/redo、load/toJSON 确定性测试。
-- 自定义无 asset 节点可以创建、校验、保存和迁移。
-- 旧模型 adapter 测试通过。
+- 自定义无 asset 节点可以创建、校验、保存并重新加载。
+- 非当前 schemaVersion/typeVersion、旧 `assetId` 和 legacy document shape 有明确拒绝测试。
 
 ## P2：Pixi Renderer 与自定义节点（1–1.5 周）
 
@@ -121,7 +122,7 @@ Node、Asset、ChangeSet、transaction 和 migration 语义未冻结，不开始
 - SemVer/Changesets/API report。
 - bundle size budget。
 - 外部 Vite consumer fixture。
-- 文档和迁移指南。
+- 文档、API 升级说明和 Document 格式支持边界。
 
 ### 验收
 
@@ -139,21 +140,21 @@ Node、Asset、ChangeSet、transaction 和 migration 语义未冻结，不开始
 - 10k/50k/100k sparse media 数据集。
 - Konva 对照数据集。
 - memory/texture/listener soak。
-- 兼容、弃用和支持政策。
+- API 兼容、弃用和支持政策。
 
 ### 验收
 
 - 性能目标在固定环境连续运行达标。
 - 性能回归阈值进入 CI/nightly。
-- 旧 document/node type migration fixtures 全绿。
+- SDK 新 Document 的 load/save/reload 与不兼容格式拒绝 fixtures 全绿。
 - public API 无未说明 breaking change。
 - Desktop 和 Web 都消费同一 release candidate。
 
 ## 功能 Parity 清单
 
-桌面迁移至少覆盖：
+桌面接入至少覆盖 SDK 新格式项目的：
 
-- 项目加载/切换和 viewport 恢复。
+- 项目加载/切换和 viewport 恢复；旧项目不进入 SDK 路径。
 - 图片、视频、音频、模型、文本、Markdown、HTML、SVG 导入。
 - 移动、缩放、框选、复制、粘贴、删除、重命名。
 - undo/redo。
@@ -176,7 +177,7 @@ Web 可完整运行；公开包可安装；API 变更必须记录；不承诺所
 
 ### 1.0
 
-- 核心 API、document schema 和 custom node contract 有兼容政策。
+- 核心 API 和 custom node contract 有兼容政策；Document 只支持当前 SDK 格式并明确拒绝不兼容输入。
 - Desktop/Web 生产使用。
 - 性能和资源生命周期有可重复证据。
-- migration、consumer、browser、plugin/Agent 测试完整。
+- Document rejection、consumer、browser、plugin/Agent 测试完整。
