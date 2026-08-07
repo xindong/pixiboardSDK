@@ -24,8 +24,8 @@ for (const [name, version] of Object.entries(workspace.dependencies ?? {})) {
   if (!version.startsWith("workspace:")) throw new Error(`local pixiboardjs dependency must use workspace protocol: ${name}`);
 }
 if (fixture.dependencies?.pixiboardjs !== "workspace:*") throw new Error("Vanilla fixture must link the workspace package in-repo");
-if (benchmark.private !== true || !benchmark.scripts?.["generate:synthetic-card"]) throw new Error("benchmark must remain private and deterministic");
-for (const script of ["benchmark:run", "benchmark:check", "test"]) {
+if (benchmark.private !== true || !benchmark.scripts?.["generate:synthetic-card"]) throw new Error("benchmark must remain private and retain deterministic fixture generation");
+for (const script of ["benchmark:run", "benchmark:matrix", "benchmark:check", "test"]) {
   if (!benchmark.scripts?.[script]) throw new Error(`benchmark must expose ${script}`);
 }
 if (mcpHost.name !== "@pixi-board/mcp-host" || mcpHost.private !== true) throw new Error("mcp-host must remain an internal package");
@@ -42,6 +42,7 @@ for (const file of [
   "apps/benchmark/src/check-regression.mjs",
   "apps/benchmark/test/benchmark-run.test.ts",
   "apps/benchmark/test/adapter-runner.test.ts",
+  "apps/benchmark/test/benchmark-matrix.test.ts",
   "apps/benchmark/test/regression.test.ts",
   "apps/examples-vanilla/index.html",
 ]) await access(resolve(root, file));

@@ -7,6 +7,7 @@
   "scripts": {
     "generate:synthetic-card": "node src/generate.mjs",
     "benchmark:run": "PIXIBOARD_BENCHMARK_RUN=1 vitest run --config vitest.config.ts test/benchmark-run.test.ts --reporter=verbose",
+    "benchmark:matrix": "PIXIBOARD_BENCHMARK_MATRIX=1 vitest run --config vitest.config.ts test/benchmark-matrix.test.ts --reporter=verbose",
     "benchmark:check": "node src/check-regression.mjs",
     "test": "vitest run --config vitest.config.ts"
   },
