@@ -34,7 +34,11 @@ if (customNodeFixture.dependencies?.pixiboardjs !== "workspace:*" || !customNode
 if (pluginSdk.name !== "@pixi-board/plugin-sdk" || pluginSdk.private !== false) {
   throw new Error("plugin-sdk must be a public package");
 }
-await access(resolve(root, "packages/plugin-sdk", pluginSdk.exports["."].import));
+const pluginSdkEntry = pluginSdk.exports?.["."];
+if (!pluginSdkEntry?.import?.startsWith("./dist/") || !pluginSdkEntry.import.endsWith(".js") ||
+    !pluginSdkEntry?.types?.startsWith("./dist/") || !pluginSdkEntry.types.endsWith(".d.ts")) {
+  throw new Error("plugin-sdk public exports must target release JS and declaration artifacts");
+}
 const pluginSdkSource = await readFile(resolve(root, "packages/plugin-sdk/src/index.ts"), "utf8");
 if (!pluginSdkSource.includes("export function definePlugin") || pluginSdkSource.includes("export class PluginHost")) {
   throw new Error("plugin-sdk must export definePlugin without exporting PluginHost");
