@@ -8,6 +8,12 @@ function tools() { const registry = new NodeTypeRegistry(); registry.register(te
 describe("agent canvas contract", () => {
   it("preserves requestId and uses discriminated writes", async () => { const fixture = tools(); const response = await fixture.tools.call("canvas.write", { type: "create", nodes: [{ id: "a", type: "text" }] }, { requestId: "req-1" }); expect(response.ok).toBe(true); if (response.ok) expect(response.data).toMatchObject({ revision: 1, requestId: "req-1" }); expect(fixture.core.history.canUndo()).toBe(true); });
   it("serializes invalid input and rejects unsupported fields", async () => { const fixture = tools(); const response = await fixture.tools.call("canvas.write", { type: "delete", nodeIds: ["a"], nodes: [] }, { requestId: "req-2" }); expect(response.ok).toBe(false); if (!response.ok) expect(response.error).toMatchObject({ code: "INVALID_INPUT", requestId: "req-2" }); });
+  it("preserves lifecycle error mapping from a scoped board capability", async () => {
+    const fixture = tools();
+    const destroyed: BoardCapabilities = { ...fixture.capabilities, nodes: { ...fixture.capabilities.nodes, create: async () => { const error = new Error("PixiBoard instance has been destroyed"); error.name = "BoardDestroyedError"; throw error; } } };
+    const response = await createPixiBoardAgentTools(destroyed).call("canvas.write", { type: "create", nodes: [{ type: "text" }] }, { requestId: "req-destroyed" });
+    expect(response).toMatchObject({ ok: false, error: { code: "BOARD_DESTROYED", requestId: "req-destroyed" } });
+  });
   it("projects requested fields and translates source content to one asset/node commit", async () => {
     const fixture = tools();
     const response = await fixture.tools.call("canvas.write", { type: "create", nodes: [{ id: "source-node", type: "text", content: "hello" }] }, { requestId: "req-3" });

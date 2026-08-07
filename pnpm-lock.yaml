@@ -94,6 +94,25 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7
 
+  packages/mcp-host:
+    dependencies:
+      '@pixi-board/agent-tools':
+        specifier: workspace:*
+        version: link:../agent-tools
+    devDependencies:
+      '@pixi-board/capabilities':
+        specifier: workspace:*
+        version: link:../capabilities
+      '@pixi-board/core':
+        specifier: workspace:*
+        version: link:../core
+      pixiboardjs:
+        specifier: workspace:*
+        version: link:../pixiboardjs
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7
+
   packages/pixiboardjs:
     dependencies:
       '@pixi-board/adapter-browser':

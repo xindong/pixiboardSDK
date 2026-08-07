@@ -76,9 +76,9 @@ const rows = [
   },
   {
     id: "mcp-direct-equivalence",
-    status: (await exists("packages/mcp-host")) ? "partial" : "missing",
-    evidence: "No packages/mcp-host or SDK MCP transport found",
-    missing: "HTTP and stdio MCP round-trip plus direct Agent result equivalence",
+    status: (await exists("packages/mcp-host/src/contract.test.ts")) ? "achieved" : "missing",
+    evidence: "packages/mcp-host/src/contract.test.ts covers direct Agent, stdio, HTTP document/revision/ChangeSet/history/persistence equivalence, error mapping, abort and close",
+    missing: "real socket/process integration remains a separate host deployment gate",
   },
   {
     id: "desktop-parity-tauri-smoke",
