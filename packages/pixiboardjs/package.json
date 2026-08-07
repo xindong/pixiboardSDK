@@ -39,10 +39,10 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@pixi-board/adapter-browser": "0.0.0",
-    "@pixi-board/capabilities": "0.0.0",
-    "@pixi-board/core": "0.0.0",
-    "@pixi-board/renderer-pixi": "0.0.0"
+    "@pixi-board/adapter-browser": "workspace:*",
+    "@pixi-board/capabilities": "workspace:*",
+    "@pixi-board/core": "workspace:*",
+    "@pixi-board/renderer-pixi": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^3.2.4"
