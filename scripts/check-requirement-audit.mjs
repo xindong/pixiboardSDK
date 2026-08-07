@@ -37,6 +37,9 @@ const coreTypes = await read("packages/core/src/types.ts");
 const facadeSource = await read("packages/pixiboardjs/src/index.ts");
 const agentTests = await read("packages/agent-tools/src/contract.test.ts");
 const desktopTests = await read("apps/examples-desktop-sdk/test/desktop-sdk.test.ts");
+const desktopControllerTests = (await exists("apps/examples-desktop-sdk/test/project-session-controller.test.ts"))
+  ? await read("apps/examples-desktop-sdk/test/project-session-controller.test.ts")
+  : "";
 const benchmarkRunner = await read("apps/benchmark/src/runner.mjs");
 const benchmarkReadme = await read("apps/benchmark/README.md");
 const releaseGate = await read("scripts/check-release-gate.mjs");
@@ -71,8 +74,8 @@ const rows = [
   {
     id: "plugin-v3-contract",
     status: /routes UI, Agent and Plugin v3/.test(desktopTests) ? "partial" : "missing",
-    evidence: "packages/plugin-api-v3/src/contract.test.ts and desktop fixture; v2 manifest rejection",
-    missing: "packaged plugin host/zip loader and public @pixi-board/plugin-sdk release artifact",
+    evidence: "private plugin-api-v3 packaged host/loader, v2 rejection, lifecycle and UI/Agent/Plugin ChangeSet equivalence",
+    missing: "public @pixi-board/plugin-sdk dist/API report and external install fixture must pass the release gate",
   },
   {
     id: "mcp-direct-equivalence",
@@ -82,15 +85,15 @@ const rows = [
   },
   {
     id: "desktop-parity-tauri-smoke",
-    status: /headless: true/.test(desktopTests) ? "partial" : "missing",
-    evidence: "apps/examples-desktop-sdk/test/desktop-sdk.test.ts uses headless MemoryTauriDocumentPort",
-    missing: "actual Tauri app, macOS/Windows launch smoke, current-format project/media/project-switch parity; old projects are out of SDK scope",
+    status: (await exists("apps/examples-desktop-sdk/src-tauri/Cargo.toml")) && /destroy/.test(desktopControllerTests) ? "partial" : "missing",
+    evidence: "real Tauri app and injected adapter exist; adapter/Desktop tests cover current-format persistence and project switch cleanup; macOS cargo smoke was executed",
+    missing: "Windows remains CI-configured rather than locally observed; media-heavy renderer/product interactions remain a separate gate",
   },
   {
     id: "browser-adapter",
     status: (await exists("packages/adapter-browser/test/browser-persistence-adapter.test.ts")) ? "achieved" : "missing",
-    evidence: "adapter-browser tests plus tests/browser/browser-contract.spec.ts",
-    missing: "same contract suite on memory/browser/Tauri and full File/Blob/media import parity",
+    evidence: "browser adapter plus shared memory/browser/Tauri contract suites and Chromium browser contract",
+    missing: "publishable browser artifact remains part of release gate; renderer media-heavy lifecycle is audited separately",
   },
   {
     id: "release-pack-api",
@@ -106,17 +109,17 @@ const rows = [
   },
   {
     id: "konva-comparison",
-    status: /not-implemented/.test(benchmarkRunner) && /does \*\*not\*\* run[\s\S]*Konva/.test(benchmarkReadme)
+    status: !(await exists("apps/benchmark/src/run-browser.mjs")) && /does \*\*not\*\* run[\s\S]*Konva/.test(benchmarkReadme)
       ? "missing"
       : "partial",
-    evidence: "docs/10 defines fair-comparison policy; no Konva adapter/dataset/results",
+    evidence: "docs/10 defines fair-comparison policy; browser matched comparison is required before achieved",
     missing: "matched Konva/Pixi scenarios, fixed environment, recorded p50/p95/p99 results",
   },
   {
     id: "performance-and-soak",
     status: /status: "not-implemented"/.test(benchmarkRunner) ? "missing" : "partial",
-    evidence: "apps/benchmark/src/runner.mjs returns observed:false; README says no real renderer/WebGL measurements",
-    missing: "10k/50k/100k measured thresholds, memory/texture/listener soak, CI/nightly regression gate",
+    evidence: "executable Node/instrumented 10k/50k/100k harness, Core latency thresholds, 100-cycle lifecycle soak and regression comparator exist",
+    missing: "real matched WebGL/Konva, media-heavy Chromium soak and CI/nightly regression gate",
   },
 ];
 
@@ -127,5 +130,5 @@ for (const row of rows) {
   console.log(`  missing:  ${row.missing}`);
 }
 if (rows.some((row) => row.status === "achieved")) {
-  console.log("\nAchieved rows are limited to the scoped evidence named above; document-format, release, and performance gates remain open.");
+  console.log("\nAchieved rows are limited to the scoped evidence named above; public release, matched WebGL/Konva, media-heavy soak and final CI/RC gates remain open.");
 }
