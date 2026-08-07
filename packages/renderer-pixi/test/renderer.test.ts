@@ -130,6 +130,67 @@ describe("renderer-pixi vertical slice", () => {
     spatialIndex.query = originalSpatialQuery;
     await renderer.destroy();
   }, 30_000);
+  it("short-circuits a large custom culling iterable for changed ids", async () => {
+    const { app, factory } = fake();
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory });
+    await renderer.init();
+    await renderer.setVisibleBounds({ minX: -1, minY: -1, maxX: 20, maxY: 20 });
+    await renderer.rebuild(doc([node("a"), node("b", "rect", 100)], 1));
+
+    let reads = 0;
+    renderer.setCullingQuery(() => ({
+      *[Symbol.iterator]() {
+        reads += 1;
+        yield "b";
+        throw new Error("incremental apply exhausted the full culling iterable");
+      },
+    }));
+    await renderer.apply(update([{ ...node("b", "rect", 5) }], 2), {
+      revision: 2,
+      transactionId: "lazy-culling",
+      origin: "api",
+      addedNodeIds: [],
+      updatedNodeIds: ["b"],
+      removedNodeIds: [],
+      assetChangedNodeIds: [],
+      selectionChanged: false,
+      viewportChanged: false,
+      timestamp: 1,
+    });
+
+    expect(reads).toBe(1);
+    expect(renderer.activeViews.has("b")).toBe(true);
+    await renderer.destroy();
+  });
+  it("uses culling membership without touching the candidate iterable", async () => {
+    const { app, factory } = fake();
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory });
+    await renderer.init();
+    await renderer.setVisibleBounds({ minX: -1, minY: -1, maxX: 20, maxY: 20 });
+    await renderer.rebuild(doc([node("a"), node("b", "rect", 100)], 1));
+
+    const has = vi.fn((id: string) => id === "b");
+    renderer.setCullingQuery(() => ({
+      has,
+      [Symbol.iterator]: () => { throw new Error("membership path iterated culling candidates"); },
+    }));
+    await renderer.apply(update([{ ...node("b", "rect", 5) }], 2), {
+      revision: 2,
+      transactionId: "membership-culling",
+      origin: "api",
+      addedNodeIds: [],
+      updatedNodeIds: ["b"],
+      removedNodeIds: [],
+      assetChangedNodeIds: [],
+      selectionChanged: false,
+      viewportChanged: false,
+      timestamp: 1,
+    });
+
+    expect(has).toHaveBeenCalledWith("b");
+    expect(renderer.activeViews.has("b")).toBe(true);
+    await renderer.destroy();
+  });
   it("rebuilds cached spatial bounds when registered node types change", async () => {
     const { app, factory } = fake();
     const nodeTypes = new NodeTypeRegistry();
@@ -165,6 +226,9 @@ describe("renderer-pixi vertical slice", () => {
 
     await expect(renderer.apply(update([node("fallible", "fallible", 2)], 2), { revision: 2, transactionId: "fail", origin: "api", addedNodeIds: [], updatedNodeIds: ["fallible"], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 })).rejects.toThrow("update failed");
     await expect(renderer.apply(update([node("fallible", "fallible", 3)], 3), { revision: 3, transactionId: "gap", origin: "api", addedNodeIds: [], updatedNodeIds: ["fallible"], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 })).resolves.toBe("rebuild-required");
+    await renderer.rebuild(doc([node("fallible", "fallible", 2)], 2));
+    await expect(renderer.apply(update([node("fallible", "fallible", 3)], 3), { revision: 3, transactionId: "recovered", origin: "api", addedNodeIds: [], updatedNodeIds: ["fallible"], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 })).resolves.toBe("applied");
+    expect(((renderer as any).entries.get("fallible").node as BoardNode).x).toBe(3);
     await renderer.destroy();
   });
   it("reacquires a same-ref preview on asset changes and releases both generations", async () => {

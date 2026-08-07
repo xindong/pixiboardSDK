@@ -38,6 +38,7 @@ export class PixiBoardRenderer {
   private visibleBounds?: WorldBounds;
   private viewportEpoch = 0;
   private destroyed = false;
+  private desynchronized = false;
   private viewFactory?: PixiViewFactory;
 
   constructor(options: PixiBoardRendererOptions) {
@@ -60,62 +61,73 @@ export class PixiBoardRenderer {
 
   async rebuild(snapshot: Readonly<BoardDocument>): Promise<void> {
     this.assertAlive();
-    this.revision = snapshot.revision;
-    this.nodesById.clear();
-    for (const node of snapshot.nodes) this.nodesById.set(node.id, node);
-    this.rebuildSpatialIndex(snapshot);
-    this.refreshDesiredIds();
-    for (const id of new Set([...this.entries.keys(), ...this.operations.keys()])) await this.destroyView(id);
-    await this.reconcileActiveSet(++this.viewportEpoch);
+    try {
+      this.revision = snapshot.revision;
+      this.nodesById.clear();
+      for (const node of snapshot.nodes) this.nodesById.set(node.id, node);
+      this.rebuildSpatialIndex(snapshot);
+      this.refreshDesiredIds();
+      for (const id of new Set([...this.entries.keys(), ...this.operations.keys()])) await this.destroyView(id);
+      await this.reconcileActiveSet(++this.viewportEpoch);
+      this.desynchronized = false;
+    } catch (error) {
+      this.desynchronized = true;
+      throw error;
+    }
   }
 
   async apply(update: BoardDocumentUpdate, changeSet: BoardChangeSet): Promise<RendererApplyResult> {
     this.assertAlive();
-    if (this.revision === undefined || changeSet.revision !== this.revision + 1 || changeSet.revision !== update.revision) {
+    if (this.desynchronized || this.revision === undefined || changeSet.revision !== this.revision + 1 || changeSet.revision !== update.revision) {
       return "rebuild-required";
     }
 
-    const touchedIds = new Set([...changeSet.addedNodeIds, ...changeSet.updatedNodeIds, ...changeSet.assetChangedNodeIds]);
-    const nextNodes = new Map<string, Readonly<BoardNode>>();
-    for (const node of update.changedNodes) if (touchedIds.has(node.id)) nextNodes.set(node.id, node);
-    for (const id of touchedIds) {
-      if (!nextNodes.has(id)) throw new Error(`Renderer update is missing changed node: ${id}`);
-    }
-    const addedIds = new Set(changeSet.addedNodeIds);
-    const updatedIds = new Set(changeSet.updatedNodeIds);
-    const assetChangedIds = new Set(changeSet.assetChangedNodeIds);
-
-    for (const id of changeSet.removedNodeIds) {
-      this.nodesById.delete(id);
-      this.desiredIds.delete(id);
-      this.spatialIndex.remove(id);
-      await this.destroyView(id);
-    }
-    for (const id of touchedIds) {
-      const node = nextNodes.get(id);
-      if (!node) continue;
-      this.nodesById.set(id, node);
-      const item = { ...this.getBounds(node), id };
-      if (addedIds.has(id)) this.spatialIndex.insert(item);
-      else if (updatedIds.has(id)) this.spatialIndex.update(item);
-    }
-
-    const customVisibleCandidates = this.visibleBounds && this.options.cullingQuery
-      ? new Set(this.options.cullingQuery(this.visibleBounds))
-      : undefined;
-    for (const id of touchedIds) {
-      const node = this.nodesById.get(id);
-      const desired = Boolean(node && this.isNodeDesired(node, customVisibleCandidates));
-      if (desired) this.desiredIds.add(id);
-      else this.desiredIds.delete(id);
-      if (!node || !desired) {
-        await this.destroyView(id);
-        continue;
+    try {
+      const touchedIds = new Set([...changeSet.addedNodeIds, ...changeSet.updatedNodeIds, ...changeSet.assetChangedNodeIds]);
+      const nextNodes = new Map<string, Readonly<BoardNode>>();
+      for (const node of update.changedNodes) if (touchedIds.has(node.id)) nextNodes.set(node.id, node);
+      for (const id of touchedIds) {
+        if (!nextNodes.has(id)) throw new Error(`Renderer update is missing changed node: ${id}`);
       }
-      await this.ensureView(node, assetChangedIds.has(id));
+      const addedIds = new Set(changeSet.addedNodeIds);
+      const updatedIds = new Set(changeSet.updatedNodeIds);
+      const assetChangedIds = new Set(changeSet.assetChangedNodeIds);
+
+      for (const id of changeSet.removedNodeIds) {
+        this.nodesById.delete(id);
+        this.desiredIds.delete(id);
+        this.spatialIndex.remove(id);
+        await this.destroyView(id);
+      }
+      for (const id of touchedIds) {
+        const node = nextNodes.get(id);
+        if (!node) continue;
+        this.nodesById.set(id, node);
+        const item = { ...this.getBounds(node), id };
+        if (addedIds.has(id)) this.spatialIndex.insert(item);
+        else if (updatedIds.has(id)) this.spatialIndex.update(item);
+      }
+
+      const customVisibleCandidates = this.visibleBounds && this.options.cullingQuery && touchedIds.size > 0
+        ? this.visibleCandidatesFor(touchedIds)
+        : undefined;
+      for (const id of touchedIds) {
+        const node = this.nodesById.get(id);
+        const desired = Boolean(node && this.isNodeDesired(node, customVisibleCandidates));
+        if (desired) this.desiredIds.add(id);
+        else this.desiredIds.delete(id);
+        if (!node || !desired) {
+          await this.destroyView(id);
+          continue;
+        }
+        await this.ensureView(node, assetChangedIds.has(id));
+      }
+      this.revision = update.revision;
+      return "applied";
+    } catch (error) {
+      this.desynchronized = true;
+      throw error;
     }
-    this.revision = update.revision;
-    return "applied";
   }
 
   async setVisibleBounds(bounds: WorldBounds | undefined): Promise<void> {
@@ -309,6 +321,25 @@ export class PixiBoardRenderer {
     if (!this.visibleBounds) return true;
     if (customVisibleCandidates) return customVisibleCandidates.has(node.id);
     return intersects(this.getBounds(node), this.visibleBounds);
+  }
+
+  private visibleCandidatesFor(touchedIds: ReadonlySet<string>): ReadonlySet<string> {
+    const candidates = this.options.cullingQuery!(this.visibleBounds!);
+    const has = (candidates as Iterable<string> & { has?: (id: string) => boolean }).has;
+    if (typeof has === "function") {
+      const visibleIds = new Set<string>();
+      for (const id of touchedIds) if (has.call(candidates, id)) visibleIds.add(id);
+      return visibleIds;
+    }
+
+    const pending = new Set(touchedIds);
+    const visibleIds = new Set<string>();
+    for (const id of candidates) {
+      if (!pending.delete(id)) continue;
+      visibleIds.add(id);
+      if (pending.size === 0) break;
+    }
+    return visibleIds;
   }
 
   private rebuildSpatialIndex(snapshot: Readonly<BoardDocument>): void {

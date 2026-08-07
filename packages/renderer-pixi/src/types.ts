@@ -22,7 +22,14 @@ export type RendererResourceScope = {
 export type PixiNodeRendererContext = { signal: AbortSignal; assets: { acquireTexture(ref: AssetRef, options?: Record<string, unknown>): Promise<TextureLease> }; resources: RendererResourceScope; invalidate(): void; lod: { level?: number; scale?: number }; diagnostics: RendererDiagnostics; display: PixiViewFactory };
 export type PixiNodeView<State = unknown> = { displayObject: PixiDisplayObject; state: State };
 export type PixiNodeRenderer<Props extends JsonValue = JsonValue, State = unknown> = { create(node: Readonly<BoardNode<Props>>, context: PixiNodeRendererContext): PixiNodeView<State> | Promise<PixiNodeView<State>>; update(view: PixiNodeView<State>, node: Readonly<BoardNode<Props>>, context: PixiNodeRendererContext): void | Promise<void>; destroy(view: PixiNodeView<State>, context: PixiNodeRendererContext): void; hitTest?(node: Readonly<BoardNode<Props>>, worldPoint: Point): boolean };
-export type CullingQuery = (bounds: WorldBounds) => Iterable<string>;
+/**
+ * A culling result may expose `has` so incremental document changes can test
+ * only the changed ids. Plain arrays/generators remain accepted for existing
+ * callers; the renderer consumes those lazily and stops once all changed ids
+ * have been classified.
+ */
+export type CullingCandidates = Iterable<string> & { has?: (id: string) => boolean };
+export type CullingQuery = (bounds: WorldBounds) => CullingCandidates;
 export type SpatialIndexItem = WorldBounds & { id: string };
 export type SpatialIndex = {
   rebuild(items: readonly SpatialIndexItem[]): void;
