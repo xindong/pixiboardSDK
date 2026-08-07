@@ -3,7 +3,7 @@ import {
   NodeTypeNotRegisteredError,
   NodeValidationError,
 } from "./errors";
-import { assertJsonValue, cloneValue } from "./json";
+import { assertJsonValue, cloneValue, deepFreeze } from "./json";
 import type {
   BoardNode,
   JsonValue,
@@ -34,20 +34,21 @@ export class NodeTypeRegistry {
     options: RegisterNodeTypeOptions = {},
   ): () => void {
     assertDefinition(definition);
-    const existing = this.definitions.get(definition.type);
+    const registered = freezeDefinition(definition);
+    const existing = this.definitions.get(registered.type);
     if (existing && !options.replace) {
-      throw new NodeValidationError(`Node type is already registered: ${definition.type}`);
+      throw new NodeValidationError(`Node type is already registered: ${registered.type}`);
     }
     if (existing && options.replace && !this.development) {
       throw new NodeValidationError(
-        `Replacing node type definitions is only allowed in development: ${definition.type}`,
+        `Replacing node type definitions is only allowed in development: ${registered.type}`,
       );
     }
 
-    this.definitions.set(definition.type, definition as RegisteredDefinition);
+    this.definitions.set(registered.type, registered);
     return () => {
-      if (this.definitions.get(definition.type) === definition) {
-        this.definitions.delete(definition.type);
+      if (this.definitions.get(registered.type) === registered) {
+        this.definitions.delete(registered.type);
       }
     };
   }
@@ -163,6 +164,24 @@ function assertDefinition<Props extends JsonValue>(definition: NodeTypeDefinitio
       `Node type ${definition.type} must define validate() and getBounds()`,
     );
   }
+  if (definition.defaults !== undefined) {
+    assertJsonValue(definition.defaults, `${definition.type}.defaults`);
+  }
+}
+
+function freezeDefinition<Props extends JsonValue>(
+  definition: NodeTypeDefinition<Props>,
+): RegisteredDefinition {
+  const registered = {
+    ...definition,
+    ...(definition.defaults === undefined
+      ? {}
+      : { defaults: deepFreeze(cloneValue(definition.defaults)) }),
+    ...(definition.resize === undefined
+      ? {}
+      : { resize: Object.freeze({ ...definition.resize }) }),
+  };
+  return Object.freeze(registered) as RegisteredDefinition;
 }
 
 function mergeDefaults<Props extends JsonValue>(

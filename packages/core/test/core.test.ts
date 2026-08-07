@@ -98,6 +98,12 @@ describe("BoardCore document store and node registry", () => {
     expect(core.nodes.get<TaskProps>("a")?.props).toEqual({ status: "todo", title: "A" });
     expect(core.document.toJSON().nodes.map(({ id }) => id)).toEqual(["b", "a"]);
     expect(() => registry.register(taskDefinition())).toThrow(NodeValidationError);
+    const mutableDefinition = taskDefinition();
+    const isolatedRegistry = new NodeTypeRegistry();
+    isolatedRegistry.register(mutableDefinition);
+    mutableDefinition.version = 99;
+    expect(isolatedRegistry.require("acme.task-card").version).toBe(1);
+    expect(Object.isFrozen(isolatedRegistry.require("acme.task-card"))).toBe(true);
     expect(() =>
       core.nodes.create<TaskProps>({
         id: "bad",
@@ -207,7 +213,7 @@ describe("transactions and ChangeSet", () => {
         await gate;
         core.nodes.update("a", { x: 901 });
       }),
-    ).toThrow("Transaction callbacks must be synchronous");
+    ).toThrow("Core transaction callbacks must be synchronous");
 
     expect(core.document.toJSON()).toEqual(before);
     expect(core.history.canUndo()).toBe(false);
@@ -215,6 +221,30 @@ describe("transactions and ChangeSet", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(core.document.toJSON()).toEqual(before);
+  });
+
+  it("rejects selection and viewport mutations inside a document transaction", () => {
+    const core = createCore();
+    registerTasks(core);
+    createTask(core, "a");
+    core.history.clear();
+    const viewport = core.viewport.get();
+
+    expect(() =>
+      core.transaction("Mixed selection", () => {
+        core.nodes.update("a", { x: 500 });
+        core.selection.set(["a"]);
+      }),
+    ).toThrow("Selection and viewport cannot change");
+    expect(core.nodes.get("a")?.x).toBe(10);
+    expect(core.selection.get()).toEqual([]);
+
+    expect(() =>
+      core.transaction("Mixed viewport", () => {
+        core.viewport.panBy(100, 100);
+      }),
+    ).toThrow("Selection and viewport cannot change");
+    expect(core.viewport.get()).toEqual(viewport);
   });
 
   it("isolates listener failures from committed document and history state", () => {

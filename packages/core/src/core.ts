@@ -129,6 +129,7 @@ export class BoardCore {
     this.viewportState = new ViewportController(
       document.viewport ?? { scale: 1, offset: { x: 0, y: 0 } },
       options.viewportSize,
+      () => this.assertSessionMutationAllowed(),
     );
 
     coreInternals.set(this, {
@@ -144,7 +145,10 @@ export class BoardCore {
         this.recordPatch(transaction, forward, inverse),
     });
 
-    this.selection = new SelectionController((id) => this.currentStore().getNode(id) !== undefined);
+    this.selection = new SelectionController(
+      (id) => this.currentStore().getNode(id) !== undefined,
+      () => this.assertSessionMutationAllowed(),
+    );
     this.viewport = new BoardViewportController(this, this.viewportState);
     const history = createHistoryController({
       applyHistoryEntry: (entry, direction) => this.applyHistoryEntry(entry, direction),
@@ -202,7 +206,7 @@ export class BoardCore {
             this.rejectedAsyncTransactionCallbacks -= 1;
           });
         throw new TransactionConflictError(
-          "Transaction callbacks must be synchronous; await the transaction result instead",
+          "Core transaction callbacks must be synchronous",
         );
       }
       this.activeTransaction = undefined;
@@ -215,7 +219,7 @@ export class BoardCore {
   }
 
   private applyHistoryEntry(entry: HistoryEntry, direction: "undo" | "redo"): BoardChangeSet {
-    if (this.activeTransaction) {
+    if (this.activeTransaction || this.rejectedAsyncTransactionCallbacks > 0) {
       throw new TransactionConflictError("History cannot run during a transaction");
     }
     const transaction: ActiveTransaction = {
@@ -269,7 +273,7 @@ export class BoardCore {
   }
 
   private loadDocument(input: unknown, options: DocumentLoadOptions = {}): BoardChangeSet {
-    if (this.activeTransaction) {
+    if (this.activeTransaction || this.rejectedAsyncTransactionCallbacks > 0) {
       throw new TransactionConflictError("A document cannot be loaded during a transaction");
     }
     if (options.replaceHistory === false) {
@@ -371,6 +375,14 @@ export class BoardCore {
     }
     for (const [type, nodeIds] of missing) {
       this.events.emit("node-type:missing", { type, nodeIds: [...nodeIds] });
+    }
+  }
+
+  private assertSessionMutationAllowed(): void {
+    if (this.activeTransaction || this.rejectedAsyncTransactionCallbacks > 0) {
+      throw new TransactionConflictError(
+        "Selection and viewport cannot change during a document transaction",
+      );
     }
   }
 }
