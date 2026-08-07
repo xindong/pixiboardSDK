@@ -14,10 +14,32 @@ importers:
 
   apps/benchmark: {}
 
+  apps/examples-desktop-sdk:
+    dependencies:
+      '@pixi-board/agent-tools':
+        specifier: workspace:*
+        version: link:../../packages/agent-tools
+      '@pixi-board/capabilities':
+        specifier: workspace:*
+        version: link:../../packages/capabilities
+      '@pixi-board/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pixi-board/plugin-api-v3':
+        specifier: workspace:*
+        version: link:../../packages/plugin-api-v3
+      pixiboardjs:
+        specifier: workspace:*
+        version: link:../../packages/pixiboardjs
+    devDependencies:
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7
+
   apps/examples-vanilla:
     dependencies:
       pixiboardjs:
-        specifier: 0.1.0-alpha.0
+        specifier: workspace:*
         version: link:../../packages/pixiboardjs
     devDependencies:
       '@pixi-board/renderer-pixi':
