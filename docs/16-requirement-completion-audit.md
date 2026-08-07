@@ -1,44 +1,44 @@
 # Requirement-by-requirement completion audit
 
-审计基线：`main` / `029ad01`（2026-08-07）。本矩阵只接受源码、测试、可重复命令输出或明确产物作为证据；`docs/09`、`docs/14` 中的 roadmap、session 状态和“已合并”描述不单独构成完成证据。
+审计基线：`main` / `4ceba41`（2026-08-07）。本矩阵只把当前主分支中可定位的源码、测试、提交产物或可重复命令作为证据；roadmap、session 状态和“已合并”描述本身不构成完成证据。
 
 状态含义：
 
-- **achieved**：当前范围内有直接、可定位的实现与测试证据。
-- **partial**：有垂直切片或局部证据，但未覆盖 roadmap 的完整验收范围；包含已有 gate 但仍被阻断的情况。
-- **missing**：没有实现、产物或可复核验收证据。
+- **achieved**：当前范围有直接实现与可定位验收证据。
+- **partial**：已有垂直切片、配置或局部验收，但完整 gate 仍有明确缺口。
+- **missing**：没有实现或没有可复核验收证据。
 
 ## Completion matrix
 
 | Requirement | Status | Evidence | Missing acceptance / next gate |
 |---|---|---|---|
-| P0：SDK Document 格式边界与旧格式拒绝 | **achieved** | Core 与 Facade 只接受当前 SDK `BoardDocument`；测试覆盖旧/future schema、旧顶层 `assetId`、已注册 node typeVersion 不匹配。`DocumentMigrationRegistry`、node migration callback 和 `migrate` load option 已删除。 | schemaVersion/typeVersion 变化时必须继续明确拒绝不匹配输入；不得重新加入 legacy adapter。 |
-| P1：Headless Core 基础契约 | **achieved** | `packages/core/src/*` 无 DOM/Pixi/Tauri/plugin import；Core 26/26 覆盖 CRUD、transaction、undo/redo、immutable snapshot、ChangeSet、格式拒绝与 100k 性能。100k 单更新 p95 `0.42ms`、1000 节点 batch p95 `32.16ms`。 | 保持 `<2ms` / `<50ms` 回归门，并继续验证 history 与 detached snapshot 语义。 |
-| Unknown node preservation | **achieved（当前格式语义）** | `packages/core/test/core.test.ts` 的 unknown-node round-trip：触发 `node-type:missing`，允许 geometry update，拒绝 props update，保留 nested props、asset/custom fields；`packages/renderer-pixi/test/renderer.test.ts` 覆盖 unknown placeholder。 | 仅需在合法的当前 SDK Document fixture 中保持该行为；不能据此接受 legacy document。 |
-| P2：Pixi renderer/custom node vertical slice | **partial** | `packages/renderer-pixi/test/renderer.test.ts` 覆盖 registry、incremental ChangeSet、culling/spatial、unknown placeholder、异步 destroy race、texture lease、hit-test、capture、task-card recreate。`tests/browser/browser-contract.spec.ts` 与 `apps/examples-vanilla/src/browser-contract.js` 定义 WebGL recovery。 | 缺真实 benchmark 阈值、media-heavy、双实例压力和长时间 resource soak。Browser gate 默认可 skip；需 `PIXIBOARD_REQUIRE_BROWSER=1`/CI 的实际成功输出。 |
-| P3：Facade/desktop scoped parity | **partial** | Facade 9/9；共享 adapter suite + Browser/Tauri 共 26 tests；Desktop 示例 4/4。存在真实 Tauri app，macOS `cargo test` 与二进制 `--smoke` 成功；项目切换先销毁旧 facade/lease。 | Windows 当前只有 CI 配置；media preview/playback/capture 与更完整的 clipboard/rename 产品交互仍由 Renderer/media gate 验收。 |
-| P4：Core ↔ Capabilities ↔ Agent 等价 | **achieved（direct path）** | `packages/agent-tools/src/contract.test.ts` 对 direct Core、Capabilities、Agent 的最终 document/revision/ChangeSet/undo/redo 做相等断言；也覆盖 source asset+node 单 transaction、requestId、错误映射。 | MCP transport 不在此结论内。 |
-| Plugin API v3 contract | **partial** | private v3 host 已覆盖 packaged directory loader、旧/v2 zip 拒绝、permission preflight、path/symlink 防护、生命周期与 UI/Agent/Plugin ChangeSet 等价。 | public `@pixi-board/plugin-sdk` 的真实 dist、API report、外部安装 fixture 尚待 release gate 合并通过。 |
-| MCP direct-vs-transport equivalence | **achieved（transport scope）** | `packages/mcp-host/src/index.ts` 提供 MCP host、stdio line round-trip 与 HTTP `Request`/`Response` handler；契约测试对同一输入断言 direct Agent、stdio、HTTP 的 document、revision、ChangeSet、history、persistence 与错误语义一致。 | 真实 child-process stdio/socket deployment smoke 仍属于宿主集成 gate；本实现只接受 SDK 当前 Document，不承担旧数据兼容或迁移。 |
-| P5：Browser adapter vertical slice | **achieved（capability scope）** | Browser adapter 17/17，覆盖当前 Document、File/Blob/Text/URL import、image/video/audio/text asset+node transaction、OPFS/IndexedDB、CAS/quota、download/export、derivative GC；Chromium 5/5 覆盖真实 IndexedDB、焦点/clipboard、多实例与 WebGL recovery。 | 可发布 web bundle 仍由 P6 验证；Renderer media-heavy 生命周期归 P2 gate。 |
-| P6：npm pack / external consumer release gate | **partial** | `scripts/check-release-gate.mjs` 会阻断 `.ts` runtime exports、internal/private deps、`0.0.0` placeholders；`docs/15-release-gate.md` 明确当前 gate blocked。实际 `pnpm release:check` 在 2026-08-07 因 `ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL`（缺安装 workspace dependency）退出 1。 | 先提供 publishable JS + `.d.ts` + 正式 dependency versions，再运行 clean external Node/Vite consumer。 |
-| SemVer / API report / Changesets / bundle budget | **missing** | `packages/pixiboardjs/VERSIONING.md` 只有策略 prose；仓库无 `.changeset/`、API Extractor/report、生成 CHANGELOG 或 bundle budget check。 | 增加配置、生成物和 CI/RC gate；分别管理 SDK semver、schemaVersion、node typeVersion、plugin apiVersion、Agent schema。 |
-| P7：deterministic performance thresholds | **partial** | 可执行 Node/instrumented harness 已覆盖 10k/50k/100k、Core/空间索引/culling/update/batch 与 100-cycle soak；Core 100k latency 目标已达成，报告保留旧基线的真实失败值。 | Browser/WebGL frame、capture、matched Konva、受控 heap/GPU 指标与 nightly regression 尚未全部交付。 |
-| Konva comparison | **missing** | `docs/10-performance-benchmarks.md` 只有公平对照政策；无 Konva adapter、matching dataset 或结果文件。 | 在同节点数/可见密度/素材/DPR/viewport/path/runtime 下产出可复核 Pixi vs Konva 数据，只做适用场景结论。 |
-| Memory/texture/listener soak | **partial** | Node/instrumented harness 执行 100-cycle create/destroy，listener/ticker/observer/view/texture lease 每轮回到零；regression comparator 阻断 >10% p95 回归和 observed→not-observed。 | 仍需真实 Chromium media-heavy、多实例/rapid view churn soak，并接入 nightly。 |
+| Current-document-only boundary | **achieved** | `docs/adr/0011-new-document-format-only.md` 冻结只支持 SDK 自身新格式；`packages/core/src/document-validation.ts` 拒绝 older/newer schema、旧顶层 `assetId`；当前 Core 不包含 document/node migration surface。`packages/core/test/core.test.ts` 覆盖 future/older schema、legacy `assetId` 和 split snapshot 拒绝。 | schemaVersion/typeVersion 改动时继续保持明确拒绝；不得重新加入 legacy adapter 或隐式转换。 |
+| Headless Core | **achieved** | `packages/core/src/*` 没有 DOM/Pixi/Tauri/plugin 依赖；`packages/core/test/core.test.ts` 覆盖 CRUD、Map/index store、transaction atomicity、async transaction 防延迟写入、undo/redo、immutable snapshot、ChangeSet、unknown node 和非 JSON 输入；`packages/core/test/performance.test.ts` 提供 deterministic Core 性能契约。 | 继续保持 Core 与平台层隔离，并把性能回归接入稳定 CI gate。 |
+| Unknown node / custom node current-format contract | **achieved（当前格式语义）** | Core unknown-node 测试覆盖 missing event、geometry update、props 禁写和 JSON round-trip；`packages/renderer-pixi/test/renderer.test.ts` 与 `apps/examples-custom-node/test/custom-node.test.ts` 覆盖 placeholder、注册后恢复、task-card 生命周期。 | 该行为只适用于外层已通过当前 Document 校验的节点；不能据此接受旧格式。 |
+| Core ↔ Capabilities ↔ Agent equivalence | **achieved** | `packages/capabilities/src/contract.test.ts` 覆盖单 transaction、no-op、abort、headless availability 和错误；`packages/agent-tools/src/contract.test.ts` 对 direct Core、Capabilities、Agent 的 document/revision/ChangeSet/undo/redo、requestId 和 source asset+node 单提交做等价断言。 | MCP transport 的部署证据单独见下一行；不能复制第二套写入链。 |
+| MCP direct / real deployment equivalence | **achieved** | `packages/mcp-host/src/contract.test.ts` 覆盖 direct Agent、stdio、HTTP handler 的同输入语义；`packages/mcp-host/src/deployment.test.ts` 真实 spawn child stdio、loopback HTTP socket、帧顺序、JSON-RPC 错误、stdin/socket abort 和无 late write/save；`docs/17-mcp-transport-audit.md` 记录边界。 | 后续宿主集成仍需在目标产品环境重复 smoke；MCP 不承担旧 Document 迁移。 |
+| Plugin API v3 / public Plugin SDK | **achieved（contract scope）** | `packages/plugin-sdk/src/index.ts` 只公开 v3 facade，`packages/plugin-sdk/test/contract.test.ts` 验证 `definePlugin` typed surface；`packages/plugin-api-v3/src/packaged-host.test.ts` 覆盖 packaged directory loader、v2/legacy zip 拒绝、权限、path/symlink 防护、生命周期和 UI/Agent/Plugin ChangeSet 等价。 | public dist、外部安装和 tarball 证据归 release gate，不把旧插件迁移或 v2 adapter 纳入 SDK。 |
+| Browser persistence / Web adapter | **achieved（adapter scope）** | `packages/adapter-browser/test/browser-persistence-adapter.test.ts` 覆盖当前 Document round-trip、CAS、quota retry、OPFS/IndexedDB fallback、imports、derivative GC、URL lease 和 destroy；`tests/browser/browser-contract.spec.ts` 覆盖真实 Chromium IndexedDB、focus/clipboard、多实例和 WebGL recovery。 | 可发布 web bundle 仍需通过 P6 release gate；媒体 decode/playback 不由 adapter contract 单独证明。 |
+| Browser/WebGL renderer acceptance | **partial** | `docs/benchmarks/2026-08-07-renderer-browser-acceptance.json` 记录 Chromium + Pixi WebGL 的 incremental create/update/delete、texture race、dual instance、capture、100-cycle destroy 和 100/500/2000 image + 1/4/8 video adapter-scale 验收；真实运行使用 SwiftShader。 | media-heavy 仍是 adapter/preview lease，不是实际媒体 decode/playback；GPU memory、draw calls、idle CPU/GPU 和硬件 GPU throughput 未观测。 |
+| Desktop/Tauri SDK integration | **partial** | `packages/adapter-tauri/test/tauri-adapter.test.ts`、`apps/examples-desktop-sdk/test/desktop-sdk.test.ts` 与 `project-session-controller.test.ts` 覆盖当前 Document persistence、UI/Agent/Plugin v3 ChangeSet、v2 拒绝和 project switch 前 destroy；`.github/workflows/desktop-launch-smoke.yml` 配置 macOS/Windows smoke；docs 记录 macOS cargo/binary smoke。 | Windows 只有 workflow 配置，尚无本审计可复核的成功日志；完整产品媒体 preview/playback/clipboard parity 仍未完成。 |
+| Public release gate (`npm pack` / external consumer) | **partial** | `scripts/check-release-gate.mjs` 已实现三 public packages 的 artifact、packed exports、workspace protocol、private dependency、API report、bundle budget 和仓库外 Node/Vite consumer 检查；`docs/15-release-gate.md` 记录 gate 语义。当前 `pnpm release:check` 明确因 `dist/*` 尚未生成而在 pack 前阻断。 | 先运行 `pnpm build:release` 生成 publishable JS + `.d.ts`，再完成真实 tarball、Node import、Vite build、API diff 和 bundle budget。 |
+| SemVer / Changesets / API report / bundle budget | **partial** | `.changeset/config.json`、`.changeset/p6-publishability.md`、三个 public package 的 `CHANGELOG.md`、`api-extractor.json`、committed `etc/*.api.md` 和 `bundle-budget.json` 已存在；`scripts/check-api-report.mjs` 与 `scripts/check-bundle-budget.mjs` 已接入 release gate。 | 没有 dist 时不能证明 production API Extractor/bundle compare 已成功；需要把这些检查纳入 CI/RC 并记录通过输出。 |
+| Deterministic Core/renderer benchmark | **partial** | `apps/benchmark/src/*` 和 `apps/benchmark/test/*` 提供 1k/10k/50k/100k synthetic-card、Core/spatial/culling/update/batch、facade single-save 和 100-cycle lifecycle harness；`docs/benchmarks/2026-08-07-node-instrumented-summary.json` 保留真实 p95 与 observed/notObserved 字段。 | 当前 Core p95 与原始 `<2ms`/`<50ms` 目标仍失败；不能把 instrumented adapter 当真实 WebGL frame 或 GPU 证据。 |
+| Media-heavy real renderer | **partial** | Chromium report 有 100/500/2000 image 和 1/4/8 video 的可见集/lease/destroy 结果，且保留 limitations。 | 尚未验证真实媒体 decode/playback、显存和长时间 media churn；必须由真实 browser/nightly/RC gate 补齐。 |
+| Konva comparison | **missing** | `docs/10-performance-benchmarks.md` 只有公平对照政策；仓库没有 matching Konva adapter、固定路径数据集或结果文件。 | 在同节点数、可见密度、素材、DPR、viewport、浏览器和 pan/zoom path 下产出可复核 Pixi vs Konva p50/p95/p99。 |
+| Nightly regression gate | **missing** | 当前仅有 `.github/workflows/desktop-launch-smoke.yml`；没有可复核的 nightly 100k/WebGL/media-heavy/soak workflow 或成功日志。 | 增加 nightly browser/WebGL、100k benchmark、memory/destroy soak、Rust/plugin/Agent/MCP integration，并保存结果与阈值。 |
+| Browser boundary / platform isolation | **achieved（static boundary）** | `scripts/check-browser-boundary.mjs` 从 `packages/pixiboardjs/src/browser.ts` 递归检查源码依赖并拒绝 Tauri；`tests/browser/browser-contract.spec.ts` 还断言网络资源不请求 Tauri。 | 每次新增 browser entry 或 adapter 时继续运行 boundary check；这不代表 release tarball 已通过。 |
 
-## Commands run
+## Commands run for this audit
 
 | Command | Result | Interpretation |
 |---|---|---|
-| `pnpm docs:check` | pass：30 required files、41 Markdown files、local links verified | 文档结构与 current-document-only policy checks 通过，不代表剩余产品 requirements 完成。 |
-| `pnpm packages:check` | pass：workspace、public exports、MCP boundary、fixtures、executable benchmark gates | 静态 package 边界通过；发布物仍由 release gate 证明。 |
-| `pnpm audit:requirements` | pass（报告型脚本） | 输出本矩阵的静态 evidence/status；不会把计划行当完成。 |
-| `git diff --check` | pass | 本次 docs/ADR/audit/check scripts 改动无 whitespace error。 |
-| `pnpm release:check` | exit 1：`ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL`，`@pixi-board/adapter-browser` 未安装 | release gate 有脚本但当前仍未通过；没有 external consumer pass。 |
-| Core / Capabilities / Agent / Facade / Renderer / MCP | pass：26 + 4 + 6 + 9 + 10 + 6 tests | 当前主分支实际执行通过。 |
-| Browser / adapters / Desktop | Chromium 5/5；adapter 26 tests；Desktop 4/4；macOS Cargo smoke pass | Windows 仅 CI 配置，不能视为本机实测。 |
+| `pnpm audit:requirements` | pass：输出本矩阵的静态 evidence/status | 只检查可定位源码、测试、配置和产物；不会把 roadmap 行当完成。 |
+| `pnpm docs:check` | pass：30 required files、49 Markdown files、all local links verified | 文档结构与 local-link 检查通过，不等价于剩余产品 requirements 完成。 |
+| `pnpm packages:check` | pass：workspace/public exports/MCP boundary/fixtures/benchmark gates | 这是 package 结构门，不等价于 npm tarball 成功。 |
+| `pnpm release:check` | blocked before pack：三个 public package 的 `dist/*.js`/`dist/*.d.ts` 尚不存在 | 当前 release gate 是 partial；本审计不伪造 external consumer 或 API/bundle pass。 |
+| `git diff --check` | pass | 审计文档和脚本无 whitespace error。 |
 
 ## Audit rule
 
-`docs/14-parallel-execution.md` 的 commit/session 汇总只说明工作线声称合并；它不能替代测试输出、fixture、发布物或性能数据。当前仍不得提前标记完成的重点是 public release artifact/API report、matched Konva/WebGL、Renderer media-heavy soak、Windows CI 与最终 nightly/RC gate。旧数据 migration/round-trip 不属于完成条件。
+本审计明确区分“实现/契约存在”和“真实环境 gate 已通过”。当前可以确认的是新 Document 边界、Core/Capabilities/Agent、MCP real deployment、Plugin API v3 contract、Browser adapter、Desktop scoped fixture 以及 release gate 脚本已经落地；仍不能提前标记完成的是 public tarball/external consumer、Konva 对照、nightly、真实 media-heavy decode/playback、GPU/heap 指标和 Windows 成功 smoke。旧插件不迁移、不兼容、不重新打包，也不作为任何 SDK parity 证据。
