@@ -8,6 +8,19 @@ importers:
 
   .: {}
 
+  packages/adapter-browser:
+    dependencies:
+      '@pixi-board/core':
+        specifier: 0.0.0
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7
+
   packages/core:
     devDependencies:
       typescript:
