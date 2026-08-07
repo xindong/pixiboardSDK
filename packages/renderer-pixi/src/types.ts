@@ -3,6 +3,14 @@ export type PixiDisplayObject = { visible?: boolean; x?: number; y?: number; rot
 export type PixiApplication = { stage: PixiDisplayObject; init?(options?: Record<string, unknown>): Promise<void> | void; destroy?(removeView?: boolean): void; canvas?: unknown; view?: unknown };
 export type PixiViewFactory = { createContainer(): PixiDisplayObject; createRect?(width: number, height: number, fill: number | string): PixiDisplayObject; createImage?(ref: AssetRef | undefined, node: Readonly<BoardNode>): PixiDisplayObject | Promise<PixiDisplayObject>; createText?(text: string, style?: Record<string, unknown>): PixiDisplayObject };
 export type PixiApplicationFactory = () => PixiApplication | Promise<PixiApplication>;
+export type PixiRuntimeModule = {
+  Application: new () => PixiApplication;
+  Container: new (options?: Record<string, unknown>) => PixiDisplayObject;
+  Graphics: new () => PixiDisplayObject & { rect?(x: number, y: number, width: number, height: number): PixiDisplayObject; fill?(color: number | string): PixiDisplayObject };
+  Sprite: new (texture?: unknown) => PixiDisplayObject;
+  Text: new (options?: unknown) => PixiDisplayObject;
+  Texture: { from(source: unknown): unknown };
+};
 export type TextureLease = { texture?: unknown; release?: () => void };
 export type RendererDiagnostics = { creates: number; updates: number; destroys: number; lateUpdates: number };
 export type PixiNodeRendererContext = { signal: AbortSignal; assets: { acquireTexture(ref: AssetRef, options?: Record<string, unknown>): Promise<TextureLease> }; invalidate(): void; lod: { level?: number; scale?: number }; diagnostics: RendererDiagnostics; display: PixiViewFactory };

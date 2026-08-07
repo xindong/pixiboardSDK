@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BoardDocument, BoardNode } from "@pixi-board/core";
-import { NodeRendererRegistry, PixiBoardRenderer } from "../src/index";
+import { createPixiApplicationFactory, NodeRendererRegistry, PixiBoardRenderer } from "../src/index";
 
 const node = (id: string, type = "rect", x = 0): BoardNode => ({ id, type, typeVersion: 1, x, y: 0, width: 10, height: 10, rotation: 0, zIndex: 0, props: {} });
 const doc = (nodes: BoardNode[], revision = 0): BoardDocument => ({ schemaVersion: 1, revision, nodes, assets: [] });
@@ -40,7 +40,13 @@ describe("renderer-pixi vertical slice", () => {
   it("preserves custom builtins, releases image leases, and hit-tests by z order", async () => {
     const { app, factory } = fake(); const registry = new NodeRendererRegistry(); const release = vi.fn(); const custom = { create: () => ({ displayObject: factory.createContainer(), state: {} }), update: vi.fn(), destroy: vi.fn() }; registry.register("rect", custom as any);
     const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, registry, acquireTexture: async () => ({ texture: {}, release }) }); await renderer.init(); expect(renderer.registry.get("rect")).toBe(custom);
-    await renderer.rebuild(doc([{ ...node("low", "rect"), zIndex: 1 }, { ...node("img", "image", 0), zIndex: 2, assetRefs: { image: { assetId: "a" } } }, { ...node("high", "rect"), zIndex: 3 }], 1)); expect(renderer.hitTest({ x: 1, y: 1 })).toBe("high");
+    await renderer.rebuild(doc([{ ...node("low", "rect"), zIndex: 3 }, { ...node("same-later", "rect"), zIndex: 3 }, { ...node("img", "image", 0), zIndex: 2, assetRefs: { image: { assetId: "a" } } }], 1)); expect(renderer.hitTest({ x: 1, y: 1 })).toBe("same-later");
     await renderer.destroy(); expect(release).toHaveBeenCalledTimes(1);
+  });
+  it("exposes a lazy default PixiJS application factory without starting WebGL", () => {
+    const factory = createPixiApplicationFactory();
+    expect(typeof factory).toBe("function");
+    const renderer = new PixiBoardRenderer({});
+    expect(renderer.registry.has("rect")).toBe(true);
   });
 });
