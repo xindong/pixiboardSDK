@@ -30,7 +30,7 @@ const nodeReport = JSON.parse(await readFile(nodeReportPath, "utf8"));
 const blockers = validateNodeReport(nodeReport);
 let browserReport = null;
 
-if (profile !== "pr" && blockers.length === 0) {
+if (profile !== "pr") {
   const browserCode = await run(process.execPath, [resolve(root, "scripts/run-browser-benchmark-gate.mjs"), profile], {
     PIXIBOARD_BROWSER_GATE_REPORT: browserReportPath,
     PIXIBOARD_CANDIDATE_SHA: process.env.PIXIBOARD_CANDIDATE_SHA ?? process.env.CANDIDATE_SHA ?? "",
