@@ -1,10 +1,10 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { McpEnvelope, McpRequest } from "./index.ts";
 import { createDeploymentRuntime } from "./deployment-child.ts";
 
@@ -24,10 +24,14 @@ type Child = {
   process: ChildProcessWithoutNullStreams;
   statePath: string;
   stderr: () => string;
+  outputLines: () => readonly string[];
   nextLine(): Promise<string>;
   waitForStderr(text: string): Promise<void>;
   finish(): Promise<void>;
+  cleanup(): Promise<void>;
 };
+
+const activeChildren = new Set<Child>();
 
 function launch(mode: "stdio" | "http"): Child {
   const directory = mkdtempSync(join(tmpdir(), "pixiboard-mcp-"));
@@ -37,8 +41,9 @@ function launch(mode: "stdio" | "http"): Child {
   let stdout = "";
   let stderr = "";
   const lines: string[] = [];
-  const lineWaiters: Array<(line: string) => void> = [];
-  const stderrWaiters: Array<{ text: string; resolve: () => void }> = [];
+  const allLines: string[] = [];
+  const lineWaiters: Array<{ resolve: (line: string) => void; reject: (error: Error) => void }> = [];
+  const stderrWaiters: Array<{ text: string; resolve: () => void; reject: (error: Error) => void }> = [];
   childProcess.stdout.setEncoding("utf8");
   childProcess.stderr.setEncoding("utf8");
   childProcess.stdout.on("data", (chunk: string) => {
@@ -47,8 +52,9 @@ function launch(mode: "stdio" | "http"): Child {
     while (newline >= 0) {
       const line = stdout.slice(0, newline);
       stdout = stdout.slice(newline + 1);
+      allLines.push(line);
       const waiter = lineWaiters.shift();
-      if (waiter) waiter(line); else lines.push(line);
+      if (waiter) waiter.resolve(line); else lines.push(line);
       newline = stdout.indexOf("\n");
     }
   });
@@ -60,20 +66,36 @@ function launch(mode: "stdio" | "http"): Child {
   });
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
     childProcess.once("error", (error) => reject(new Error(`MCP ${mode} child failed to launch: ${error.message}\nFull stderr:\n${stderr}`)));
-    childProcess.once("exit", (code, signal) => resolve({ code, signal }));
+    childProcess.once("exit", (code, signal) => {
+      const error = new Error(`MCP ${mode} child exited before expected output with code ${code} signal ${signal ?? "none"}\nFull stderr:\n${stderr}`);
+      for (const waiter of lineWaiters.splice(0)) waiter.reject(error);
+      for (const waiter of stderrWaiters.splice(0)) waiter.reject(error);
+      resolve({ code, signal });
+    });
   });
-  return {
+  const child: Child = {
     process: childProcess,
     statePath,
     stderr: () => stderr,
-    nextLine: () => lines.length ? Promise.resolve(lines.shift()!) : new Promise((resolve) => lineWaiters.push(resolve)),
-    waitForStderr: (text) => stderr.includes(text) ? Promise.resolve() : new Promise((resolve) => stderrWaiters.push({ text, resolve })),
+    outputLines: () => allLines,
+    nextLine: () => lines.length ? Promise.resolve(lines.shift()!) : new Promise((resolve, reject) => lineWaiters.push({ resolve, reject })),
+    waitForStderr: (text) => stderr.includes(text) ? Promise.resolve() : new Promise((resolve, reject) => stderrWaiters.push({ text, resolve, reject })),
     finish: async () => {
       const result = await exited;
       if (result.code !== 0) throw new Error(`MCP ${mode} child exited with code ${result.code} signal ${result.signal ?? "none"}\nFull stderr:\n${stderr}`);
     },
+    cleanup: async () => {
+      if (childProcess.exitCode === null && childProcess.signalCode === null) childProcess.kill("SIGTERM");
+      await exited.catch(() => undefined);
+      rmSync(directory, { recursive: true, force: true });
+      activeChildren.delete(child);
+    },
   };
+  activeChildren.add(child);
+  return child;
 }
+
+afterEach(async () => { await Promise.all([...activeChildren].map((child) => child.cleanup())); });
 
 function state(child: Child): unknown { return JSON.parse(readFileSync(child.statePath, "utf8")); }
 function send(child: Child, value: unknown): void { child.process.stdin.write(`${typeof value === "string" ? value : JSON.stringify(value)}\n`); }
@@ -137,6 +159,7 @@ describe("MCP real deployment smoke", () => {
     await child.waitForStderr("REQUEST_STARTED");
     child.process.stdin.end();
     await child.finish();
+    expect(child.outputLines()).toEqual([]);
     expect(state(child)).toMatchObject({ revision: 0, changes: [], saves: [], history: [] });
   });
 
