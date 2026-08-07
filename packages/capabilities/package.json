@@ -1,6 +1,6 @@
 {
   "name": "@pixi-board/capabilities",
-  "version": "0.1.0-alpha.0",
+  "version": "0.0.0",
   "type": "module",
   "private": true,
   "dependencies": { "@pixi-board/core": "workspace:*" },

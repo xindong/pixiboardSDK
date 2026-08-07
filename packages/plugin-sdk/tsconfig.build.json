@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@pixi-board/plugin-api-v3": ["../plugin-api-v3/src/index.ts"],
+      "@pixi-board/capabilities": ["../capabilities/src/index.ts"],
+      "@pixi-board/core": ["../core/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

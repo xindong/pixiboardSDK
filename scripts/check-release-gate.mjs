@@ -9,6 +9,11 @@ const run = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageDir = resolve(root, "packages/pixiboardjs");
 const sourceManifest = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8"));
+const publicPackages = [
+  { name: "pixiboardjs", dir: packageDir, artifacts: ["dist/index.js", "dist/browser.js", "dist/node.js", "dist/types.js", "dist/index.d.ts", "dist/browser.d.ts", "dist/node.d.ts", "dist/types.d.ts"] },
+  { name: "@pixi-board/core", dir: resolve(root, "packages/core"), artifacts: ["dist/index.js", "dist/index.d.ts"] },
+  { name: "@pixi-board/plugin-sdk", dir: resolve(root, "packages/plugin-sdk"), artifacts: ["dist/index.js", "dist/index.d.ts"] },
+];
 const gateDir = await mkdtemp(join(tmpdir(), "pixiboardjs-release-gate-"));
 
 await main();
@@ -16,10 +21,12 @@ await main();
 async function main() {
 try {
   const artifactBlockers = [];
-  for (const target of ["dist/index.js", "dist/browser.js", "dist/node.js", "dist/types.js", "dist/index.d.ts", "dist/browser.d.ts", "dist/node.d.ts", "dist/types.d.ts"]) {
-    try { await readFile(join(packageDir, target)); } catch (error) {
-      if (error.code === "ENOENT") artifactBlockers.push(`missing release artifact: ${target}`);
-      else throw error;
+  for (const pkg of publicPackages) {
+    for (const target of pkg.artifacts) {
+      try { await readFile(join(pkg.dir, target)); } catch (error) {
+        if (error.code === "ENOENT") artifactBlockers.push(`${pkg.name}: missing release artifact: ${target}`);
+        else throw error;
+      }
     }
   }
   if (artifactBlockers.length) {
@@ -94,6 +101,7 @@ try {
     process.exitCode = 1;
   } else {
     await verifyExternalConsumers(tarball, gateDir);
+    await verifyApiReports();
     await run(process.execPath, [resolve(root, "scripts/check-api-report.mjs")], { cwd: root });
     await verifyBundleBudget();
     console.log("Release gate passed: packed manifest and external Node/Vite consumers are valid.");
@@ -107,21 +115,43 @@ async function verifyBundleBudget() {
   await run(process.execPath, [resolve(root, "scripts/check-bundle-budget.mjs")], { cwd: root });
 }
 
+async function verifyApiReports() {
+  for (const packageName of ["@pixi-board/core", "pixiboardjs", "@pixi-board/plugin-sdk"]) {
+    await run("pnpm", ["--filter", packageName, "exec", "api-extractor", "run", "--verbose"], { cwd: root });
+  }
+}
+
 async function verifyExternalConsumers(tarball, gateDir) {
   const fixture = join(gateDir, "consumer");
   await cp(resolve(root, "apps/examples-vanilla"), fixture, { recursive: true });
   const fixtureManifest = JSON.parse(await readFile(join(fixture, "package.json"), "utf8"));
-  fixtureManifest.dependencies = { pixiboardjs: `file:${tarball}` };
+  const publicTarballs = { pixiboardjs: tarball };
+  for (const pkg of publicPackages.slice(1)) {
+    const { stdout } = await run("pnpm", ["pack", "--pack-destination", gateDir, "--json"], { cwd: pkg.dir });
+    const info = JSON.parse(stdout);
+    publicTarballs[pkg.name] = resolve((Array.isArray(info) ? info[0] : info).filename);
+  }
+  fixtureManifest.dependencies = Object.fromEntries(Object.entries(publicTarballs).map(([name, file]) => [name, `file:${file}`]));
   fixtureManifest.devDependencies = Object.fromEntries(
     Object.entries(fixtureManifest.devDependencies ?? {}).filter(([, version]) => !String(version).startsWith("workspace:")),
   );
   await writeFile(join(fixture, "package.json"), `${JSON.stringify(fixtureManifest, null, 2)}\n`);
   await run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: fixture });
 
-  const imports = ["pixiboardjs", "pixiboardjs/browser", "pixiboardjs/node", "pixiboardjs/types"];
+  const imports = ["pixiboardjs", "pixiboardjs/browser", "pixiboardjs/node", "pixiboardjs/types", "@pixi-board/core", "@pixi-board/plugin-sdk"];
   const code = `for (const name of ${JSON.stringify(imports)}) await import(name); console.log('consumer node imports passed');`;
   const result = await run(process.execPath, ["--input-type=module", "-e", code], { cwd: fixture });
   process.stdout.write(result.stdout);
+
+  for (const [packageName, pkg] of Object.entries(publicTarballs)) {
+    const declarationFiles = pkg === publicTarballs.pixiboardjs ? ["dist/index.d.ts", "dist/browser.d.ts", "dist/node.d.ts", "dist/types.d.ts"] : ["dist/index.d.ts"];
+    for (const declarationFile of declarationFiles) {
+      const declaration = await readFile(join(fixture, "node_modules", packageName, declarationFile), "utf8");
+      if (/from ["']@pixi-board\/(adapter-browser|capabilities|renderer-pixi|plugin-api-v3)/.test(declaration)) {
+        throw new Error(`consumer declaration leaks a private workspace package: ${packageName}/${declarationFile}`);
+      }
+    }
+  }
 
   const port = 41_000 + (process.pid % 1_000);
   const vite = spawn(join(fixture, "node_modules/.bin/vite"), ["--host", "127.0.0.1", "--port", String(port), "--strictPort"], { cwd: fixture, stdio: "ignore" });

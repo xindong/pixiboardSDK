@@ -1,0 +1,31 @@
+{
+  "name": "@pixi-board/plugin-sdk",
+  "version": "0.1.0-alpha.0",
+  "description": "Public PixiBoardJS Plugin API v3 contract",
+  "type": "module",
+  "private": false,
+  "sideEffects": false,
+  "files": ["dist", "etc", "CHANGELOG.md"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "dependencies": {},
+  "devDependencies": {
+    "@pixi-board/plugin-api-v3": "workspace:*",
+    "@pixi-board/capabilities": "workspace:*",
+    "@pixi-board/core": "workspace:*",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2"
+  },
+  "scripts": {
+    "build": "tsup",
+    "api:report": "api-extractor run --verbose"
+  },
+  "publishConfig": { "access": "public" }
+}

@@ -14,8 +14,8 @@ encoded as one shared number:
 - Agent tool schema version.
 
 Changesets keeps `pixiboardjs` and `@pixi-board/core` in a fixed version group.
-Private workspace packages also use the current alpha train instead of `0.0.0`,
-but they are bundled into the main package and are not registry dependencies.
+Private workspace packages retain their internal versioning independently; they
+are bundled into the main package and are not registry dependencies.
 
 `pnpm release:check` verifies the real packed manifest and only runs external
 consumers when generated JavaScript, declarations and API reports exist. It does

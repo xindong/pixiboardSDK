@@ -7,5 +7,13 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": []
+  "ignore": [
+    "@pixi-board/adapter-browser",
+    "@pixi-board/agent-tools",
+    "@pixi-board/capabilities",
+    "@pixi-board/plugin-api-v3",
+    "@pixi-board/renderer-pixi",
+    "pixiboardjs-example-desktop-sdk",
+    "pixiboardjs-example-vanilla"
+  ]
 }
