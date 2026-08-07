@@ -1,27 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
-import { NodeTypeRegistry, type BoardChangeSet, type BoardCore, type NodeTypeDefinition } from "@pixi-board/core";
-import { createPixiBoard } from "pixiboardjs";
+import { BoardCore, NodeTypeRegistry, type BoardChangeSet, type NodeTypeDefinition } from "@pixi-board/core";
+import { createBoardCapabilities } from "@pixi-board/capabilities";
 import { createPixiBoardAgentTools, type AgentTools } from "@pixi-board/agent-tools";
 import { createHttpMcpHandler, createMcpHost, createStdioMcpServer, type McpEnvelope, type McpRequest, type StdioEndpoint } from "./index.ts";
 
 const text: NodeTypeDefinition = { type: "text", version: 1, defaults: {}, validate: (value) => value ?? {}, getBounds: (node) => ({ minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height }) };
 
-type Fixture = { board: Awaited<ReturnType<typeof createPixiBoard>>; tools: AgentTools; save: ReturnType<typeof vi.fn>; changes: BoardChangeSet[]; publicChanges: BoardChangeSet[]; history: Array<{ canUndo: boolean; canRedo: boolean }> };
+type Fixture = { core: BoardCore; tools: AgentTools; save: ReturnType<typeof vi.fn>; changes: BoardChangeSet[]; publicChanges: BoardChangeSet[]; history: Array<{ canUndo: boolean; canRedo: boolean }> };
 
 async function makeFixture(): Promise<Fixture> {
   const registry = new NodeTypeRegistry(); registry.register(text);
   let transaction = 0;
   const save = vi.fn(async () => undefined);
-  const board = await createPixiBoard({ headless: true, persistence: { save }, core: { nodeTypes: registry, idFactory: () => `tx-${++transaction}`, now: () => 100 } });
-  await board.ready;
+  const core = new BoardCore({ nodeTypes: registry, idFactory: () => `tx-${++transaction}`, now: () => 100 });
   const changes: BoardChangeSet[] = [];
   const publicChanges: BoardChangeSet[] = [];
   const history: Array<{ canUndo: boolean; canRedo: boolean }> = [];
-  const core = (board as unknown as { core?: BoardCore }).core;
-  core?.on("change", (event) => changes.push(event.changeSet));
-  board.on("change", (event) => publicChanges.push(event.changeSet));
-  board.on("history:change", (event) => history.push(event));
-  return { board, tools: createPixiBoardAgentTools(board.capabilities), save, changes, publicChanges, history };
+  core.on("change", (event) => { changes.push(event.changeSet); void save(core.document.toJSON()); });
+  core.on("change", (event) => publicChanges.push(event.changeSet));
+  core.on("history:change", (event) => history.push(event));
+  return { core, tools: createPixiBoardAgentTools(createBoardCapabilities(core)), save, changes, publicChanges, history };
 }
 
 function writeRequest(id = "mcp-1", requestId = "req-1"): McpRequest {
@@ -71,8 +69,8 @@ describe("MCP host transport contract", () => {
     await settle();
     expect(stdioResult).toEqual({ jsonrpc: "2.0", id: "mcp-1", result: directResult });
     expect(httpResult).toEqual({ jsonrpc: "2.0", id: "mcp-1", result: directResult });
-    expect(direct.board.document.toJSON()).toEqual(stdio.board.document.toJSON());
-    expect(stdio.board.document.toJSON()).toEqual(http.board.document.toJSON());
+    expect(direct.core.document.toJSON()).toEqual(stdio.core.document.toJSON());
+    expect(stdio.core.document.toJSON()).toEqual(http.core.document.toJSON());
     expect(changeShape(direct.changes)).toEqual(changeShape(stdio.changes));
     expect(changeShape(stdio.changes)).toEqual(changeShape(http.changes));
     expect(changeShape(direct.publicChanges)).toEqual(changeShape(stdio.publicChanges));
@@ -80,16 +78,15 @@ describe("MCP host transport contract", () => {
     expect(direct.history).toEqual(stdio.history); expect(stdio.history).toEqual(http.history);
     expect(direct.save).toHaveBeenCalledTimes(1); expect(stdio.save).toHaveBeenCalledTimes(1); expect(http.save).toHaveBeenCalledTimes(1);
 
-    const undo = [direct.board.history.undo(), stdio.board.history.undo(), http.board.history.undo()];
-    const redo = [direct.board.history.redo(), stdio.board.history.redo(), http.board.history.redo()];
+    const undo = [direct.core.history.undo(), stdio.core.history.undo(), http.core.history.undo()];
+    const redo = [direct.core.history.redo(), stdio.core.history.redo(), http.core.history.redo()];
     await settle();
     expect(undo[0]).toEqual(undo[1]); expect(undo[1]).toEqual(undo[2]);
     expect(redo[0]).toEqual(redo[1]); expect(redo[1]).toEqual(redo[2]);
     expect(changeShape(direct.changes)).toEqual(changeShape(stdio.changes)); expect(changeShape(stdio.changes)).toEqual(changeShape(http.changes));
-    expect(direct.board.document.toJSON()).toEqual(stdio.board.document.toJSON()); expect(stdio.board.document.toJSON()).toEqual(http.board.document.toJSON());
+    expect(direct.core.document.toJSON()).toEqual(stdio.core.document.toJSON()); expect(stdio.core.document.toJSON()).toEqual(http.core.document.toJSON());
     expect(direct.history).toEqual(stdio.history); expect(stdio.history).toEqual(http.history);
     expect(direct.save).toHaveBeenCalledTimes(3); expect(stdio.save).toHaveBeenCalledTimes(3); expect(http.save).toHaveBeenCalledTimes(3);
-    await Promise.all([direct.board.destroy(), stdio.board.destroy(), http.board.destroy()]);
   });
 
   it("keeps successful canvas.read and read-domain errors equivalent", async () => {
@@ -105,7 +102,6 @@ describe("MCP host transport contract", () => {
     const bad = { ...request, id: "bad-read", params: { ...request.params, arguments: { type: "preview", id: "missing" } } } satisfies McpRequest;
     const directError = await direct.tools.call("canvas.read", bad.params.arguments, { requestId: "read-req" }); const stdioError = await stdioRoundTrip(stdio.tools, bad); const httpError = await (await createHttpMcpHandler(createMcpHost(http.tools))(new Request("http://mcp.test", { method: "POST", body: JSON.stringify(bad), headers: { "content-type": "application/json" } }))).json() as McpEnvelope;
     expect(stdioError).toEqual({ jsonrpc: "2.0", id: "bad-read", result: directError }); expect(httpError).toEqual(stdioError);
-    await Promise.all([direct.board.destroy(), stdio.board.destroy(), http.board.destroy()]);
   });
 
   it("returns JSON-RPC protocol errors for malformed method/params and invalid JSON", async () => {
@@ -113,7 +109,6 @@ describe("MCP host transport contract", () => {
     expect(await host.handle({ jsonrpc: "2.0", id: 1, method: "nope", params: {} })).toEqual({ jsonrpc: "2.0", id: 1, error: { code: -32601, message: "Method not found" } });
     expect(await host.handle({ jsonrpc: "2.0", id: 2, method: "tools/call", params: {} })).toEqual({ jsonrpc: "2.0", id: 2, error: { code: -32602, message: "Invalid params" } });
     const endpoint = new Lines(); const server = createStdioMcpServer(host, endpoint); await server.ready; endpoint.push("not-json"); while (!endpoint.writes.length) await settle(); expect(JSON.parse(endpoint.writes[0])).toEqual({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); server.close(); endpoint.closeInput(); await server.completed;
-    await fixture.board.destroy();
   });
 
   it("keeps multiple stdio frames ordered and completes deterministically", async () => {
@@ -127,7 +122,6 @@ describe("MCP host transport contract", () => {
     expect(endpoint.writes.map((line) => JSON.parse(line).id)).toEqual(["read-1", "read-2"]);
     server.close(); endpoint.closeInput(); await server.completed;
     expect(endpoint.writes).toHaveLength(2);
-    await fixture.board.destroy();
   });
 
   it("aborts a pending request without late result, change, or persistence", async () => {
@@ -135,13 +129,13 @@ describe("MCP host transport contract", () => {
     const delayed: AgentTools = { schemas: fixture.tools.schemas, async call(name, input, options) { started(); await gate; return fixture.tools.call(name, input, options); } };
     const host = createMcpHost(delayed); const controller = new AbortController(); const pending = host.handle(writeRequest(), { signal: controller.signal }); await entered; controller.abort(); release();
     const result = await pending; expect(result).toMatchObject({ jsonrpc: "2.0", id: "mcp-1", result: { ok: false, error: { code: "ABORTED" } } }); await settle();
-    expect(fixture.board.document.toJSON().revision).toBe(0); expect(fixture.changes).toHaveLength(0); expect(fixture.publicChanges).toHaveLength(0); expect(fixture.save).not.toHaveBeenCalled(); await fixture.board.destroy();
+    expect(fixture.core.document.toJSON().revision).toBe(0); expect(fixture.changes).toHaveLength(0); expect(fixture.publicChanges).toHaveLength(0); expect(fixture.save).not.toHaveBeenCalled();
   });
 
   it("suppresses a pending stdio response after close", async () => {
     const fixture = await makeFixture(); let release!: () => void; let started!: () => void; const gate = new Promise<void>((resolve) => { release = resolve; }); const entered = new Promise<void>((resolve) => { started = resolve; });
     const delayed: AgentTools = { schemas: fixture.tools.schemas, async call(name, input, options) { started(); await gate; return fixture.tools.call(name, input, options); } };
     const endpoint = new Lines(); const server = createStdioMcpServer(createMcpHost(delayed), endpoint); await server.ready; endpoint.push(JSON.stringify(writeRequest())); await entered; server.close(); release(); endpoint.closeInput(); await server.completed;
-    expect(endpoint.writes).toHaveLength(0); expect(fixture.board.document.toJSON().revision).toBe(0); expect(fixture.save).not.toHaveBeenCalled(); await fixture.board.destroy();
+    expect(endpoint.writes).toHaveLength(0); expect(fixture.core.document.toJSON().revision).toBe(0); expect(fixture.save).not.toHaveBeenCalled();
   });
 });

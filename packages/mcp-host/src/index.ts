@@ -98,16 +98,22 @@ export function createStdioMcpServer(host: McpHost, endpoint: StdioEndpoint): { 
   const close = () => { if (!stopped) { stopped = true; host.close(); endpoint.closeInput?.(); } };
   const completed = (async () => {
     resolveReady();
+    let pending = Promise.resolve();
     try {
       for await (const line of endpoint.readable) {
         if (stopped) break;
         if (!line.trim()) continue;
-        let request: unknown;
-        try { request = JSON.parse(line); } catch { if (!stopped) endpoint.write(`${JSON.stringify(protocolError(null, -32700, "Parse error"))}\n`); continue; }
-        const response = await host.handle(request);
-        if (!stopped) endpoint.write(`${JSON.stringify(response)}\n`);
+        pending = pending.then(async () => {
+          if (stopped) return;
+          let request: unknown;
+          try { request = JSON.parse(line); } catch { if (!stopped) endpoint.write(`${JSON.stringify(protocolError(null, -32700, "Parse error"))}\n`); return; }
+          const response = await host.handle(request);
+          if (!stopped) endpoint.write(`${JSON.stringify(response)}\n`);
+        });
       }
     } finally {
+      if (!stopped) { stopped = true; host.close(); }
+      await pending;
       resolveReady();
     }
   })();
