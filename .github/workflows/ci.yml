@@ -16,64 +16,42 @@ env:
   CI: "true"
 
 jobs:
-  core-contracts:
-    name: Core contracts
+  static-boundaries:
+    name: Static boundaries
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-sdk
+      - run: pnpm docs:check
+      - run: pnpm packages:check
+      - run: node scripts/check-current-document-only.mjs
+      - run: pnpm test:browser-boundary
+
+  core-contracts:
+    name: Core and integration contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-sdk
       - run: node scripts/run-core-gate.mjs
 
   browser-chromium:
-    name: Browser required Chromium
+    name: Browser required Chromium contracts
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
       PIXIBOARD_REQUIRE_BROWSER: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-sdk
+      - run: pnpm --filter pixiboardjs build
       - run: pnpm exec playwright install --with-deps chromium
-      - run: node scripts/run-browser-contract.mjs
+      - run: pnpm exec playwright test --config tests/browser/playwright.config.ts --grep-invert "media-heavy"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: chromium-traces-${{ github.run_id }}
           path: test-results
           if-no-files-found: ignore
-
-  desktop-tauri-gate:
-    name: Desktop Tauri gate (${{ matrix.label }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-14
-            label: macOS launch smoke
-          - os: windows-2022
-            label: Windows native config/build
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    env:
-      PIXIBOARD_DESKTOP_PLATFORM: ${{ matrix.label }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: ./.github/actions/setup-sdk
-      - run: node scripts/run-desktop-platform-gate.mjs --mode tauri
-
-  performance-regression:
-    name: Performance regression (fail-closed)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-sdk
-      - run: node scripts/check-performance-gate.mjs pr
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: performance-pr-${{ github.run_id }}
-          path: .artifacts/performance/pr.json
-          if-no-files-found: error

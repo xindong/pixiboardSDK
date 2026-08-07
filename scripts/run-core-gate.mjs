@@ -1,5 +1,10 @@
 import { spawn } from "node:child_process";
 
+if (process.argv.includes("--help")) {
+  console.log("Usage: node scripts/run-core-gate.mjs");
+  process.exit(0);
+}
+
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const commands = [
   ["docs:check"],
@@ -9,7 +14,6 @@ const commands = [
   ["--filter", "@pixi-board/renderer-pixi", "test"],
   ["--filter", "@pixi-board/capabilities", "test"],
   ["--filter", "@pixi-board/agent-tools", "test"],
-  // MCP deployment children are launched by plain Node and consume Core's package export.
   ["--filter", "@pixi-board/core", "build"],
   ["--filter", "@pixi-board/mcp-host", "test"],
   ["--filter", "@pixi-board/plugin-api-v3", "test"],
@@ -26,21 +30,16 @@ for (const args of commands) {
   if (code !== 0) failures.push(`pnpm ${args.join(" ")} (exit ${code})`);
 }
 
-if (failures.length > 0) {
+if (failures.length) {
   console.error("\nCore contract gate failed:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exitCode = 1;
-} else {
-  console.log("\nCore contract gate passed: document boundary, package boundary and all contract suites executed.");
-}
+} else console.log("\nCore contract gate passed: document boundary, package boundary and all contract suites executed.");
 
 function run(command, args) {
-  return new Promise((resolve) => {
+  return new Promise((resolveExit) => {
     const child = spawn(command, args, { stdio: "inherit", env: process.env });
-    child.on("error", (error) => {
-      console.error(error);
-      resolve(1);
-    });
-    child.on("exit", (code, signal) => resolve(signal === null ? (code ?? 1) : 1));
+    child.on("error", (error) => { console.error(error); resolveExit(1); });
+    child.on("exit", (code, signal) => resolveExit(signal === null ? (code ?? 1) : 1));
   });
 }

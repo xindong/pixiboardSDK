@@ -1,10 +1,5 @@
 name: Setup PixiBoardJS SDK workspace
-description: Install the pinned Node, pnpm and frozen workspace dependencies
-inputs:
-  working-directory:
-    description: SDK checkout directory relative to the workspace
-    required: false
-    default: .
+description: Install pinned Node, pnpm, and frozen workspace dependencies
 runs:
   using: composite
   steps:
@@ -14,10 +9,8 @@ runs:
         run_install: false
     - uses: actions/setup-node@v4
       with:
-        # Keep the CI runtime pinned without importing a separate release/tooling file.
         node-version: 22.22.0
         cache: pnpm
-        cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
+        cache-dependency-path: pnpm-lock.yaml
     - shell: bash
       run: pnpm install --frozen-lockfile
-      working-directory: ${{ inputs.working-directory }}

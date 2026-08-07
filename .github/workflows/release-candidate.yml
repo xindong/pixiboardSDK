@@ -10,7 +10,7 @@ on:
 
 permissions:
   contents: read
-  checks: read
+  actions: read
 
 env:
   CI: "true"
@@ -20,50 +20,73 @@ jobs:
     name: Verify candidate commit checks
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
     steps:
       - uses: actions/github-script@v7
         with:
           script: |
-            const sha = "${{ inputs.candidate_sha }}";
-            if (!/^[0-9a-f]{40}$/i.test(sha)) core.setFailed("candidate_sha must be a full 40-character commit SHA");
-            const { data } = await github.rest.checks.listForRef({ owner: context.repo.owner, repo: context.repo.repo, ref: sha, per_page: 100 });
-            const required = ["Core contracts", "Browser required Chromium", "Performance regression (fail-closed)"];
-            const latest = [...data.check_runs].sort((a, b) => new Date(b.completed_at ?? b.started_at ?? 0) - new Date(a.completed_at ?? a.started_at ?? 0));
-            for (const name of required) {
-              const run = latest.find(item => item.name === name);
-              if (run?.conclusion !== "success") core.setFailed(`${name} is ${run?.conclusion ?? "missing"} for ${sha}`);
+            const sha = process.env.CANDIDATE_SHA;
+            if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error("candidate_sha must be a full 40-character commit SHA");
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head_sha: sha,
+              per_page: 100,
+            });
+            const run = runs
+              .filter(item => item.name === "CI gates" && item.head_sha === sha && item.conclusion === "success")
+              .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
+            if (!run) throw new Error(`No successful CI gates workflow run exists for ${sha}`);
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: run.id,
+              filter: "latest",
+              per_page: 100,
+            });
+            for (const name of ["Static boundaries", "Core and integration contracts", "Browser required Chromium contracts"]) {
+              const job = jobs.find(item => item.name === name);
+              if (job?.conclusion !== "success") throw new Error(`${name} is ${job?.conclusion ?? "missing"} in CI run ${run.id}`);
             }
 
   release-artifact:
-    name: Pack, API, bundle and external consumers
+    name: Build, check and pack all public packages
     needs: verify-candidate
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    env:
-      PIXIBOARD_RELEASE_ARTIFACT_DIR: .artifacts/release
-      PIXIBOARD_BUNDLE_REPORT: .artifacts/release/bundle-report.json
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.candidate_sha }}
       - uses: ./.github/actions/setup-sdk
-      - run: pnpm release:check
       - run: test "$(git rev-parse HEAD)" = "${{ inputs.candidate_sha }}"
+      - run: pnpm build:release
+      - run: node scripts/check-current-document-only.mjs
+      - run: pnpm release:check
+      - name: Stage all public tarballs and API reports
+        shell: bash
+        run: |
+          mkdir -p .artifacts/release/api-reports
+          pnpm --filter pixiboardjs pack --pack-destination "$PWD/.artifacts/release"
+          pnpm --filter @pixi-board/core pack --pack-destination "$PWD/.artifacts/release"
+          pnpm --filter @pixi-board/plugin-sdk pack --pack-destination "$PWD/.artifacts/release"
+          cp packages/pixiboardjs/etc/pixiboardjs.api.md .artifacts/release/api-reports/
+          cp packages/core/etc/pixi-board-core.api.md .artifacts/release/api-reports/
+          cp packages/plugin-sdk/etc/pixi-board-plugin-sdk.api.md .artifacts/release/api-reports/
+          test "$(find .artifacts/release -maxdepth 1 -name '*.tgz' | wc -l | tr -d ' ')" = 3
+          test "$(find .artifacts/release/api-reports -maxdepth 1 -name '*.api.md' | wc -l | tr -d ' ')" = 3
       - uses: actions/upload-artifact@v4
         with:
           name: pixiboard-public-packages-rc-${{ inputs.candidate_sha }}
-          path: |
-            .artifacts/release/*
-            packages/core/etc/core.api.md
-            packages/renderer-pixi/etc/renderer-pixi.api.md
-            packages/pixiboardjs/etc/pixiboardjs.api.md
+          path: .artifacts/release/
           if-no-files-found: error
 
   browser-candidate:
     name: Browser consumes candidate commit
     needs: verify-candidate
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     env:
       PIXIBOARD_REQUIRE_BROWSER: "1"
     steps:
@@ -71,26 +94,40 @@ jobs:
         with:
           ref: ${{ inputs.candidate_sha }}
       - uses: ./.github/actions/setup-sdk
+      - run: pnpm --filter pixiboardjs build
       - run: pnpm exec playwright install --with-deps chromium
-      - run: node scripts/run-browser-contract.mjs
+      - run: pnpm exec playwright test --config tests/browser/playwright.config.ts --grep-invert "media-heavy"
 
   performance-candidate:
-    name: Fixed-runner performance, soak and Konva evidence
+    name: Core, Chromium WebGL, media and Konva evidence
     needs: verify-candidate
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.candidate_sha }}
       - uses: ./.github/actions/setup-sdk
+      - run: pnpm exec playwright install --with-deps chromium
       - run: node scripts/check-performance-gate.mjs rc
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: performance-rc-${{ inputs.candidate_sha }}
-          path: .artifacts/performance/rc.json
+          path: .artifacts/performance/rc/
           if-no-files-found: error
+
+  adapter-candidate:
+    name: Adapter contracts consume candidate
+    needs: verify-candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/setup-sdk
+      - run: pnpm test:adapters
 
   desktop-candidate:
     name: Repository desktop candidate (${{ matrix.label }})
@@ -104,7 +141,7 @@ jobs:
           - os: windows-2022
             label: Windows native config/build
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 100
     env:
       PIXIBOARD_DESKTOP_PLATFORM: ${{ matrix.label }}
     steps:
@@ -112,13 +149,16 @@ jobs:
         with:
           ref: ${{ inputs.candidate_sha }}
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/examples-desktop-sdk/src-tauri
       - uses: ./.github/actions/setup-sdk
       - run: node scripts/run-desktop-platform-gate.mjs --mode tauri
 
   final-gate:
     name: Release candidate accepted
     if: always()
-    needs: [release-artifact, browser-candidate, performance-candidate, desktop-candidate]
+    needs: [release-artifact, browser-candidate, performance-candidate, adapter-candidate, desktop-candidate]
     runs-on: ubuntu-24.04
     steps:
       - shell: bash
@@ -126,4 +166,5 @@ jobs:
           test "${{ needs.release-artifact.result }}" = success
           test "${{ needs.browser-candidate.result }}" = success
           test "${{ needs.performance-candidate.result }}" = success
+          test "${{ needs.adapter-candidate.result }}" = success
           test "${{ needs.desktop-candidate.result }}" = success

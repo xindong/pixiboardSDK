@@ -19,23 +19,24 @@ jobs:
   contracts-and-integrations:
     name: Core, Plugin, Agent and MCP contracts
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-sdk
       - run: node scripts/run-core-gate.mjs
 
-  chromium-full:
-    name: Chromium WebGL E2E
+  chromium-media:
+    name: Required Chromium browser contracts
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       PIXIBOARD_REQUIRE_BROWSER: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-sdk
+      - run: pnpm --filter pixiboardjs build
       - run: pnpm exec playwright install --with-deps chromium
-      - run: node scripts/run-browser-contract.mjs
+      - run: pnpm exec playwright test --config tests/browser/playwright.config.ts --grep-invert "media-heavy"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -43,19 +44,20 @@ jobs:
           path: test-results
           if-no-files-found: ignore
 
-  renderer-performance-and-soak:
-    name: Instrumented 10k/50k/100k performance and destroy soak
+  performance-and-konva:
+    name: Core, Chromium WebGL and Konva benchmark evidence
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-sdk
+      - run: pnpm exec playwright install --with-deps chromium
       - run: node scripts/check-performance-gate.mjs nightly
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: performance-nightly-${{ github.run_id }}
-          path: .artifacts/performance/nightly.json
+          path: .artifacts/performance/nightly/
           if-no-files-found: error
 
   desktop-tauri-platforms:
@@ -69,11 +71,14 @@ jobs:
           - os: windows-2022
             label: Windows native config/build
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 60
     env:
       PIXIBOARD_DESKTOP_PLATFORM: ${{ matrix.label }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/examples-desktop-sdk/src-tauri
       - uses: ./.github/actions/setup-sdk
       - run: node scripts/run-desktop-platform-gate.mjs --mode tauri
