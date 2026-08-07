@@ -12,10 +12,17 @@ if (!workspaceText.includes('"packages/*"') || !workspaceText.includes('"apps/*"
 }
 if (workspace.name !== "pixiboardjs" || workspace.private !== false) throw new Error("pixiboardjs must be the public package");
 for (const subpath of [".", "./browser", "./node", "./types"]) {
-  if (!workspace.exports?.[subpath]) throw new Error(`missing pixiboardjs export: ${subpath}`);
+  const contract = workspace.exports?.[subpath];
+  if (!contract) throw new Error(`missing pixiboardjs export: ${subpath}`);
+  for (const target of new Set([contract.types, contract.import, contract.default])) {
+    if (!target) throw new Error(`incomplete pixiboardjs export: ${subpath}`);
+    await access(resolve(root, "packages/pixiboardjs", target));
+  }
 }
-if (JSON.stringify(workspace).includes("workspace:")) throw new Error("public package must not leak workspace protocol");
-if (fixture.dependencies?.pixiboardjs !== workspace.version) throw new Error("Vanilla fixture must target the package placeholder version");
+for (const [name, version] of Object.entries(workspace.dependencies ?? {})) {
+  if (!version.startsWith("workspace:")) throw new Error(`local pixiboardjs dependency must use workspace protocol: ${name}`);
+}
+if (fixture.dependencies?.pixiboardjs !== "workspace:*") throw new Error("Vanilla fixture must link the workspace package in-repo");
 if (benchmark.private !== true || !benchmark.scripts?.["generate:synthetic-card"]) throw new Error("benchmark must remain a private skeleton");
 
 for (const file of [

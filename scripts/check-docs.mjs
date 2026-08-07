@@ -23,6 +23,7 @@ const requiredFiles = [
   "docs/12-risks-open-decisions.md",
   "docs/13-traceability.md",
   "docs/14-parallel-execution.md",
+  "docs/15-release-gate.md",
   "docs/adr/0001-flat-document-model.md",
   "docs/adr/0002-document-source-pixi-cache.md",
   "docs/adr/0003-single-public-package.md",

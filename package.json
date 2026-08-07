@@ -7,6 +7,7 @@
   "scripts": {
     "docs:check": "node scripts/check-docs.mjs",
     "packages:check": "node scripts/check-packages.mjs",
+    "release:check": "node scripts/check-release-gate.mjs",
     "test:core": "pnpm --filter @pixi-board/core test",
     "test:contracts": "pnpm --filter @pixi-board/capabilities test && pnpm --filter @pixi-board/agent-tools test"
   },

@@ -19,6 +19,7 @@
 13. [12-risks-open-decisions.md](12-risks-open-decisions.md)：风险登记和已经冻结的实现决策。
 14. [13-traceability.md](13-traceability.md)：目标、文档、代码迁移和验收之间的映射。
 15. [14-parallel-execution.md](14-parallel-execution.md)：并行 session 的任务、依赖、worktree 和合并顺序。
+16. [15-release-gate.md](15-release-gate.md)：P6 真实 npm tarball、workspace 改写与外部 consumer 发布门。
 
 ## 架构决策记录
 

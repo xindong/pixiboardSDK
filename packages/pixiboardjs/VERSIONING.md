@@ -13,6 +13,8 @@ encoded as one shared number:
 - Plugin API version (new SDK host starts at v3; no v2 adapter).
 - Agent tool schema version.
 
-When publishing begins, Changesets/API reports and an external `npm pack`
-consumer check become release gates. Internal packages stay private unless a
-future ADR explicitly makes them public.
+`pnpm release:check` verifies the real packed manifest and only runs external
+consumers when publishable JavaScript/types and dependency versions exist. It
+does not build or invent those artifacts. Changesets/API reports remain release
+requirements. Internal packages stay private unless a future ADR explicitly
+makes them public.

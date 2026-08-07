@@ -32,3 +32,7 @@ await board.destroy();
 
 See [`VERSIONING.md`](VERSIONING.md) for the separate SDK, document, node,
 plugin and Agent-tool version dimensions.
+
+`pnpm release:check` packs the real facade without creating build artifacts.
+It currently reports raw TypeScript runtime exports and internal workspace
+dependencies as release blockers; it does not substitute a placeholder runtime.

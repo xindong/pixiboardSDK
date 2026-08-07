@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "pixiboardjs": "0.1.0-alpha.0"
+    "pixiboardjs": "workspace:*"
   },
   "devDependencies": {
     "vite": "^7.0.0"
