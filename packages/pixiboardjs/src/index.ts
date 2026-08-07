@@ -28,7 +28,6 @@ export * from "./errors";
 export type * from "./types";
 export {
   DocumentValidationError,
-  MigrationError,
   NodeNotFoundError,
   NodeTypeNotRegisteredError,
   NodeValidationError,
@@ -282,7 +281,7 @@ class PixiBoardFacade implements PixiBoard {
     const persistence = this.options.persistence;
     if (persistence?.load) {
       const loaded = await persistence.load({ signal: this.signal });
-      if (loaded && !this.signal.aborted) this.core.document.load(loaded, { migrate: true });
+      if (loaded && !this.signal.aborted) this.core.document.load(loaded);
     }
     if (this.signal.aborted) return;
     if (!this.options.headless && this.options.container) {

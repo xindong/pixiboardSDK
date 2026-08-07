@@ -1,6 +1,6 @@
 export type CapabilityErrorCode =
   | "NODE_NOT_FOUND" | "NODE_TYPE_NOT_REGISTERED" | "NODE_VALIDATION"
-  | "DOCUMENT_VALIDATION" | "MIGRATION" | "TRANSACTION_CONFLICT"
+  | "DOCUMENT_VALIDATION" | "TRANSACTION_CONFLICT"
   | "ASSET_UNAVAILABLE" | "PERMISSION_DENIED" | "BOARD_DESTROYED"
   | "ABORTED" | "CAPABILITY_UNAVAILABLE" | "INVALID_INPUT" | "INTERNAL_ERROR";
 
@@ -30,13 +30,12 @@ export class BoardDestroyedError extends CapabilityError {
 
 export function mapCoreError(error: unknown): CapabilityError {
   if (error instanceof CapabilityError) return error;
-  const { NodeNotFoundError, NodeTypeNotRegisteredError, NodeValidationError, DocumentValidationError, MigrationError, TransactionConflictError } = coreErrors;
+  const { NodeNotFoundError, NodeTypeNotRegisteredError, NodeValidationError, DocumentValidationError, TransactionConflictError } = coreErrors;
   const message = error instanceof Error ? error.message : String(error);
   const code: CapabilityErrorCode = error instanceof NodeNotFoundError ? "NODE_NOT_FOUND"
     : error instanceof NodeTypeNotRegisteredError ? "NODE_TYPE_NOT_REGISTERED"
     : error instanceof NodeValidationError ? "NODE_VALIDATION"
     : error instanceof DocumentValidationError ? "DOCUMENT_VALIDATION"
-    : error instanceof MigrationError ? "MIGRATION"
     : error instanceof TransactionConflictError ? "TRANSACTION_CONFLICT"
     : error instanceof RangeError ? "INVALID_INPUT"
     : error instanceof AssetUnavailableError ? "ASSET_UNAVAILABLE"

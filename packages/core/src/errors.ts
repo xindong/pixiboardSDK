@@ -42,13 +42,4 @@ export class DocumentValidationError extends PixiBoardCoreError {
   }
 }
 
-export class MigrationError extends PixiBoardCoreError {
-  readonly cause?: unknown;
-
-  constructor(message: string, options: { cause?: unknown } = {}) {
-    super(message);
-    this.cause = options.cause;
-  }
-}
-
 export class TransactionConflictError extends PixiBoardCoreError {}

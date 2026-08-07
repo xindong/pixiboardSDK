@@ -1,25 +1,22 @@
-import { DocumentValidationError, MigrationError, NodeValidationError } from "./errors";
+import { DocumentValidationError, NodeValidationError } from "./errors";
 import { assertJsonValue, cloneValue } from "./json";
-import type { DocumentMigrationRegistry } from "./document-migrations";
 import type { NodeTypeRegistry } from "./node-type-registry";
 import type {
   AssetRecord,
   AssetRef,
   BoardDocument,
   BoardNode,
-  DocumentLoadOptions,
   ViewportSnapshot,
 } from "./types";
 
 export function validateDocument(
   input: unknown,
-  options: DocumentLoadOptions & {
+  options: {
     schemaVersion: number;
     nodeTypes: NodeTypeRegistry;
-    migrations: DocumentMigrationRegistry;
   },
 ): BoardDocument {
-  let value = parseInput(input);
+  const value = parseInput(input);
   if (!isRecord(value)) throw new DocumentValidationError("Document must be an object");
   const sourceVersion = readInteger(value, "schemaVersion", "document");
   if (sourceVersion > options.schemaVersion) {
@@ -28,12 +25,9 @@ export function validateDocument(
     );
   }
   if (sourceVersion < options.schemaVersion) {
-    if (!options.migrate) {
-      throw new MigrationError(
-        `Document schema ${sourceVersion} requires migration to ${options.schemaVersion}`,
-      );
-    }
-    value = options.migrations.migrate(value, options.schemaVersion);
+    throw new DocumentValidationError(
+      `Document schema ${sourceVersion} is older than supported schema ${options.schemaVersion}`,
+    );
   }
 
   assertJsonValue(value, "document");
@@ -53,9 +47,9 @@ export function validateDocument(
     }
     nodeIds.add(validated.id);
     try {
-      return options.nodeTypes.validateNode(validated, { migrate: options.migrate });
+      return options.nodeTypes.validateNode(validated);
     } catch (cause) {
-      if (cause instanceof NodeValidationError || cause instanceof MigrationError) throw cause;
+      if (cause instanceof NodeValidationError) throw cause;
       throw new NodeValidationError(`Invalid node ${validated.id}`, {
         nodeId: validated.id,
         nodeType: validated.type,
@@ -94,6 +88,11 @@ export function validateDocument(
 export function validateNode(input: unknown, path = "node"): BoardNode {
   assertJsonValue(input, path);
   if (!isRecord(input)) throw new DocumentValidationError(`${path} must be an object`);
+  if ("assetId" in input) {
+    throw new DocumentValidationError(
+      `${path}.assetId is not supported; use ${path}.assetRefs instead`,
+    );
+  }
   const id = readString(input, "id", path);
   const type = readString(input, "type", path);
   const typeVersion = readInteger(input, "typeVersion", path);

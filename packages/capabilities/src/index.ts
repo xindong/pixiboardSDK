@@ -41,7 +41,7 @@ export function createBoardCapabilities(core: BoardCore, services: BoardCapabili
     availability: { preview: Boolean(services.preview), capture: Boolean(services.capture) },
     document: {
       snapshot: async (options = {}) => { aborted(options.signal); return core.document.snapshot(); },
-      validate: async (input, options = {}) => { try { aborted(options.signal); return core.document.validate(input, { migrate: options.migrate }); } catch (error) { throw mapCoreError(error); } },
+      validate: async (input, options = {}) => { try { aborted(options.signal); return core.document.validate(input); } catch (error) { throw mapCoreError(error); } },
       load: async (input, options = {}) => { try { aborted(options.signal); const changeSet = core.document.load(input, options); aborted(options.signal); return { changed: true, revision: changeSet.revision, changeSet, requestId: options.requestId }; } catch (error) { throw mapCoreError(error); } },
     },
     nodes: {

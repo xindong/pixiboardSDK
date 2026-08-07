@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   BoardCore,
-  DocumentMigrationRegistry,
   NodeTypeNotRegisteredError,
   NodeTypeRegistry,
   NodeValidationError,
@@ -9,7 +8,6 @@ import {
   type BoardChangeSet,
   type BoardDocument,
   type BoardNode,
-  type JsonValue,
   type NodeTypeDefinition,
 } from "../src";
 
@@ -400,53 +398,80 @@ describe("unknown nodes and JSON round-trip", () => {
     expect(reloaded.document.toJSON()).toEqual(json);
   });
 
-  it("runs document and node migrations before validation", () => {
-    const migrations = new DocumentMigrationRegistry();
-    migrations.register({
-      from: 1,
-      to: 2,
-      migrate(input) {
-        const document = input as Record<string, JsonValue>;
-        return { ...document, schemaVersion: 2, revision: document.revision ?? 0 };
-      },
-    });
+  it("rejects older document schemas without migration", () => {
+    const core = createCore({ schemaVersion: 2 });
+    expect(() =>
+      core.document.load({ schemaVersion: 1, revision: 0, nodes: [], assets: [] }),
+    ).toThrow("Document schema 1 is older than supported schema 2");
+  });
+
+  it.each([
+    { typeVersion: 1, label: "older" },
+    { typeVersion: 3, label: "future" },
+  ])("rejects $label registered node typeVersion mismatches", ({ typeVersion }) => {
     const registry = new NodeTypeRegistry();
-    registry.register<TaskProps>({
-      ...taskDefinition(2),
-      migrate({ fromVersion, props }) {
-        expect(fromVersion).toBe(1);
-        return {
-          version: 2,
-          props: { title: String((props as { text: string }).text), status: "todo" },
-        };
-      },
-    });
-    const core = createCore({ schemaVersion: 2, migrations, nodeTypes: registry });
-    const legacy = {
+    registry.register(taskDefinition(2));
+    const core = createCore({ nodeTypes: registry });
+    const document = {
       schemaVersion: 1,
       revision: 0,
       nodes: [
         {
-          id: "legacy",
+          id: "version-mismatch",
           type: "acme.task-card",
-          typeVersion: 1,
+          typeVersion,
           x: 0,
           y: 0,
           width: 10,
           height: 10,
           rotation: 0,
           zIndex: 0,
-          props: { text: "Migrated" },
+          props: { title: "No migration", status: "todo" },
         },
       ],
       assets: [],
     };
 
-    core.document.load(legacy, { migrate: true });
-    expect(core.document.toJSON()).toMatchObject({
-      schemaVersion: 2,
-      nodes: [{ id: "legacy", typeVersion: 2, props: { title: "Migrated", status: "todo" } }],
-    });
+    expect(() => core.document.load(document)).toThrow(
+      `Node version-mismatch uses acme.task-card typeVersion ${typeVersion}; registered version is 2`,
+    );
+  });
+
+  it("rejects the legacy top-level assetId node shape", () => {
+    const core = createCore();
+    expect(() =>
+      core.document.load({
+        schemaVersion: 1,
+        revision: 0,
+        nodes: [
+          {
+            id: "legacy-asset",
+            type: "vendor.unknown",
+            typeVersion: 1,
+            x: 0,
+            y: 0,
+            width: 10,
+            height: 10,
+            rotation: 0,
+            zIndex: 0,
+            assetId: "asset-1",
+            props: {},
+          },
+        ],
+        assets: [{ id: "asset-1", kind: "image" }],
+      }),
+    ).toThrow("document.nodes[0].assetId is not supported");
+  });
+
+  it("rejects legacy schema-v4 split snapshots", () => {
+    const core = createCore();
+    expect(() =>
+      core.document.load({
+        schemaVersion: 4,
+        board: { nodes: [] },
+        assets: { assets: [] },
+      }),
+    ).toThrow("Document schema 4 is newer than supported schema 1");
   });
 
   it("rejects non-JSON object instances and circular values", () => {

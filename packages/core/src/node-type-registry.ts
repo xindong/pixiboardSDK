@@ -1,8 +1,4 @@
-import {
-  MigrationError,
-  NodeTypeNotRegisteredError,
-  NodeValidationError,
-} from "./errors";
+import { NodeTypeNotRegisteredError, NodeValidationError } from "./errors";
 import { assertJsonValue, cloneValue, deepFreeze } from "./json";
 import type {
   BoardNode,
@@ -83,50 +79,21 @@ export class NodeTypeRegistry {
     };
   }
 
-  validateNode<Props extends JsonValue>(
-    node: BoardNode<Props>,
-    options: { migrate?: boolean } = {},
-  ): BoardNode<Props> {
+  validateNode<Props extends JsonValue>(node: BoardNode<Props>): BoardNode<Props> {
     const definition = this.get<Props>(node.type);
     if (!definition) return cloneValue(node);
 
-    let version = node.typeVersion;
-    let props: unknown = cloneValue(node.props);
-    if (version !== definition.version) {
-      if (version > definition.version) {
-        throw new MigrationError(
-          `Node ${node.id} uses future ${node.type} version ${version}; registered version is ${definition.version}`,
-        );
-      }
-      if (!options.migrate || !definition.migrate) {
-        throw new MigrationError(
-          `Node ${node.id} requires ${node.type} migration from version ${version} to ${definition.version}`,
-        );
-      }
-
-      let attempts = 0;
-      while (version < definition.version) {
-        const result = runMigration(definition, node.id, version, props);
-        if (!Number.isInteger(result.version) || result.version <= version) {
-          throw new MigrationError(
-            `Node ${node.id} migration must advance beyond version ${version}`,
-          );
-        }
-        version = result.version;
-        props = result.props;
-        attempts += 1;
-        if (attempts > 100 || version > definition.version) {
-          throw new MigrationError(
-            `Node ${node.id} migration did not resolve to registered version ${definition.version}`,
-          );
-        }
-      }
+    if (node.typeVersion !== definition.version) {
+      throw new NodeValidationError(
+        `Node ${node.id} uses ${node.type} typeVersion ${node.typeVersion}; registered version is ${definition.version}`,
+        { nodeId: node.id, nodeType: node.type },
+      );
     }
 
     return {
       ...cloneValue(node),
-      typeVersion: version,
-      props: this.runValidation(definition, props),
+      typeVersion: node.typeVersion,
+      props: this.runValidation(definition, node.props),
     };
   }
 
@@ -203,20 +170,4 @@ function mergeDefaults<Props extends JsonValue>(
 
 function isPlainObject(value: unknown): value is Record<string, JsonValue> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function runMigration<Props extends JsonValue>(
-  definition: NodeTypeDefinition<Props>,
-  nodeId: string,
-  fromVersion: number,
-  props: unknown,
-): { version: number; props: Props } {
-  try {
-    return definition.migrate!({ fromVersion, props: cloneValue(props) });
-  } catch (cause) {
-    throw new MigrationError(
-      `Failed to migrate node ${nodeId} (${definition.type}) from version ${fromVersion}`,
-      { cause },
-    );
-  }
 }

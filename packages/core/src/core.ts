@@ -1,4 +1,3 @@
-import { DocumentMigrationRegistry } from "./document-migrations";
 import { validateAsset, validateDocument, validateNode } from "./document-validation";
 import {
   DocumentValidationError,
@@ -44,7 +43,6 @@ export type BoardCoreOptions = {
   document?: unknown;
   schemaVersion?: number;
   nodeTypes?: NodeTypeRegistry;
-  migrations?: DocumentMigrationRegistry;
   viewportSize?: Size;
   idFactory?: () => string;
   now?: () => number;
@@ -92,7 +90,6 @@ const coreInternals = new WeakMap<BoardCore, CoreInternals>();
 
 export class BoardCore {
   readonly nodeTypes: NodeTypeRegistry;
-  readonly migrations: DocumentMigrationRegistry;
   readonly nodes: BoardNodesController;
   readonly assets: BoardAssetsController;
   readonly selection: SelectionController;
@@ -112,7 +109,6 @@ export class BoardCore {
 
   constructor(options: BoardCoreOptions = {}) {
     this.nodeTypes = options.nodeTypes ?? new NodeTypeRegistry();
-    this.migrations = options.migrations ?? new DocumentMigrationRegistry();
     this.schemaVersion = options.schemaVersion ?? 1;
     this.idFactory = options.idFactory ?? defaultIdFactory;
     this.now = options.now ?? Date.now;
@@ -121,8 +117,6 @@ export class BoardCore {
       ? validateDocument(options.document, {
           schemaVersion: this.schemaVersion,
           nodeTypes: this.nodeTypes,
-          migrations: this.migrations,
-          migrate: false,
         })
       : createEmptyDocument(this.schemaVersion);
     this.store = new RuntimeDocumentStore(document);
@@ -265,10 +259,8 @@ export class BoardCore {
 
   private validateLoadedDocument(input: unknown, options: DocumentLoadOptions = {}): BoardDocument {
     return validateDocument(input, {
-      ...options,
       schemaVersion: this.schemaVersion,
       nodeTypes: this.nodeTypes,
-      migrations: this.migrations,
     });
   }
 
@@ -611,8 +603,8 @@ export class BoardDocumentController {
     return getCoreInternals(this.core).loadDocument(input, options);
   }
 
-  validate(input: unknown, options?: Pick<DocumentLoadOptions, "migrate">): BoardDocument {
-    return getCoreInternals(this.core).validateLoadedDocument(input, options);
+  validate(input: unknown): BoardDocument {
+    return getCoreInternals(this.core).validateLoadedDocument(input);
   }
 }
 

@@ -46,15 +46,15 @@ const rows = [
   {
     id: "current-document-only",
     status:
-      /requires migration/.test(documentValidation) &&
+      /older than supported schema/.test(documentValidation) &&
       /newer than supported schema/.test(documentValidation) &&
       !/migrate: true/.test(facadeSource) &&
       !/class DocumentMigrationRegistry/.test(documentMigrations) &&
       !/\bmigrate\?\s*\(/.test(coreTypes)
         ? "achieved"
         : "partial",
-    evidence: "core rejects older schemas when migration is disabled and rejects future schemas; no schema-v4/old-project adapter found",
-    missing: "pixiboardjs persistence still loads with migrate:true and Core still exposes document/node migration surfaces; require explicit rejection tests without adding a legacy adapter",
+    evidence: "core and pixiboardjs accept only the current SDK BoardDocument; older/future schemas, legacy assetId shapes, and registered typeVersion mismatches are rejected; no migration surface or legacy adapter remains",
+    missing: "keep this boundary covered whenever schemaVersion or node typeVersion changes",
   },
   {
     id: "unknown-node-preservation",

@@ -80,6 +80,31 @@ describe("pixiboardjs facade contract", () => {
     expect(() => board.document.snapshot()).toThrow(BoardDestroyedError);
   });
 
+  it("loads only the current persistence document format", async () => {
+    const current = {
+      schemaVersion: 1,
+      revision: 4,
+      nodes: [],
+      assets: [],
+    };
+    const board = await createPixiBoard({
+      ...options(),
+      persistence: { load: async () => current },
+    });
+    await board.ready;
+    expect(board.document.toJSON()).toEqual(current);
+    await board.destroy();
+
+    const legacy = await createPixiBoard({
+      ...options(),
+      persistence: {
+        load: async () => ({ schemaVersion: 0, revision: 0, nodes: [], assets: [] }),
+      },
+    });
+    await expect(legacy.ready).rejects.toThrow("Document schema 0 is older than supported schema 1");
+    await legacy.destroy();
+  });
+
   it("keeps NodeHandle snapshots immutable and combines setter work into one transaction", async () => {
     const board = await createPixiBoard(options());
     await board.ready;

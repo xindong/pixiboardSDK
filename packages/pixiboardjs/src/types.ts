@@ -181,7 +181,7 @@ export interface PixiBoard {
     snapshot(): Readonly<BoardDocument>;
     toJSON(): BoardDocument;
     load(input: unknown, options?: DocumentLoadOptions): Promise<void>;
-    validate(input: unknown, options?: Pick<DocumentLoadOptions, "migrate">): BoardDocument;
+    validate(input: unknown): BoardDocument;
   };
   node<Props extends JsonValue = JsonValue>(nodeId: string): NodeHandle<Props>;
   transaction<Result>(label: string, operation: () => Result, options?: TransactionOptions): Result;

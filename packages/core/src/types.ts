@@ -112,10 +112,6 @@ export type NodeTypeDefinition<Props extends JsonValue = JsonValue> = {
   version: number;
   defaults?: Partial<Props>;
   validate(value: unknown): Props;
-  migrate?(input: {
-    fromVersion: number;
-    props: unknown;
-  }): { version: number; props: Props };
   getBounds(node: BoardNode<Props>): WorldBounds;
   resize?: ResizePolicy<Props>;
 };
@@ -157,6 +153,5 @@ export type TransactionOptions = {
 };
 
 export type DocumentLoadOptions = {
-  migrate?: boolean;
   replaceHistory?: boolean;
 };
