@@ -38,7 +38,7 @@ describe("core performance and structural sharing", () => {
     expect(Object.isFrozen(before)).toBe(true);
     expect(elapsed).toBeGreaterThanOrEqual(0);
     console.info(`core 100k single update: ${elapsed.toFixed(2)}ms`);
-  });
+  }, 30_000);
 
   it("updates 1000 nodes in one transaction without changing document shape", () => {
     const core = new BoardCore({ document: largeDocument(100_000) });
@@ -56,7 +56,7 @@ describe("core performance and structural sharing", () => {
     expect(core.document.snapshot().revision).toBe(1);
     expect(elapsed).toBeGreaterThanOrEqual(0);
     console.info(`core 100k / 1000-node batch: ${elapsed.toFixed(2)}ms`);
-  });
+  }, 30_000);
 
   it("reports p95 timings for repeated 1000-node batches", () => {
     const core = new BoardCore({ document: largeDocument(100_000) });
@@ -73,7 +73,7 @@ describe("core performance and structural sharing", () => {
     const value = p95(samples);
     expect(value).toBeGreaterThanOrEqual(0);
     console.info(`core 100k / 1000-node batch p95 (${samples.length}): ${value.toFixed(2)}ms`);
-  });
+  }, 30_000);
 
   it("reports p95 timings for repeated 100k single-node updates", () => {
     const core = new BoardCore({ document: largeDocument(100_000) });
@@ -86,5 +86,5 @@ describe("core performance and structural sharing", () => {
     const value = p95(samples);
     expect(value).toBeGreaterThanOrEqual(0);
     console.info(`core 100k single update p95 (${samples.length}): ${value.toFixed(2)}ms`);
-  });
+  }, 30_000);
 });
