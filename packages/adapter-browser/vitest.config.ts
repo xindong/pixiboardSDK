@@ -10,6 +10,6 @@ export default {
   },
   test: {
     environment: "node",
-    include: ["test/**/*.test.ts"],
+    include: [resolve(packageRoot, "test/**/*.test.ts")],
   },
 };
