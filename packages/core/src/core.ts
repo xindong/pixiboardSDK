@@ -20,6 +20,7 @@ import type {
   AssetRecord,
   BoardChangeSet,
   BoardDocument,
+  BoardDocumentUpdate,
   BoardNode,
   BoardNodeCreateInput,
   BoardNodePatch,
@@ -51,6 +52,7 @@ export type BoardCoreOptions = {
 export type BoardChangeEvent = {
   revision: number;
   changeSet: BoardChangeSet;
+  documentUpdate: BoardDocumentUpdate;
 };
 
 export type MissingNodeTypeEvent = {
@@ -351,9 +353,23 @@ export class BoardCore {
   }
 
   private emitChange(changeSet: BoardChangeSet): void {
+    const changedNodeIds = new Set([
+      ...changeSet.addedNodeIds,
+      ...changeSet.updatedNodeIds,
+      ...changeSet.assetChangedNodeIds,
+    ]);
+    const changedNodes: BoardNode[] = [];
+    for (const nodeId of changedNodeIds) {
+      const node = this.store.getNodeReference(nodeId);
+      if (node) changedNodes.push(node);
+    }
     this.events.emit("change", {
       revision: changeSet.revision,
       changeSet: immutableClone(changeSet) as BoardChangeSet,
+      documentUpdate: immutableClone({
+        revision: changeSet.revision,
+        changedNodes,
+      }) as BoardDocumentUpdate,
     });
   }
 

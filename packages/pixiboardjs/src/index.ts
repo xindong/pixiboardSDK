@@ -371,7 +371,7 @@ class PixiBoardFacade implements PixiBoard {
     this.pendingRuntimeWork = this.pendingRuntimeWork.then(async () => {
       if (this.signal.aborted) return;
       if (this.renderer) {
-        await waitForAbort(this.renderer.apply(this.core.document.snapshot(), event.changeSet), this.signal);
+        await waitForAbort(this.renderer.apply(event.documentUpdate, event.changeSet), this.signal);
         if (this.signal.aborted) return;
         this.events.emit("render:complete", {
           revision: event.revision,

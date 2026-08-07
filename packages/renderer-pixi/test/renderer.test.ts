@@ -5,6 +5,7 @@ import { registerTaskCardRenderer, taskCardNode } from "./fixtures";
 
 const node = (id: string, type = "rect", x = 0): BoardNode => ({ id, type, typeVersion: 1, x, y: 0, width: 10, height: 10, rotation: 0, zIndex: 0, props: {} });
 const doc = (nodes: BoardNode[], revision = 0): BoardDocument => ({ schemaVersion: 1, revision, nodes, assets: [] });
+const update = (changedNodes: BoardNode[], revision: number) => ({ revision, changedNodes });
 function fake() {
   const stage: any = { children: [], addChild(child: any) { this.children.push(child); }, removeChild(child: any) { this.children = this.children.filter((x: any) => x !== child); } };
   const app: any = { stage, init: vi.fn(async () => {}), destroy: vi.fn() };
@@ -18,7 +19,7 @@ describe("renderer-pixi vertical slice", () => {
     registry.register("custom", { create: () => { calls.push("create"); return { displayObject: factory.createContainer(), state: {} }; }, update: () => { calls.push("update"); }, destroy: () => { calls.push("destroy"); } });
     const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, registry }); await renderer.init();
     await renderer.rebuild(doc([node("a", "custom")], 1)); expect(renderer.activeViews.has("a")).toBe(true);
-    await renderer.apply(doc([node("a", "custom", 5), node("b")], 2), { revision: 2, transactionId: "t", origin: "api", addedNodeIds: ["b"], updatedNodeIds: ["a"], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 });
+    await renderer.apply(update([node("a", "custom", 5), node("b")], 2), { revision: 2, transactionId: "t", origin: "api", addedNodeIds: ["b"], updatedNodeIds: ["a"], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 });
     expect(renderer.activeViews.size).toBe(2); expect(calls).toContain("update"); await renderer.destroy(); expect(renderer.activeViews.size).toBe(0); expect(calls).toContain("destroy");
   });
   it("uses unknown placeholder and cleans late async create after destroy", async () => {
@@ -68,7 +69,7 @@ describe("renderer-pixi vertical slice", () => {
     const { app, factory } = fake(); const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory }); await renderer.init();
     await renderer.setVisibleBounds({ minX: -1, minY: -1, maxX: 20, maxY: 20 }); await renderer.rebuild(doc([node("near"), node("far", "rect", 1000)], 1));
     expect(renderer.activeViews.has("near")).toBe(true); expect(renderer.activeViews.has("far")).toBe(false);
-    await renderer.apply(doc([{ ...node("far", "rect", 5) }, node("near")], 2), { revision: 2, transactionId: "t", origin: "api", addedNodeIds: [], updatedNodeIds: ["far"], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 });
+    await renderer.apply(update([{ ...node("far", "rect", 5) }], 2), { revision: 2, transactionId: "t", origin: "api", addedNodeIds: [], updatedNodeIds: ["far"], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 });
     expect(renderer.activeViews.has("far")).toBe(true); await renderer.destroy();
   });
   it("captures viewport, bounds, and node through an injectable contract without changing the active scene", async () => {
@@ -92,18 +93,42 @@ describe("renderer-pixi vertical slice", () => {
     const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, registry }); await renderer.init();
     await renderer.rebuild(doc([node("a", "tracked"), node("b", "tracked")], 1));
     expect(Object.fromEntries(updates)).toEqual({ a: 1, b: 1 });
-    await renderer.apply(doc([{ ...node("a", "tracked"), x: 20 }], 2), { revision: 2, transactionId: "incremental", origin: "api", addedNodeIds: [], updatedNodeIds: ["a"], removedNodeIds: ["b"], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 });
+    await renderer.apply(update([{ ...node("a", "tracked"), x: 20 }], 2), { revision: 2, transactionId: "incremental", origin: "api", addedNodeIds: [], updatedNodeIds: ["a"], removedNodeIds: ["b"], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 });
     expect(Object.fromEntries(updates)).toEqual({ a: 2, b: 1 });
     expect(destroys).toContain("b");
     expect([...renderer.activeViews.keys()]).toEqual(["a"]);
     await renderer.destroy();
   });
+  it("applies one changed node in a 100k document without iterating the document cache", async () => {
+    const { app, factory } = fake();
+    const nodes = Array.from({ length: 100_000 }, (_, index) => node(`node-${index}`, "rect", index));
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, cullingQuery: () => ["node-99999"] });
+    await renderer.init();
+    await renderer.setVisibleBounds({ minX: 99_990, minY: 0, maxX: 100_020, maxY: 20 });
+    await renderer.rebuild(doc(nodes, 1));
+
+    const nodesById = (renderer as any).nodesById as Map<string, BoardNode>;
+    const entries = (renderer as any).entries as Map<string, unknown>;
+    const originalNodeKeys = nodesById.keys;
+    const originalEntryKeys = entries.keys;
+    nodesById.keys = (() => { throw new Error("incremental apply scanned all cached nodes"); }) as typeof nodesById.keys;
+    entries.keys = (() => { throw new Error("incremental apply scanned all active entries"); }) as typeof entries.keys;
+
+    const changed = { ...nodes[99_999], x: 42 };
+    await renderer.apply(update([changed], 2), { revision: 2, transactionId: "100k", origin: "api", addedNodeIds: [], updatedNodeIds: [changed.id], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 });
+    expect(renderer.diagnostics.updates).toBe(1);
+    expect(((renderer as any).entries.get(changed.id).node as BoardNode).x).toBe(42);
+
+    nodesById.keys = originalNodeKeys;
+    entries.keys = originalEntryKeys;
+    await renderer.destroy();
+  }, 30_000);
   it("reacquires a same-ref preview on asset changes and releases both generations", async () => {
     const { app, factory } = fake(); const releases: string[] = []; let generation = 0;
     const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, acquireTexture: async () => { const id = `lease-${++generation}`; return { texture: { id }, release: () => releases.push(id) }; } }); await renderer.init();
     const image = { ...node("image", "image"), assetRefs: { preview: { assetId: "preview" } } };
     await renderer.rebuild(doc([image], 1));
-    await renderer.apply(doc([{ ...image, x: 1 }], 2), { revision: 2, transactionId: "preview", origin: "api", addedNodeIds: [], updatedNodeIds: ["image"], removedNodeIds: [], assetChangedNodeIds: ["image"], selectionChanged: false, viewportChanged: false, timestamp: 1 });
+    await renderer.apply(update([{ ...image, x: 1 }], 2), { revision: 2, transactionId: "preview", origin: "api", addedNodeIds: [], updatedNodeIds: ["image"], removedNodeIds: [], assetChangedNodeIds: ["image"], selectionChanged: false, viewportChanged: false, timestamp: 1 });
     expect(generation).toBe(2);
     expect(releases).toEqual(["lease-1"]);
     expect(renderer.diagnostics.textureLeases).toBe(1);
@@ -116,7 +141,7 @@ describe("renderer-pixi vertical slice", () => {
     const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, acquireTexture: () => new Promise((resolve) => resolvers.push(resolve)) }); await renderer.init();
     const image = { ...node("race", "image"), assetRefs: { preview: { assetId: "same-ref" } } };
     const first = renderer.rebuild(doc([image], 1)); await Promise.resolve();
-    const second = renderer.apply(doc([{ ...image, x: 2 }], 2), { revision: 2, transactionId: "race", origin: "api", addedNodeIds: [], updatedNodeIds: ["race"], removedNodeIds: [], assetChangedNodeIds: ["race"], selectionChanged: false, viewportChanged: false, timestamp: 1 }); await Promise.resolve();
+    const second = renderer.apply(update([{ ...image, x: 2 }], 2), { revision: 2, transactionId: "race", origin: "api", addedNodeIds: [], updatedNodeIds: ["race"], removedNodeIds: [], assetChangedNodeIds: ["race"], selectionChanged: false, viewportChanged: false, timestamp: 1 }); await Promise.resolve();
     expect(resolvers).toHaveLength(2);
     resolvers[1]({ texture: { generation: 2 }, release: () => releases.push("new") }); await second;
     resolvers[0]({ texture: { generation: 1 }, release: () => releases.push("old") }); await first;

@@ -1,4 +1,4 @@
-import type { AssetRef, BoardChangeSet, BoardNode, BoardDocument, JsonValue, Point, WorldBounds } from "@pixi-board/core";
+import type { AssetRef, BoardChangeSet, BoardNode, BoardDocument, BoardDocumentUpdate, JsonValue, Point, WorldBounds } from "@pixi-board/core";
 export type PixiDisplayObject = { visible?: boolean; x?: number; y?: number; rotation?: number; zIndex?: number; addChild?(child: PixiDisplayObject): void; removeChild?(child: PixiDisplayObject): void; destroy?(options?: unknown): void; [key: string]: unknown };
 export type PixiTicker = { add?(listener: (...args: unknown[]) => void): void; remove?(listener: (...args: unknown[]) => void): void; count?: number };
 export type PixiApplication = { stage: PixiDisplayObject; init?(options?: Record<string, unknown>): Promise<void> | void; initOptions?: Record<string, unknown>; destroy?(rendererOptions?: boolean | Record<string, unknown>, stageOptions?: boolean | Record<string, unknown>): void; canvas?: unknown; view?: unknown; ticker?: PixiTicker; renderer?: { extract?: { base64?(options: Record<string, unknown>): Promise<string> | string } }; screen?: { width: number; height: number } };
@@ -41,4 +41,5 @@ export type CaptureFrame = { target: PixiDisplayObject; frame?: WorldBounds; sca
 export type CaptureAdapter = (frame: CaptureFrame, request: CaptureRequest, signal: AbortSignal) => Promise<{ dataUrl: string; mimeType: string; width?: number; height?: number }> | { dataUrl: string; mimeType: string; width?: number; height?: number };
 export type RendererCaptureResult = { dataUrl: string; mimeType: string; width?: number; height?: number; revision: number; requestId?: string };
 export type RendererSnapshot = Readonly<BoardDocument>;
+export type RendererDocumentUpdate = BoardDocumentUpdate;
 export type RendererChangeSet = BoardChangeSet;

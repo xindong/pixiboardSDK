@@ -130,6 +130,33 @@ describe("pixiboardjs facade contract", () => {
     await board.destroy();
   });
 
+  it("passes only changed nodes to incremental renderer commits", async () => {
+    const apply = vi.fn(async () => undefined);
+    const renderer: RuntimeRenderer = {
+      init: async () => undefined,
+      rebuild: async () => undefined,
+      apply,
+      destroy: async () => undefined,
+    };
+    const board = await createPixiBoard({
+      ...options(),
+      headless: false,
+      container: {} as Element,
+      rendererFactory: () => renderer,
+    });
+    await board.ready;
+
+    await board.nodes.create(card("a"));
+    await flush();
+
+    expect(apply).toHaveBeenCalledOnce();
+    expect(apply.mock.calls[0][0]).toMatchObject({
+      changedNodes: [{ id: "a" }],
+    });
+    expect(Object.isFrozen(apply.mock.calls[0][0])).toBe(true);
+    await board.destroy();
+  });
+
   it("isolates and releases keyboard and resize listeners for two instances", async () => {
     const firstEvents = new Events();
     const secondEvents = new Events();

@@ -1,4 +1,4 @@
-import { rotatedRectBounds, type BoardNode, type BoardDocument, type BoardChangeSet, type WorldBounds, type Point, type AssetRef, type NodeTypeRegistry } from "@pixi-board/core";
+import { rotatedRectBounds, type BoardNode, type BoardDocument, type BoardDocumentUpdate, type BoardChangeSet, type WorldBounds, type Point, type AssetRef, type NodeTypeRegistry } from "@pixi-board/core";
 import { NodeRendererRegistry } from "./registry";
 import { registerBuiltinRenderers } from "./builtins";
 import { GridSpatialIndex } from "./spatial";
@@ -32,7 +32,7 @@ export class PixiBoardRenderer {
   private readonly operations = new Map<string, NodeOperation>();
   private app?: PixiApplication;
   private world?: PixiDisplayObject;
-  private snapshot?: Readonly<BoardDocument>;
+  private revision?: number;
   private readonly nodesById = new Map<string, Readonly<BoardNode>>();
   private desiredIds = new Set<string>();
   private visibleBounds?: WorldBounds;
@@ -60,7 +60,7 @@ export class PixiBoardRenderer {
 
   async rebuild(snapshot: Readonly<BoardDocument>): Promise<void> {
     this.assertAlive();
-    this.snapshot = snapshot;
+    this.revision = snapshot.revision;
     this.nodesById.clear();
     for (const node of snapshot.nodes) this.nodesById.set(node.id, node);
     this.rebuildSpatialIndex(snapshot);
@@ -69,19 +69,27 @@ export class PixiBoardRenderer {
     await this.reconcileActiveSet(++this.viewportEpoch);
   }
 
-  async apply(snapshot: Readonly<BoardDocument>, changeSet?: BoardChangeSet): Promise<void> {
+  async apply(update: BoardDocumentUpdate, changeSet: BoardChangeSet): Promise<void> {
     this.assertAlive();
-    if (!changeSet || !this.snapshot || changeSet.revision !== this.snapshot.revision + 1 || changeSet.revision !== snapshot.revision) {
-      return this.rebuild(snapshot);
+    if (this.revision === undefined || changeSet.revision !== this.revision + 1 || changeSet.revision !== update.revision) {
+      throw new Error(`Renderer revision mismatch: expected ${this.revision === undefined ? "a rebuild" : this.revision + 1}, received ${update.revision}`);
     }
 
     const touchedIds = new Set([...changeSet.addedNodeIds, ...changeSet.updatedNodeIds, ...changeSet.assetChangedNodeIds]);
     const nextNodes = new Map<string, Readonly<BoardNode>>();
-    for (const node of snapshot.nodes) if (touchedIds.has(node.id)) nextNodes.set(node.id, node);
-    this.snapshot = snapshot;
+    for (const node of update.changedNodes) if (touchedIds.has(node.id)) nextNodes.set(node.id, node);
+    for (const id of touchedIds) {
+      if (!nextNodes.has(id)) throw new Error(`Renderer update is missing changed node: ${id}`);
+    }
+    this.revision = update.revision;
+
+    const addedIds = new Set(changeSet.addedNodeIds);
+    const updatedIds = new Set(changeSet.updatedNodeIds);
+    const assetChangedIds = new Set(changeSet.assetChangedNodeIds);
 
     for (const id of changeSet.removedNodeIds) {
       this.nodesById.delete(id);
+      this.desiredIds.delete(id);
       this.spatialIndex.remove(id);
       await this.destroyView(id);
     }
@@ -90,19 +98,23 @@ export class PixiBoardRenderer {
       if (!node) continue;
       this.nodesById.set(id, node);
       const item = { ...this.getBounds(node), id };
-      if (changeSet.addedNodeIds.includes(id)) this.spatialIndex.insert(item);
-      else if (changeSet.updatedNodeIds.includes(id)) this.spatialIndex.update(item);
+      if (addedIds.has(id)) this.spatialIndex.insert(item);
+      else if (updatedIds.has(id)) this.spatialIndex.update(item);
     }
 
-    this.refreshDesiredIds();
-    for (const id of [...this.entries.keys()]) if (!this.desiredIds.has(id)) await this.destroyView(id);
+    const visibleCandidates = this.visibleBounds
+      ? new Set(this.options.cullingQuery?.(this.visibleBounds) ?? this.spatialIndex.query(this.visibleBounds))
+      : undefined;
     for (const id of touchedIds) {
       const node = this.nodesById.get(id);
-      if (!node || !this.desiredIds.has(id)) {
+      const desired = Boolean(node && node.visible !== false && (!visibleCandidates || visibleCandidates.has(id)));
+      if (desired) this.desiredIds.add(id);
+      else this.desiredIds.delete(id);
+      if (!node || !desired) {
         await this.destroyView(id);
         continue;
       }
-      await this.ensureView(node, changeSet.assetChangedNodeIds.includes(id));
+      await this.ensureView(node, assetChangedIds.has(id));
     }
   }
 
@@ -116,7 +128,11 @@ export class PixiBoardRenderer {
 
   setCullingQuery(query: CullingQuery | undefined): void { this.options.cullingQuery = query; }
 
-  async refreshRegisteredTypes(): Promise<void> { if (this.snapshot) await this.rebuild(this.snapshot); }
+  async refreshRegisteredTypes(): Promise<void> {
+    this.assertAlive();
+    for (const id of new Set([...this.entries.keys(), ...this.operations.keys()])) await this.destroyView(id);
+    await this.reconcileActiveSet(++this.viewportEpoch);
+  }
 
   getBounds(node: Readonly<BoardNode>): WorldBounds {
     const definition = this.options.nodeTypes?.get(node.type);
@@ -296,7 +312,7 @@ export class PixiBoardRenderer {
       ? await this.options.capture({ target, frame, scale, format: "png" }, request, signal)
       : await this.captureWithPixi(target, frame, scale);
     if (signal.aborted) throw abortError();
-    return { ...value, revision: this.snapshot?.revision ?? 0, ...(requestId ? { requestId } : {}) };
+    return { ...value, revision: this.revision ?? 0, ...(requestId ? { requestId } : {}) };
   }
 
   private async captureWithPixi(target: PixiDisplayObject, frame: WorldBounds | undefined, scale: number): Promise<{ dataUrl: string; mimeType: string; width?: number; height?: number }> {

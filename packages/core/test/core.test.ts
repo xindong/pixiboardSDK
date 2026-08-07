@@ -7,6 +7,7 @@ import {
   rotatedRectBounds,
   type BoardChangeSet,
   type BoardDocument,
+  type BoardDocumentUpdate,
   type BoardNode,
   type NodeTypeDefinition,
 } from "../src";
@@ -168,6 +169,24 @@ describe("transactions and ChangeSet", () => {
       viewportChanged: false,
     });
     expect(core.history.canUndo()).toBe(true);
+  });
+
+  it("emits a detached immutable document update containing only changed nodes", () => {
+    const core = createCore();
+    registerTasks(core);
+    createTask(core, "a");
+    createTask(core, "b");
+    let update: BoardDocumentUpdate | undefined;
+    core.on("change", (event) => { update = event.documentUpdate; });
+
+    core.nodes.update("b", { x: 321 });
+
+    expect(update?.changedNodes.map((node) => node.id)).toEqual(["b"]);
+    expect(update?.changedNodes[0].x).toBe(321);
+    expect(Object.isFrozen(update)).toBe(true);
+    expect(Object.isFrozen(update?.changedNodes[0])).toBe(true);
+    expect(() => ((update!.changedNodes[0] as BoardNode).x = 999)).toThrow();
+    expect(core.nodes.get("b")?.x).toBe(321);
   });
 
   it("rolls back every staged write when later validation fails", () => {

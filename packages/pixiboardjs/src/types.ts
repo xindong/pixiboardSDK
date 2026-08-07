@@ -2,6 +2,7 @@ import type {
   BoardChangeEvent,
   BoardCoreOptions,
   BoardDocument,
+  BoardDocumentUpdate,
   BoardNode,
   BoardNodeCreateInput,
   BoardNodePatch,
@@ -29,6 +30,7 @@ export type {
   BoardCapabilities,
   BoardChangeEvent,
   BoardDocument,
+  BoardDocumentUpdate,
   BoardNode,
   BoardNodeCreateInput,
   BoardNodePatch,
@@ -59,7 +61,7 @@ export type DocumentPersistence = {
 export type RuntimeRenderer = {
   init(): Promise<void>;
   rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
-  apply(snapshot: Readonly<BoardDocument>, changeSet?: BoardChangeEvent["changeSet"]): Promise<void>;
+  apply(update: BoardDocumentUpdate, changeSet: BoardChangeEvent["changeSet"]): Promise<void>;
   destroy(): Promise<void>;
 };
 

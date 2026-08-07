@@ -139,6 +139,11 @@ export type BoardChangeSet = {
   timestamp: number;
 };
 
+export type BoardDocumentUpdate = {
+  revision: number;
+  changedNodes: ReadonlyArray<Readonly<BoardNode>>;
+};
+
 export type NodeListFilter = {
   ids?: string[];
   types?: string[];

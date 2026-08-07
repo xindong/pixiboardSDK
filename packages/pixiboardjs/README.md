@@ -4,6 +4,10 @@ The single public PixiBoardJS package. It composes Core, Pixi renderer,
 capabilities, and platform ports behind the `createPixiBoard()` facade without
 exposing the mutable store or Pixi scene.
 
+The facade performs one full renderer rebuild at mount. Later Core commits
+forward detached immutable changed-node updates directly to the renderer, so a
+single-node render commit does not create or scan a full document snapshot.
+
 Install target for SDK consumers:
 
 ```sh
