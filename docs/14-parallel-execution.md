@@ -1,6 +1,23 @@
 # 并行实施看板
 
-更新时间：2026-08-07
+更新时间：2026-08-07 14:23 CST
+
+## 当前状态
+
+| 工作线 | 状态 | 主分支结果 | 统筹结论 |
+|---|---|---|---|
+| Core | 已合并 | `730c024` | 17 个定向测试通过；扁平 Store、Registry、同步 transaction、data patch history、Selection、Viewport 和 ChangeSet 已落地。 |
+| Package / Benchmark | 已合并 | `87300aa` | package contract、Vanilla consumer fixture、10k/50k/100k synthetic-card 与 no-fake-results benchmark skeleton 已落地。 |
+| Capabilities / Agent | 退回重构 | 暂未合并 | `f92dc8e` 实现了第二套 Store/Revision/History，与 Core 漂移；必须重构为 `BoardCore` adapter 后再合并。 |
+| Renderer code map | 已完成只读勘察 | 未改源项目 | 已定位 `BoardScene`、NodeView、RBush、texture/media runtime、input、overlay/capture 和 teardown 接入点。 |
+
+Capabilities 重构必须满足：
+
+- 不复制 `BoardNode`、`AssetRecord`、`BoardChangeSet` 和 Core errors。
+- 所有 create/update/delete 通过同一个 Core transaction，返回同一 revision、history entry 和 ChangeSet。
+- Agent 的资产加节点写入不得拆成多次 commit。
+- contract tests 同时断言 direct Core、BoardCapabilities 和 Agent adapter 的最终 document、revision、ChangeSet 与 undo/redo 一致。
+- Headless preview/capture availability、AbortSignal 和 requestId 必须有明确契约。
 
 ## 统筹原则
 
@@ -48,11 +65,10 @@ session 完成
 
 ## 统筹检查表
 
-- [ ] Core commit 已完成，测试和 public types 可读。
+- [x] Core commit 已完成，测试和 public types 可读。
 - [ ] Capabilities 只依赖 core contract，不依赖 Pixi/Tauri。
-- [ ] Package skeleton 无 `workspace:*` 发布泄漏。
+- [x] Package skeleton 无 `workspace:*` 发布泄漏。
 - [ ] Renderer registry 使用 core 的 NodeTypeDefinition 和 bounds。
 - [ ] Browser adapter 通过 adapter contract，不恢复宽泛 Repository。
 - [ ] New Plugin API v3 示例使用 BoardCapabilities。
 - [ ] 主分支集成后运行 docs check、package tests 和 benchmark smoke。
-
