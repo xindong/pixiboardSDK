@@ -18,6 +18,7 @@
 12. [11-testing-release-compatibility.md](11-testing-release-compatibility.md)：测试矩阵、版本和发布策略。
 13. [12-risks-open-decisions.md](12-risks-open-decisions.md)：风险登记和已经冻结的实现决策。
 14. [13-traceability.md](13-traceability.md)：目标、文档、代码迁移和验收之间的映射。
+15. [14-parallel-execution.md](14-parallel-execution.md)：并行 session 的任务、依赖、worktree 和合并顺序。
 
 ## 架构决策记录
 

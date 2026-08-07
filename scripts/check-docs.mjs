@@ -20,6 +20,7 @@ const requiredFiles = [
   "docs/11-testing-release-compatibility.md",
   "docs/12-risks-open-decisions.md",
   "docs/13-traceability.md",
+  "docs/14-parallel-execution.md",
   "docs/adr/0001-flat-document-model.md",
   "docs/adr/0002-document-source-pixi-cache.md",
   "docs/adr/0003-single-public-package.md",
@@ -48,7 +49,7 @@ async function collectMarkdownFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];
   for (const entry of entries) {
-    if (entry.name === ".git" || entry.name === "node_modules") continue;
+    if (entry.name === ".git" || entry.name === "node_modules" || entry.name === ".cindy-worktrees") continue;
     const path = resolve(directory, entry.name);
     if (entry.isDirectory()) {
       files.push(...await collectMarkdownFiles(path));
