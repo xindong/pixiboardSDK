@@ -20,6 +20,7 @@
 14. [13-traceability.md](13-traceability.md)：目标、文档、代码迁移和验收之间的映射。
 15. [14-parallel-execution.md](14-parallel-execution.md)：并行 session 的任务、依赖、worktree 和合并顺序。
 16. [15-release-gate.md](15-release-gate.md)：P6 真实 npm tarball、workspace 改写与外部 consumer 发布门。
+17. [16-requirement-completion-audit.md](16-requirement-completion-audit.md)：按 requirement 对照源码、测试和可重复命令的完成审计。
 
 ## 架构决策记录
 

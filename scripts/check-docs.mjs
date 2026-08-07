@@ -24,6 +24,7 @@ const requiredFiles = [
   "docs/13-traceability.md",
   "docs/14-parallel-execution.md",
   "docs/15-release-gate.md",
+  "docs/16-requirement-completion-audit.md",
   "docs/adr/0001-flat-document-model.md",
   "docs/adr/0002-document-source-pixi-cache.md",
   "docs/adr/0003-single-public-package.md",
