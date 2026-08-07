@@ -1,0 +1,12 @@
+{
+  "name": "pixiboard-sdk-planning",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Architecture and delivery plan for PixiBoardJS SDK",
+  "scripts": {
+    "docs:check": "node scripts/check-docs.mjs"
+  },
+  "packageManager": "pnpm@10.25.0"
+}
+
