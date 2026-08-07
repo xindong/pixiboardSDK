@@ -45,10 +45,16 @@ describe("renderer-pixi vertical slice", () => {
   });
   it("exposes a lazy default PixiJS application factory without starting WebGL", () => {
     const initOptions = { preference: "webgpu", antialias: true };
-    const app = { stage: {}, init: vi.fn(), destroy: vi.fn() };
-    const factory = createPixiApplicationFactory(initOptions, async () => ({ Application: class { constructor() { return app as any; } }, Container: class {}, Graphics: class {}, Sprite: class {}, Text: class {} } as any));
+    class FakeApplication { stage = {}; init = vi.fn(); destroy = vi.fn(); }
+    const factory = createPixiApplicationFactory(initOptions, async () => ({ Application: FakeApplication, Container: class {}, Graphics: class {}, Sprite: class {}, Text: class {} } as any));
     expect(typeof factory).toBe("function");
-    return factory().then((created) => expect(created.initOptions).toEqual(initOptions));
+    return factory().then((created) => {
+      expect(created).toBeInstanceOf(FakeApplication);
+      expect(created.initOptions).toEqual(initOptions);
+      expect(typeof created.init).toBe("function");
+      created.init?.({ probe: true });
+      expect((created.init as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith({ probe: true });
+    });
   });
   it("creates image sprites without treating asset ids as URLs", () => {
     const sprite = { kind: "sprite" };

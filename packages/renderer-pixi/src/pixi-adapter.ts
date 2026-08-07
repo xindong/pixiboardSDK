@@ -10,7 +10,12 @@ export type PixiRuntimeLoader = () => Promise<PixiRuntimeModule>;
 export function createPixiApplicationFactory(options: Record<string, unknown> = {}, runtimeLoader: PixiRuntimeLoader = loadPixiRuntime): PixiApplicationFactory {
   return async () => {
     const pixi = await runtimeLoader();
-    return { ...(new pixi.Application() as any), initOptions: { ...options } };
+    const app = new pixi.Application() as any;
+    Object.defineProperty(app, "initOptions", {
+      value: { ...options },
+      configurable: true,
+    });
+    return app;
   };
 }
 
