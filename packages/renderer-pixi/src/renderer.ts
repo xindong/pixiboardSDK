@@ -2,7 +2,7 @@ import { rotatedRectBounds, type BoardNode, type BoardDocument, type BoardDocume
 import { NodeRendererRegistry } from "./registry";
 import { registerBuiltinRenderers } from "./builtins";
 import { GridSpatialIndex } from "./spatial";
-import type { CaptureAdapter, CaptureRequest, CullingQuery, PixiApplication, PixiApplicationFactory, PixiDisplayObject, PixiNodeRendererContext, PixiNodeView, PixiViewFactory, RendererCaptureResult, RendererDiagnostics, RendererResourceScope, SpatialIndex, TextureLease } from "./types";
+import type { CaptureAdapter, CaptureRequest, CullingQuery, PixiApplication, PixiApplicationFactory, PixiDisplayObject, PixiNodeRendererContext, PixiNodeView, PixiViewFactory, RendererApplyResult, RendererCaptureResult, RendererDiagnostics, RendererResourceScope, SpatialIndex, TextureLease } from "./types";
 import { createPixiApplicationFactory, createPixiViewFactory, loadPixiRuntime } from "./pixi-adapter";
 
 type NodeRenderer = NonNullable<ReturnType<NodeRendererRegistry["get"]>>;
@@ -69,10 +69,10 @@ export class PixiBoardRenderer {
     await this.reconcileActiveSet(++this.viewportEpoch);
   }
 
-  async apply(update: BoardDocumentUpdate, changeSet: BoardChangeSet): Promise<void> {
+  async apply(update: BoardDocumentUpdate, changeSet: BoardChangeSet): Promise<RendererApplyResult> {
     this.assertAlive();
     if (this.revision === undefined || changeSet.revision !== this.revision + 1 || changeSet.revision !== update.revision) {
-      throw new Error(`Renderer revision mismatch: expected ${this.revision === undefined ? "a rebuild" : this.revision + 1}, received ${update.revision}`);
+      return "rebuild-required";
     }
 
     const touchedIds = new Set([...changeSet.addedNodeIds, ...changeSet.updatedNodeIds, ...changeSet.assetChangedNodeIds]);
@@ -81,8 +81,6 @@ export class PixiBoardRenderer {
     for (const id of touchedIds) {
       if (!nextNodes.has(id)) throw new Error(`Renderer update is missing changed node: ${id}`);
     }
-    this.revision = update.revision;
-
     const addedIds = new Set(changeSet.addedNodeIds);
     const updatedIds = new Set(changeSet.updatedNodeIds);
     const assetChangedIds = new Set(changeSet.assetChangedNodeIds);
@@ -102,12 +100,12 @@ export class PixiBoardRenderer {
       else if (updatedIds.has(id)) this.spatialIndex.update(item);
     }
 
-    const visibleCandidates = this.visibleBounds
-      ? new Set(this.options.cullingQuery?.(this.visibleBounds) ?? this.spatialIndex.query(this.visibleBounds))
+    const customVisibleCandidates = this.visibleBounds && this.options.cullingQuery
+      ? new Set(this.options.cullingQuery(this.visibleBounds))
       : undefined;
     for (const id of touchedIds) {
       const node = this.nodesById.get(id);
-      const desired = Boolean(node && node.visible !== false && (!visibleCandidates || visibleCandidates.has(id)));
+      const desired = Boolean(node && this.isNodeDesired(node, customVisibleCandidates));
       if (desired) this.desiredIds.add(id);
       else this.desiredIds.delete(id);
       if (!node || !desired) {
@@ -116,6 +114,8 @@ export class PixiBoardRenderer {
       }
       await this.ensureView(node, assetChangedIds.has(id));
     }
+    this.revision = update.revision;
+    return "applied";
   }
 
   async setVisibleBounds(bounds: WorldBounds | undefined): Promise<void> {
@@ -130,6 +130,8 @@ export class PixiBoardRenderer {
 
   async refreshRegisteredTypes(): Promise<void> {
     this.assertAlive();
+    this.rebuildSpatialIndexFromCache();
+    this.refreshDesiredIds();
     for (const id of new Set([...this.entries.keys(), ...this.operations.keys()])) await this.destroyView(id);
     await this.reconcileActiveSet(++this.viewportEpoch);
   }
@@ -302,8 +304,20 @@ export class PixiBoardRenderer {
     this.desiredIds = new Set([...candidates].filter((id) => this.nodesById.get(id)?.visible !== false));
   }
 
+  private isNodeDesired(node: Readonly<BoardNode>, customVisibleCandidates?: ReadonlySet<string>): boolean {
+    if (node.visible === false) return false;
+    if (!this.visibleBounds) return true;
+    if (customVisibleCandidates) return customVisibleCandidates.has(node.id);
+    return intersects(this.getBounds(node), this.visibleBounds);
+  }
+
   private rebuildSpatialIndex(snapshot: Readonly<BoardDocument>): void {
     this.spatialIndex.rebuild(snapshot.nodes.map((node) => ({ ...this.getBounds(node), id: node.id })));
+  }
+
+  private rebuildSpatialIndexFromCache(): void {
+    const items = [...this.nodesById.values()].map((node) => ({ ...this.getBounds(node), id: node.id }));
+    this.spatialIndex.rebuild(items);
   }
 
   private async captureFrame(target: PixiDisplayObject, frame: WorldBounds | undefined, scale: number, request: CaptureRequest, signal: AbortSignal, requestId?: string): Promise<RendererCaptureResult> {
@@ -419,6 +433,7 @@ class ResourceScope {
 }
 
 function contains(bounds: WorldBounds, point: Point): boolean { return point.x >= bounds.minX && point.x <= bounds.maxX && point.y >= bounds.minY && point.y <= bounds.maxY; }
+function intersects(left: WorldBounds, right: WorldBounds): boolean { return left.minX <= right.maxX && left.maxX >= right.minX && left.minY <= right.maxY && left.maxY >= right.minY; }
 function sameAssetRefs(a: BoardNode["assetRefs"], b: BoardNode["assetRefs"]): boolean { return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {}); }
 function abortError(): DOMException { return new DOMException("Aborted", "AbortError"); }
 function isAbortError(error: unknown): boolean { return error instanceof DOMException && error.name === "AbortError"; }

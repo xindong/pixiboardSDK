@@ -58,10 +58,12 @@ export type DocumentPersistence = {
 export type RuntimeRenderer = {
   init(): Promise<void>;
   rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
-  apply(update: BoardDocumentUpdate, changeSet: BoardChangeEvent["changeSet"]): Promise<void>;
+  apply(update: BoardDocumentUpdate, changeSet: BoardChangeEvent["changeSet"]): Promise<RendererApplyResult>;
   refreshRegisteredTypes?(): Promise<void>;
   destroy(): Promise<void>;
 };
+
+export type RendererApplyResult = "applied" | "rebuild-required";
 
 export type CustomDisplayObject = {
   visible?: boolean;

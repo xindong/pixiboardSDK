@@ -132,7 +132,7 @@ describe("pixiboardjs facade contract", () => {
   });
 
   it("passes only changed nodes to incremental renderer commits", async () => {
-    const apply = vi.fn(async () => undefined);
+    const apply = vi.fn(async () => "applied" as const);
     const renderer: RuntimeRenderer = {
       init: async () => undefined,
       rebuild: async () => undefined,
@@ -255,6 +255,57 @@ describe("pixiboardjs facade contract", () => {
     await board.destroy();
   });
 
+  it("rebuilds from a full snapshot when an incremental renderer reports a revision gap", async () => {
+    const rebuild = vi.fn(async () => undefined);
+    const renderer: RuntimeRenderer = {
+      init: async () => undefined,
+      rebuild,
+      apply: async () => "rebuild-required",
+      destroy: async () => undefined,
+    };
+    const board = await createPixiBoard({
+      ...options(),
+      headless: false,
+      container: {} as Element,
+      rendererFactory: () => renderer,
+    });
+    await board.ready;
+
+    await board.document.load({ schemaVersion: 1, revision: 7, nodes: [], assets: [] });
+
+    expect(rebuild).toHaveBeenCalledTimes(2);
+    expect(rebuild.mock.calls[1][0].revision).toBe(7);
+    await board.destroy();
+  });
+
+  it("rebuilds immediately after a failed incremental renderer apply", async () => {
+    const rebuild = vi.fn(async () => undefined);
+    const queuedErrors: Array<() => void> = [];
+    vi.stubGlobal("queueMicrotask", (callback: () => void) => { queuedErrors.push(callback); });
+    const renderer: RuntimeRenderer = {
+      init: async () => undefined,
+      rebuild,
+      apply: async () => { throw new Error("renderer update failed"); },
+      destroy: async () => undefined,
+    };
+    const board = await createPixiBoard({
+      ...options(),
+      headless: false,
+      container: {} as Element,
+      rendererFactory: () => renderer,
+    });
+    await board.ready;
+
+    await board.nodes.create(card("recover"));
+    await flush();
+
+    expect(rebuild).toHaveBeenCalledTimes(2);
+    expect(rebuild.mock.calls[1][0].nodes.map((node) => node.id)).toEqual(["recover"]);
+    expect(queuedErrors).toHaveLength(1);
+    vi.unstubAllGlobals();
+    await board.destroy();
+  });
+
   it("isolates and releases keyboard and resize listeners for two instances", async () => {
     const firstEvents = new Events();
     const secondEvents = new Events();
@@ -341,7 +392,7 @@ describe("pixiboardjs facade contract", () => {
     const renderer: RuntimeRenderer = {
       init: async () => undefined,
       rebuild: async () => undefined,
-      apply: async () => { markStarted(); await applyStarted; },
+      apply: async () => { markStarted(); await applyStarted; return "applied"; },
       destroy: vi.fn(async () => undefined),
     };
     const save = vi.fn(async () => undefined);

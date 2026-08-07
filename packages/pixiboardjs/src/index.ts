@@ -380,9 +380,9 @@ class PixiBoardFacade implements PixiBoard {
     if (!this.options.headless && this.options.container) {
       const factory = this.options.rendererFactory ?? ((rendererOptions) => new PixiBoardRenderer(rendererOptions as unknown as InternalRendererOptions));
       const renderer = factory({ ...this.options.renderer, nodeTypes: this.core.nodeTypes });
-      this.renderer = renderer;
       await renderer.init();
       if (this.signal.aborted) { await renderer.destroy(); return; }
+      this.renderer = renderer;
       await renderer.rebuild(this.core.document.snapshot());
     }
     if (!this.signal.aborted) this.lifecycle = "ready";
@@ -467,7 +467,17 @@ class PixiBoardFacade implements PixiBoard {
       // runtime is initialized; do not race that path with an incremental apply.
       if (this.lifecycle === "mounting" && event.changeSet.origin === "load") return;
       if (this.renderer) {
-        await waitForAbort(this.renderer.apply(event.documentUpdate, event.changeSet), this.signal);
+        try {
+          const result = await waitForAbort(this.renderer.apply(event.documentUpdate, event.changeSet), this.signal);
+          if (result === "rebuild-required" && !this.signal.aborted) {
+            await waitForAbort(this.renderer.rebuild(this.core.document.snapshot()), this.signal);
+          }
+        } catch (error) {
+          if (!this.signal.aborted) {
+            await waitForAbort(this.renderer.rebuild(this.core.document.snapshot()), this.signal);
+          }
+          throw error;
+        }
         if (this.signal.aborted) return;
         this.events.emit("render:complete", {
           revision: event.revision,

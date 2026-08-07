@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { BoardDocument, BoardNode } from "@pixi-board/core";
+import { NodeTypeRegistry, type BoardDocument, type BoardNode } from "@pixi-board/core";
 import { createPixiApplicationFactory, NodeRendererRegistry, PixiBoardRenderer, createPixiViewFactory } from "../src/index";
 import { registerTaskCardRenderer, taskCardNode } from "./fixtures";
 
@@ -101,18 +101,24 @@ describe("renderer-pixi vertical slice", () => {
   });
   it("applies one changed node in a 100k document without iterating the document cache", async () => {
     const { app, factory } = fake();
-    const nodes = Array.from({ length: 100_000 }, (_, index) => node(`node-${index}`, "rect", index));
-    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, cullingQuery: () => ["node-99999"] });
+    const nodes = Array.from({ length: 100_000 }, (_, index) => ({
+      ...node(`node-${index}`, "rect", index),
+      ...(index === 99_999 ? {} : { visible: false }),
+    }));
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory });
     await renderer.init();
-    await renderer.setVisibleBounds({ minX: 99_990, minY: 0, maxX: 100_020, maxY: 20 });
+    await renderer.setVisibleBounds({ minX: -1, minY: -1, maxX: 100_020, maxY: 20 });
     await renderer.rebuild(doc(nodes, 1));
 
     const nodesById = (renderer as any).nodesById as Map<string, BoardNode>;
     const entries = (renderer as any).entries as Map<string, unknown>;
+    const spatialIndex = renderer.spatialIndex;
     const originalNodeKeys = nodesById.keys;
     const originalEntryKeys = entries.keys;
+    const originalSpatialQuery = spatialIndex.query;
     nodesById.keys = (() => { throw new Error("incremental apply scanned all cached nodes"); }) as typeof nodesById.keys;
     entries.keys = (() => { throw new Error("incremental apply scanned all active entries"); }) as typeof entries.keys;
+    spatialIndex.query = (() => { throw new Error("incremental apply queried the full viewport"); }) as typeof spatialIndex.query;
 
     const changed = { ...nodes[99_999], x: 42 };
     await renderer.apply(update([changed], 2), { revision: 2, transactionId: "100k", origin: "api", addedNodeIds: [], updatedNodeIds: [changed.id], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 });
@@ -121,8 +127,46 @@ describe("renderer-pixi vertical slice", () => {
 
     nodesById.keys = originalNodeKeys;
     entries.keys = originalEntryKeys;
+    spatialIndex.query = originalSpatialQuery;
     await renderer.destroy();
   }, 30_000);
+  it("rebuilds cached spatial bounds when registered node types change", async () => {
+    const { app, factory } = fake();
+    const nodeTypes = new NodeTypeRegistry();
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, nodeTypes });
+    await renderer.init();
+    await renderer.setVisibleBounds({ minX: 100, minY: 0, maxX: 120, maxY: 20 });
+    await renderer.rebuild(doc([node("shifted", "shifted")], 1));
+    expect(renderer.activeViews.has("shifted")).toBe(false);
+
+    nodeTypes.register({
+      type: "shifted",
+      version: 1,
+      validate: (value) => value as Record<string, never>,
+      getBounds: () => ({ minX: 100, minY: 0, maxX: 110, maxY: 10 }),
+    });
+    await renderer.refreshRegisteredTypes();
+
+    expect(renderer.activeViews.has("shifted")).toBe(true);
+    await renderer.destroy();
+  });
+  it("requires a rebuild after a failed incremental view update", async () => {
+    const { app, factory } = fake();
+    const registry = new NodeRendererRegistry();
+    let updates = 0;
+    registry.register("fallible", {
+      create: () => ({ displayObject: factory.createContainer(), state: {} }),
+      update: () => { if (++updates === 2) throw new Error("update failed"); },
+      destroy: () => undefined,
+    });
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, registry });
+    await renderer.init();
+    await renderer.rebuild(doc([node("fallible", "fallible")], 1));
+
+    await expect(renderer.apply(update([node("fallible", "fallible", 2)], 2), { revision: 2, transactionId: "fail", origin: "api", addedNodeIds: [], updatedNodeIds: ["fallible"], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 })).rejects.toThrow("update failed");
+    await expect(renderer.apply(update([node("fallible", "fallible", 3)], 3), { revision: 3, transactionId: "gap", origin: "api", addedNodeIds: [], updatedNodeIds: ["fallible"], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 })).resolves.toBe("rebuild-required");
+    await renderer.destroy();
+  });
   it("reacquires a same-ref preview on asset changes and releases both generations", async () => {
     const { app, factory } = fake(); const releases: string[] = []; let generation = 0;
     const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, acquireTexture: async () => { const id = `lease-${++generation}`; return { texture: { id }, release: () => releases.push(id) }; } }); await renderer.init();

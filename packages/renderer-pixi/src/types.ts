@@ -43,3 +43,4 @@ export type RendererCaptureResult = { dataUrl: string; mimeType: string; width?:
 export type RendererSnapshot = Readonly<BoardDocument>;
 export type RendererDocumentUpdate = BoardDocumentUpdate;
 export type RendererChangeSet = BoardChangeSet;
+export type RendererApplyResult = "applied" | "rebuild-required";
