@@ -161,12 +161,12 @@ describe("pixiboardjs facade contract", () => {
   it("supports lightweight find/findOne queries and exact document.validate signature", async () => {
     const board = await createPixiBoard(options());
     await board.ready;
-    await board.nodes.create(card("a"));
-    await board.nodes.create({ ...card("b"), type: "card", x: 200 });
+    const first = await board.nodes.create(card("a"));
+    const second = await board.nodes.create({ ...card("b"), type: "card", x: 200 });
 
-    expect(board.find({ type: "card" }).map((node) => node.id)).toEqual(["a", "b"]);
-    expect(board.find({ bounds: { minX: -10, minY: -10, maxX: 120, maxY: 120 } }).map((node) => node.id)).toEqual(["a"]);
-    expect(board.findOne("#b")).toMatchObject({ id: "b", props: { title: "b" } });
+    expect(board.find({ type: "card" }).map((node) => node.id)).toEqual([first.id, second.id]);
+    expect(board.find({ bounds: { minX: -10, minY: -10, maxX: 120, maxY: 120 } }).map((node) => node.id)).toEqual([first.id]);
+    expect(board.findOne(`#${second.id}`)).toMatchObject({ id: second.id, props: { title: "b" } });
     expect(board.findOne("missing")).toBeUndefined();
     expect(board.document.validate(board.document.toJSON())).toEqual(board.document.toJSON());
     await board.destroy();
