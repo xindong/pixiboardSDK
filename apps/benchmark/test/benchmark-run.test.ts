@@ -19,6 +19,8 @@ describe.runIf(requested)("deterministic benchmark report", () => {
         p95DurationMs: observation.summary.p95DurationMs,
         p95CoreTransactionLatencyMs: observation.summary.p95CoreTransactionLatencyMs,
         p95FirstInteractiveMs: observation.summary.p95FirstInteractiveMs,
+        p95SnapshotMaterializationMs: observation.summary.p95SnapshotMaterializationMs,
+        p95RendererApplyMs: observation.summary.p95RendererApplyMs,
         invariants: observation.invariants,
       })),
       targetEvaluations: report.targetEvaluations,

@@ -23,6 +23,8 @@ export function summarizeMetricSamples(samples) {
   const documentLoads = normalized.map((sample) => sample.documentLoadMs).filter(Number.isFinite);
   const firstInteractives = normalized.map((sample) => sample.firstInteractiveMs).filter(Number.isFinite);
   const coreTransactions = normalized.map((sample) => sample.coreTransactionLatencyMs).filter(Number.isFinite);
+  const snapshots = normalized.map((sample) => sample.snapshotMaterializationMs).filter(Number.isFinite);
+  const rendererApplies = normalized.map((sample) => sample.rendererApplyMs).filter(Number.isFinite);
   return {
     sampleCount: normalized.length,
     p50FrameTimeMs: percentile(frameTimes, 0.5),
@@ -35,6 +37,8 @@ export function summarizeMetricSamples(samples) {
     p95DocumentLoadMs: percentile(documentLoads, 0.95),
     p95FirstInteractiveMs: percentile(firstInteractives, 0.95),
     p95CoreTransactionLatencyMs: percentile(coreTransactions, 0.95),
+    p95SnapshotMaterializationMs: percentile(snapshots, 0.95),
+    p95RendererApplyMs: percentile(rendererApplies, 0.95),
     observed: normalized.length > 0,
   };
 }

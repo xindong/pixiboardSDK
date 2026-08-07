@@ -9,6 +9,7 @@
     "benchmark:run": "PIXIBOARD_BENCHMARK_RUN=1 vitest run --config vitest.config.ts test/benchmark-run.test.ts --reporter=verbose",
     "benchmark:matrix": "PIXIBOARD_BENCHMARK_MATRIX=1 vitest run --config vitest.config.ts test/benchmark-matrix.test.ts --reporter=verbose",
     "benchmark:report": "PIXIBOARD_SDK_BENCHMARK_REPORT=1 vitest run --config vitest.config.ts test/sdk-report.test.ts --reporter=verbose",
+    "benchmark:browser": "node src/browser-runner.mjs",
     "benchmark:check": "node src/check-regression.mjs",
     "test": "vitest run --config vitest.config.ts"
   },

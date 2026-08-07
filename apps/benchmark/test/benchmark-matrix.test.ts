@@ -9,8 +9,14 @@ const measuredScenarios = [
   "spatial-rebuild",
   "spatial-query",
   "renderer-culling",
+  "renderer-culling-full-retained",
   "renderer-single-node-apply",
+  "core-document-snapshot",
+  "core-single-node-update-cold",
+  "core-single-node-update-transition",
   "core-single-node-update",
+  "core-batch-update-1000-cold",
+  "core-batch-update-1000-transition",
   "core-batch-update-1000",
 ];
 
@@ -35,6 +41,10 @@ describe.runIf(requested)("real 10k/50k/100k benchmark matrix", () => {
       const culling = report.observations.find((item) => item.scenario === "renderer-culling" && item.datasetCount === count);
       expect(culling?.invariants?.activeViewsBelow1_5xVisible).toBe(true);
       expect(culling?.invariants?.doesNotCreateAllDocumentViews).toBe(true);
+      expect(culling?.invariants?.retentionMode).toBe("matched-visible");
+      expect(culling?.invariants?.viewport).toBe("1920x1080@1");
+      const retained = report.observations.find((item) => item.scenario === "renderer-culling-full-retained" && item.datasetCount === count);
+      expect(retained?.invariants).toMatchObject({ retentionMode: "full-retained", activeViewsEqualExpectedSet: true, doesNotCreateAllDocumentViews: false });
       const batch = report.observations.find((item) => item.scenario === "core-batch-update-1000" && item.datasetCount === count);
       expect(batch?.invariants).toMatchObject({
         batchSize: 1000,

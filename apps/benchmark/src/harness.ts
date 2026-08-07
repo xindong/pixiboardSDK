@@ -9,6 +9,9 @@ import { generateSyntheticCards } from "./synthetic-card.mjs";
 
 const DEFAULT_COUNTS = [1_000, 10_000, 50_000, 100_000] as const;
 const WORLD_SIZE = 1_000_000;
+const DEFAULT_VIEWPORT = Object.freeze({ width: 1_920, height: 1_080, dpr: 1 });
+const DEFAULT_RETENTION_MODES = ["matched-visible", "full-retained"] as const;
+type RetentionMode = (typeof DEFAULT_RETENTION_MODES)[number];
 
 type SyntheticDataset = ReturnType<typeof generateSyntheticCards>;
 type Observation = Awaited<ReturnType<typeof runScenario>> & {
@@ -24,6 +27,8 @@ export type HarnessOptions = {
   batchIterations?: number | ((count: number) => number);
   soakCycles?: number;
   includeFacadeBatch?: boolean;
+  viewport?: { width: number; height: number; dpr?: number };
+  retentionModes?: RetentionMode[];
 };
 
 function duration(operation: () => void): number {
@@ -99,6 +104,24 @@ function chooseRendererBounds(index: GridSpatialIndex, count: number): { bounds:
   return best;
 }
 
+function normalizeViewport(options: HarnessOptions): { width: number; height: number; dpr: number } {
+  const viewport = options.viewport ?? DEFAULT_VIEWPORT;
+  if (!Number.isFinite(viewport.width) || viewport.width <= 0 || !Number.isFinite(viewport.height) || viewport.height <= 0) {
+    throw new RangeError("benchmark viewport width and height must be positive numbers");
+  }
+  const dpr = viewport.dpr ?? 1;
+  if (!Number.isFinite(dpr) || dpr <= 0) throw new RangeError("benchmark viewport dpr must be positive");
+  return { width: viewport.width, height: viewport.height, dpr };
+}
+
+function normalizeRetentionModes(options: HarnessOptions): RetentionMode[] {
+  const modes = options.retentionModes ?? [...DEFAULT_RETENTION_MODES];
+  if (modes.length === 0 || modes.some((mode) => !DEFAULT_RETENTION_MODES.includes(mode))) {
+    throw new RangeError(`retentionModes must contain only: ${DEFAULT_RETENTION_MODES.join(", ")}`);
+  }
+  return [...new Set(modes)];
+}
+
 function createDisplayObject(): PixiDisplayObject {
   return {
     children: [],
@@ -140,6 +163,142 @@ function coreIdFactory() {
   return () => `benchmark-transaction-${++value}`;
 }
 
+async function runCoreTransactionBenchmarks(
+  dataset: SyntheticDataset,
+  document: BoardDocument,
+  options: HarnessOptions,
+): Promise<Observation[]> {
+  const count = dataset.count;
+  const observations: Observation[] = [];
+  const core = new BoardCore({ document, idFactory: coreIdFactory(), now: () => 1 });
+  let singleChange: BoardChangeEvent | undefined;
+  let singleRevision = core.document.snapshot().revision;
+  core.on("change", (event) => { singleChange = event; });
+  const singleNodeId = document.nodes[Math.floor(document.nodes.length / 2)].id;
+  const singleOperation = (iteration: number) => {
+    const beforeRevision = singleRevision;
+    const before = core.nodes.get(singleNodeId)!;
+    singleChange = undefined;
+    const coreTransactionLatencyMs = duration(() => {
+      core.nodes.update(singleNodeId, { x: before.x + (iteration % 2 === 0 ? 1 : -1) });
+    });
+    singleRevision = singleChange?.revision ?? singleRevision;
+    return {
+      durationMs: coreTransactionLatencyMs,
+      coreTransactionLatencyMs,
+      revisionDelta: singleRevision - beforeRevision,
+      changeSetCount: singleChange ? 1 : 0,
+      updatedNodeCount: singleChange?.changeSet.updatedNodeIds.length ?? 0,
+    };
+  };
+  const singleCold = await runScenario({
+    adapter: { name: "pixiboard-core", "core-single-node-update-cold": ({ iteration }: { iteration: number }) => singleOperation(iteration) },
+    dataset,
+    scenario: "core-single-node-update-cold",
+    iterations: 1,
+    warmup: 0,
+  });
+  observations.push(observed(singleCold, count, {
+    firstTransactionAfterLoad: true,
+    oneRevisionPerUpdate: singleCold.samples.every((sample: Record<string, unknown>) => sample.revisionDelta === 1),
+    oneChangeSetPerUpdate: singleCold.samples.every((sample: Record<string, unknown>) => sample.changeSetCount === 1),
+  }));
+  const singleTransition = await runScenario({
+    adapter: { name: "pixiboard-core", "core-single-node-update-transition": ({ iteration }: { iteration: number }) => singleOperation(iteration + 1) },
+    dataset,
+    scenario: "core-single-node-update-transition",
+    iterations: 3,
+    warmup: 0,
+  });
+  observations.push(observed(singleTransition, count, {
+    measuredTransitionTransactions: 3,
+    oneRevisionPerUpdate: singleTransition.samples.every((sample: Record<string, unknown>) => sample.revisionDelta === 1),
+    oneChangeSetPerUpdate: singleTransition.samples.every((sample: Record<string, unknown>) => sample.changeSetCount === 1),
+  }));
+  const singleUpdate = await runScenario({
+    adapter: { name: "pixiboard-core", "core-single-node-update": ({ iteration }: { iteration: number }) => singleOperation(iteration + 4) },
+    dataset,
+    scenario: "core-single-node-update",
+    iterations: iterations(options.singleUpdateIterations, count, () => 20),
+    warmup: 0,
+  });
+  observations.push(observed(singleUpdate, count, {
+    steadyStateAfterMeasuredColdAndTransition: true,
+    oneRevisionPerUpdate: singleUpdate.samples.every((sample: Record<string, unknown>) => sample.revisionDelta === 1),
+    oneChangeSetPerUpdate: singleUpdate.samples.every((sample: Record<string, unknown>) => sample.changeSetCount === 1),
+    oneUpdatedNodePerUpdate: singleUpdate.samples.every((sample: Record<string, unknown>) => sample.updatedNodeCount === 1),
+  }));
+
+  const batchCore = new BoardCore({ document, idFactory: coreIdFactory(), now: () => 1 });
+  let batchChange: BoardChangeEvent | undefined;
+  let batchChangeCount = 0;
+  let batchRevision = batchCore.document.snapshot().revision;
+  batchCore.on("change", (event) => { batchChange = event; batchChangeCount += 1; });
+  const batchIds = document.nodes.slice(0, 1_000).map((node) => node.id);
+  const batchOperation = (iteration: number) => {
+    const beforeRevision = batchRevision;
+    const beforeChanges = batchChangeCount;
+    batchChange = undefined;
+    const coreTransactionLatencyMs = duration(() => {
+      batchCore.transaction("Benchmark update 1000", () => {
+        for (const id of batchIds) {
+          const node = batchCore.nodes.get(id)!;
+          batchCore.nodes.update(id, { y: node.y + (iteration % 2 === 0 ? 1 : -1) });
+        }
+      });
+    });
+    batchRevision = batchChange?.revision ?? batchRevision;
+    return {
+      durationMs: coreTransactionLatencyMs,
+      coreTransactionLatencyMs,
+      revisionDelta: batchRevision - beforeRevision,
+      changeSetCount: batchChangeCount - beforeChanges,
+      updatedNodeCount: batchChange?.changeSet.updatedNodeIds.length ?? 0,
+    };
+  };
+  const batchCold = await runScenario({
+    adapter: { name: "pixiboard-core", "core-batch-update-1000-cold": ({ iteration }: { iteration: number }) => batchOperation(iteration) },
+    dataset,
+    scenario: "core-batch-update-1000-cold",
+    iterations: 1,
+    warmup: 0,
+  });
+  observations.push(observed(batchCold, count, {
+    firstTransactionAfterLoad: true,
+    batchSize: batchIds.length,
+    oneRevisionPerBatch: batchCold.samples.every((sample: Record<string, unknown>) => sample.revisionDelta === 1),
+    oneChangeSetPerBatch: batchCold.samples.every((sample: Record<string, unknown>) => sample.changeSetCount === 1),
+  }));
+  const batchTransition = await runScenario({
+    adapter: { name: "pixiboard-core", "core-batch-update-1000-transition": ({ iteration }: { iteration: number }) => batchOperation(iteration + 1) },
+    dataset,
+    scenario: "core-batch-update-1000-transition",
+    iterations: 3,
+    warmup: 0,
+  });
+  observations.push(observed(batchTransition, count, {
+    measuredTransitionTransactions: 3,
+    batchSize: batchIds.length,
+    oneRevisionPerBatch: batchTransition.samples.every((sample: Record<string, unknown>) => sample.revisionDelta === 1),
+    oneChangeSetPerBatch: batchTransition.samples.every((sample: Record<string, unknown>) => sample.changeSetCount === 1),
+  }));
+  const batchUpdate = await runScenario({
+    adapter: { name: "pixiboard-core", "core-batch-update-1000": ({ iteration }: { iteration: number }) => batchOperation(iteration + 4) },
+    dataset,
+    scenario: "core-batch-update-1000",
+    iterations: iterations(options.batchIterations, count, () => 10),
+    warmup: 0,
+  });
+  observations.push(observed(batchUpdate, count, {
+    steadyStateAfterMeasuredColdAndTransition: true,
+    batchSize: batchIds.length,
+    oneRevisionPerBatch: batchUpdate.samples.every((sample: Record<string, unknown>) => sample.revisionDelta === 1),
+    oneChangeSetPerBatch: batchUpdate.samples.every((sample: Record<string, unknown>) => sample.changeSetCount === 1),
+    changeSetContains1000Nodes: batchUpdate.samples.every((sample: Record<string, unknown>) => sample.updatedNodeCount === 1_000),
+  }));
+  return observations;
+}
+
 async function runDatasetBenchmarks(dataset: SyntheticDataset, document: BoardDocument, options: HarnessOptions): Promise<Observation[]> {
   const count = dataset.count;
   const observations: Observation[] = [];
@@ -161,6 +320,7 @@ async function runDatasetBenchmarks(dataset: SyntheticDataset, document: BoardDo
     warmup: 1,
   });
   observations.push(observed(load, count, { loadedNodeCount: document.nodes.length }));
+  observations.push(...await runCoreTransactionBenchmarks(dataset, document, options));
 
   // The synthetic world is 1,000,000px wide. A 4,096px cell keeps sparse
   // viewport queries proportional to intersecting buckets instead of walking
@@ -199,45 +359,65 @@ async function runDatasetBenchmarks(dataset: SyntheticDataset, document: BoardDo
   observations.push(observed(spatialQuery, count, { queryCount, cellSize: 4_096 }));
 
   const selected = chooseRendererBounds(index, count);
+  const viewport = normalizeViewport(options);
+  const retentionModes = normalizeRetentionModes(options);
   let rendererForApply: PixiBoardRenderer | undefined;
   let coreForApply: BoardCore | undefined;
   let changeForApply: BoardChangeEvent | undefined;
-  const rendererCulling = await runScenario({
-    adapter: {
-      name: "pixiboard-renderer-instrumented",
-      "renderer-culling": async () => {
-        const { app, viewFactory } = rendererPorts();
-        const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory, cullingQuery: () => selected.visibleIds });
-        const firstInteractiveMs = await asyncDuration(async () => {
-          await renderer.init();
-          await renderer.setVisibleBounds(selected.bounds);
-          await renderer.rebuild(document);
-        });
-        const activeViewCount = renderer.activeViews.size;
-        const diagnostics = { ...renderer.diagnostics };
-        await renderer.destroy();
-        return {
-          durationMs: firstInteractiveMs,
-          firstInteractiveMs,
-          visibleCount: selected.visibleIds.length,
-          activeViewCount,
-          createdViewCount: diagnostics.creates,
-          destroyedViewCount: renderer.diagnostics.destroys,
-          rendererBackend: "instrumented-pixi-adapter",
-        };
+  for (const retentionMode of retentionModes) {
+    const visibleIds = retentionMode === "matched-visible"
+      ? selected.visibleIds
+      : document.nodes.map((node) => node.id);
+    const scenario = retentionMode === "matched-visible" ? "renderer-culling" : "renderer-culling-full-retained";
+    const rendererCulling = await runScenario({
+      adapter: {
+        name: "pixiboard-renderer-instrumented",
+        [scenario]: async () => {
+          const { app, viewFactory } = rendererPorts();
+          const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory, cullingQuery: () => visibleIds });
+          const firstInteractiveMs = await asyncDuration(async () => {
+            await renderer.init();
+            await renderer.setVisibleBounds(selected.bounds);
+            await renderer.rebuild(document);
+          });
+          const activeViewCount = renderer.activeViews.size;
+          const diagnostics = { ...renderer.diagnostics };
+          await renderer.destroy();
+          return {
+            durationMs: firstInteractiveMs,
+            firstInteractiveMs,
+            visibleCount: selected.visibleIds.length,
+            activeViewCount,
+            retentionMode,
+            viewportWidth: viewport.width,
+            viewportHeight: viewport.height,
+            viewportDpr: viewport.dpr,
+            createdViewCount: diagnostics.creates,
+            destroyedViewCount: renderer.diagnostics.destroys,
+            rendererBackend: "instrumented-pixi-adapter",
+          };
+        },
       },
-    },
-    dataset,
-    scenario: "renderer-culling",
-    iterations: 1,
-  });
-  const rendererSample = rendererCulling.samples[0] ?? {};
-  observations.push(observed(rendererCulling, count, {
-    activeViewsEqualVisibleSet: rendererSample.activeViewCount === rendererSample.visibleCount,
-    activeViewsBelow1_5xVisible: Number(rendererSample.activeViewCount) <= Number(rendererSample.visibleCount) * 1.5,
-    doesNotCreateAllDocumentViews: Number(rendererSample.activeViewCount) < count,
-    viewsReturnToZeroAfterDestroy: rendererSample.createdViewCount === rendererSample.destroyedViewCount,
-  }));
+      dataset,
+      scenario,
+      iterations: 1,
+    });
+    const rendererSample = rendererCulling.samples[0] ?? {};
+    observations.push(observed(rendererCulling, count, {
+      retentionMode,
+      viewport: `${viewport.width}x${viewport.height}@${viewport.dpr}`,
+      activeViewsEqualExpectedSet: retentionMode === "matched-visible"
+        ? rendererSample.activeViewCount === rendererSample.visibleCount
+        : rendererSample.activeViewCount === count,
+      activeViewsBelow1_5xVisible: retentionMode === "matched-visible"
+        ? Number(rendererSample.activeViewCount) <= Number(rendererSample.visibleCount) * 1.5
+        : false,
+      doesNotCreateAllDocumentViews: retentionMode === "matched-visible"
+        ? Number(rendererSample.activeViewCount) < count
+        : Number(rendererSample.activeViewCount) === count,
+      viewsReturnToZeroAfterDestroy: rendererSample.createdViewCount === rendererSample.destroyedViewCount,
+    }));
+  }
 
   {
     const { app, viewFactory } = rendererPorts();
@@ -270,79 +450,29 @@ async function runDatasetBenchmarks(dataset: SyntheticDataset, document: BoardDo
   }));
   await rendererForApply.destroy();
 
-  const core = new BoardCore({ document, idFactory: coreIdFactory(), now: () => 1 });
-  let singleChange: BoardChangeEvent | undefined;
-  core.on("change", (event) => { singleChange = event; });
-  const singleNodeId = document.nodes[Math.floor(document.nodes.length / 2)].id;
-  const singleUpdate = await runScenario({
+  const snapshotCore = new BoardCore({ document, idFactory: coreIdFactory(), now: () => 1 });
+  const documentSnapshot = await runScenario({
     adapter: {
       name: "pixiboard-core",
-      "core-single-node-update": ({ iteration }: { iteration: number }) => {
-        const beforeRevision = core.document.snapshot().revision;
-        const before = core.nodes.get(singleNodeId)!;
-        singleChange = undefined;
-        const coreTransactionLatencyMs = duration(() => {
-          core.nodes.update(singleNodeId, { x: before.x + (iteration % 2 === 0 ? 1 : -1) });
-        });
+      "core-document-snapshot": () => {
+        let snapshot!: Readonly<BoardDocument>;
+        const snapshotMaterializationMs = duration(() => { snapshot = snapshotCore.document.snapshot(); });
         return {
-          durationMs: coreTransactionLatencyMs,
-          coreTransactionLatencyMs,
-          revisionDelta: core.document.snapshot().revision - beforeRevision,
-          changeSetCount: singleChange ? 1 : 0,
-          updatedNodeCount: singleChange?.changeSet.updatedNodeIds.length ?? 0,
+          durationMs: snapshotMaterializationMs,
+          snapshotMaterializationMs,
+          snapshotNodeCount: snapshot.nodes.length,
+          snapshotFrozen: Object.isFrozen(snapshot) && Object.isFrozen(snapshot.nodes[0]),
         };
       },
     },
     dataset,
-    scenario: "core-single-node-update",
-    iterations: iterations(options.singleUpdateIterations, count, (value) => value >= 100_000 ? 1 : value >= 50_000 ? 2 : 10),
-    warmup: 1,
+    scenario: "core-document-snapshot",
+    iterations: count >= 100_000 ? 1 : count >= 50_000 ? 2 : 3,
+    warmup: 0,
   });
-  observations.push(observed(singleUpdate, count, {
-    oneRevisionPerUpdate: singleUpdate.samples.every((sample: Record<string, unknown>) => sample.revisionDelta === 1),
-    oneChangeSetPerUpdate: singleUpdate.samples.every((sample: Record<string, unknown>) => sample.changeSetCount === 1),
-    oneUpdatedNodePerUpdate: singleUpdate.samples.every((sample: Record<string, unknown>) => sample.updatedNodeCount === 1),
-  }));
-
-  const batchCore = new BoardCore({ document, idFactory: coreIdFactory(), now: () => 1 });
-  let batchChange: BoardChangeEvent | undefined;
-  let batchChangeCount = 0;
-  batchCore.on("change", (event) => { batchChange = event; batchChangeCount += 1; });
-  const batchIds = document.nodes.slice(0, 1_000).map((node) => node.id);
-  const batchUpdate = await runScenario({
-    adapter: {
-      name: "pixiboard-core",
-      "core-batch-update-1000": ({ iteration }: { iteration: number }) => {
-        const beforeRevision = batchCore.document.snapshot().revision;
-        const beforeChanges = batchChangeCount;
-        batchChange = undefined;
-        const coreTransactionLatencyMs = duration(() => {
-          batchCore.transaction("Benchmark update 1000", () => {
-            for (const id of batchIds) {
-              const node = batchCore.nodes.get(id)!;
-              batchCore.nodes.update(id, { y: node.y + (iteration % 2 === 0 ? 1 : -1) });
-            }
-          });
-        });
-        return {
-          durationMs: coreTransactionLatencyMs,
-          coreTransactionLatencyMs,
-          revisionDelta: batchCore.document.snapshot().revision - beforeRevision,
-          changeSetCount: batchChangeCount - beforeChanges,
-          updatedNodeCount: batchChange?.changeSet.updatedNodeIds.length ?? 0,
-        };
-      },
-    },
-    dataset,
-    scenario: "core-batch-update-1000",
-    iterations: iterations(options.batchIterations, count, (value) => value >= 100_000 ? 1 : value >= 50_000 ? 1 : 3),
-    warmup: 1,
-  });
-  observations.push(observed(batchUpdate, count, {
-    batchSize: batchIds.length,
-    oneRevisionPerBatch: batchUpdate.samples.every((sample: Record<string, unknown>) => sample.revisionDelta === 1),
-    oneChangeSetPerBatch: batchUpdate.samples.every((sample: Record<string, unknown>) => sample.changeSetCount === 1),
-    changeSetContains1000Nodes: batchUpdate.samples.every((sample: Record<string, unknown>) => sample.updatedNodeCount === 1_000),
+  observations.push(observed(documentSnapshot, count, {
+    detachedImmutableBoundary: documentSnapshot.samples.every((sample: Record<string, unknown>) =>
+      sample.snapshotNodeCount === count && sample.snapshotFrozen === true),
   }));
 
   return observations;
@@ -535,10 +665,10 @@ async function runLifecycleSoak(cycles: number): Promise<Observation> {
   } as Observation;
 }
 
-function environment() {
+function environment(viewport: { width: number; height: number; dpr: number }) {
   const cpuList = cpus();
   const cpuModel = cpuList[0]?.model ?? "unknown";
-  const fingerprint = [process.platform, process.arch, process.versions.node, cpuModel, cpuList.length, "instrumented-pixi-adapter"].join("|");
+  const fingerprint = [process.platform, process.arch, process.versions.node, cpuModel, cpuList.length, "instrumented-pixi-adapter", `${viewport.width}x${viewport.height}@${viewport.dpr}`].join("|");
   return {
     fingerprint,
     runtime: "node" as const,
@@ -548,6 +678,7 @@ function environment() {
     cpuModel,
     cpuCount: cpuList.length,
     renderer: "instrumented-pixi-adapter" as const,
+    viewport,
   };
 }
 
@@ -556,14 +687,17 @@ function targetEvaluations(observations: Observation[]) {
     if (observation.status !== "observed") return [];
     if (observation.scenario === "core-single-node-update") {
       const value = observation.summary.p95CoreTransactionLatencyMs;
-      return [{ scenario: observation.scenario, datasetCount: observation.datasetCount, target: "p95 < 2ms", observed: value, passed: typeof value === "number" && value < 2 }];
+      return [{ scenario: observation.scenario, datasetCount: observation.datasetCount, measurement: "steady-state after separately reported cold and transition transactions", target: "p95 < 2ms", observed: value, passed: typeof value === "number" && value < 2 }];
     }
     if (observation.scenario === "core-batch-update-1000") {
       const value = observation.summary.p95CoreTransactionLatencyMs;
-      return [{ scenario: observation.scenario, datasetCount: observation.datasetCount, target: "p95 < 50ms", observed: value, passed: typeof value === "number" && value < 50 }];
+      return [{ scenario: observation.scenario, datasetCount: observation.datasetCount, measurement: "steady-state after separately reported cold and transition transactions", target: "p95 < 50ms", observed: value, passed: typeof value === "number" && value < 50 }];
     }
     if (observation.scenario === "renderer-culling") {
-      return [{ scenario: observation.scenario, datasetCount: observation.datasetCount, target: "active views <= visible set * 1.5", observed: observation.samples[0]?.activeViewCount, passed: observation.invariants?.activeViewsBelow1_5xVisible === true }];
+      return [{ scenario: observation.scenario, datasetCount: observation.datasetCount, measurement: "matched-visible retention", target: "active views <= visible set * 1.5", observed: observation.samples[0]?.activeViewCount, passed: observation.invariants?.activeViewsBelow1_5xVisible === true }];
+    }
+    if (observation.scenario === "renderer-culling-full-retained") {
+      return [{ scenario: observation.scenario, datasetCount: observation.datasetCount, measurement: "full-retained baseline", target: "active views == document nodes", observed: observation.samples[0]?.activeViewCount, passed: observation.invariants?.activeViewsEqualExpectedSet === true }];
     }
     if (observation.scenario === "create-destroy-soak") {
       return [{ scenario: observation.scenario, target: "listener/ticker/view/texture return to baseline", observed: observation.invariants, passed: observation.invariants?.returnedToBaselineEveryCycle === true }];
@@ -575,6 +709,7 @@ function targetEvaluations(observations: Observation[]) {
 export async function runDeterministicBenchmark(options: HarnessOptions = {}) {
   const counts = options.counts ?? [...DEFAULT_COUNTS];
   const seed = options.seed ?? 42;
+  const viewport = normalizeViewport(options);
   const observations: Observation[] = [];
   let facadeDocument: BoardDocument | undefined;
 
@@ -618,11 +753,11 @@ export async function runDeterministicBenchmark(options: HarnessOptions = {}) {
   return {
     schemaVersion: 1 as const,
     generatedAt: new Date().toISOString(),
-    environment: environment(),
+    environment: environment(viewport),
     seed,
     deterministic: {
       counts,
-      fixture: "LCG seed 42, fixed card size, fixed operation order and viewport path",
+      fixture: `LCG seed ${seed}, fixed card size, fixed operation order and viewport path; viewport ${viewport.width}x${viewport.height}@${viewport.dpr}; retention modes ${normalizeRetentionModes(options).join(", ")}`,
     },
     observations,
     targetEvaluations: targetEvaluations(observations),
