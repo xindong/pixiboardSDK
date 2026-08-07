@@ -18,12 +18,12 @@
     "@pixi-board/core": "workspace:*",
     "@pixi-board/renderer-pixi": "workspace:*",
     "konva": "9.3.22",
-    "pixi.js": "^8.19.0",
+    "pixi.js": "8.19.0",
     "pixiboardjs": "workspace:*"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
-    "typescript": "^5.9.3",
+    "@playwright/test": "1.62.1",
+    "typescript": "5.9.3",
     "vitest": "^3.2.4"
   }
 }
