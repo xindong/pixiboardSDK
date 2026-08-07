@@ -14,6 +14,7 @@
     "test:browser": "node scripts/run-browser-contract.mjs",
     "test:browser-boundary": "node scripts/check-browser-boundary.mjs",
     "benchmark:run": "pnpm --filter pixiboardjs-benchmark benchmark:run",
+    "benchmark:report": "pnpm --filter pixiboardjs-benchmark benchmark:report",
     "benchmark:test": "pnpm --filter pixiboardjs-benchmark test",
     "benchmark:check": "pnpm --filter pixiboardjs-benchmark benchmark:check"
   },
