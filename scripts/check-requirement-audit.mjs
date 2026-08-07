@@ -282,12 +282,13 @@ const releaseCommandEvidence =
   has(auditDoc, /Bundle budget passed/) &&
   has(auditDoc, /Release gate passed/) &&
   has(auditDoc, /consumer node imports passed/) &&
+  has(auditDoc, /external TypeScript compile|外部 TypeScript compile/) &&
   has(auditDoc, /consumer npm run build passed/);
 rows.push(
   releaseEvidence && releaseCommandEvidence
     ? achieved(
         "public-release-gate",
-        "A real release run generated the three public package dist artifacts, packed pixiboardjs (18 files), imported all public subpaths in an external Node consumer, and completed the external Vite consumer build; the committed audit records the exact successful release output. Dist/tarballs remain ephemeral and are not committed.",
+        "A real release run generated all three public package dist artifacts and tarballs, imported public subpaths in an external Node consumer, compiled an external TypeScript consumer, completed the Vite build, and persisted configured API/bundle reports. Dist/tarballs remain ephemeral and are not committed.",
         "Re-run pnpm build:release and pnpm release:check on each release candidate; the audit does not treat committed dist as source evidence.",
       )
     : missing(

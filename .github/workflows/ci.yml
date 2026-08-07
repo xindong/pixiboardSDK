@@ -55,3 +55,66 @@ jobs:
           name: chromium-traces-${{ github.run_id }}
           path: test-results
           if-no-files-found: ignore
+
+  performance-regression:
+    name: Performance regression (fail-closed)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      BASELINE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SHA }}
+          path: .benchmark-baseline
+      - uses: ./.github/actions/setup-sdk
+      - name: Install baseline dependencies
+        run: pnpm --dir .benchmark-baseline install --frozen-lockfile
+      - name: Measure baseline
+        working-directory: .benchmark-baseline
+        env:
+          PIXIBOARD_PERFORMANCE_DIR: .artifacts/performance/pr
+        run: node scripts/check-performance-gate.mjs pr
+      - name: Measure candidate
+        env:
+          PIXIBOARD_PERFORMANCE_DIR: .artifacts/performance/pr
+        run: node scripts/check-performance-gate.mjs pr
+      - name: Compare baseline and candidate
+        run: |
+          node apps/benchmark/src/check-regression.mjs \
+            --baseline .benchmark-baseline/.artifacts/performance/pr/node.json \
+            --candidate .artifacts/performance/pr/node.json \
+            --tolerance 0.5 \
+            | tee .artifacts/performance/pr/regression.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-pr-${{ github.run_id }}
+          path: |
+            .benchmark-baseline/.artifacts/performance/pr/
+            .artifacts/performance/pr/
+          if-no-files-found: error
+
+  desktop-tauri-gate:
+    name: Desktop Tauri gate (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            label: macOS launch smoke
+          - os: windows-2022
+            label: Windows native config/build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      PIXIBOARD_DESKTOP_PLATFORM: ${{ matrix.label }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/examples-desktop-sdk/src-tauri
+      - uses: ./.github/actions/setup-sdk
+      - run: node scripts/run-desktop-platform-gate.mjs --mode tauri

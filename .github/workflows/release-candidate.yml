@@ -46,7 +46,14 @@ jobs:
               filter: "latest",
               per_page: 100,
             });
-            for (const name of ["Static boundaries", "Core and integration contracts", "Browser required Chromium contracts"]) {
+            for (const name of [
+              "Static boundaries",
+              "Core and integration contracts",
+              "Browser required Chromium contracts",
+              "Performance regression (fail-closed)",
+              "Desktop Tauri gate (macOS launch smoke)",
+              "Desktop Tauri gate (Windows native config/build)",
+            ]) {
               const job = jobs.find(item => item.name === name);
               if (job?.conclusion !== "success") throw new Error(`${name} is ${job?.conclusion ?? "missing"} in CI run ${run.id}`);
             }
@@ -56,6 +63,9 @@ jobs:
     needs: verify-candidate
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      PIXIBOARD_RELEASE_ARTIFACT_DIR: .artifacts/release
+      PIXIBOARD_BUNDLE_REPORT: .artifacts/release/bundle-report.json
     steps:
       - uses: actions/checkout@v4
         with:
@@ -65,18 +75,13 @@ jobs:
       - run: pnpm build:release
       - run: node scripts/check-current-document-only.mjs
       - run: pnpm release:check
-      - name: Stage all public tarballs and API reports
+      - name: Verify persisted public release evidence
         shell: bash
         run: |
-          mkdir -p .artifacts/release/api-reports
-          pnpm --filter pixiboardjs pack --pack-destination "$PWD/.artifacts/release"
-          pnpm --filter @pixi-board/core pack --pack-destination "$PWD/.artifacts/release"
-          pnpm --filter @pixi-board/plugin-sdk pack --pack-destination "$PWD/.artifacts/release"
-          cp packages/pixiboardjs/etc/pixiboardjs.api.md .artifacts/release/api-reports/
-          cp packages/core/etc/pixi-board-core.api.md .artifacts/release/api-reports/
-          cp packages/plugin-sdk/etc/pixi-board-plugin-sdk.api.md .artifacts/release/api-reports/
-          test "$(find .artifacts/release -maxdepth 1 -name '*.tgz' | wc -l | tr -d ' ')" = 3
+          test "$(find .artifacts/release/tarballs -maxdepth 1 -name '*.tgz' | wc -l | tr -d ' ')" = 3
           test "$(find .artifacts/release/api-reports -maxdepth 1 -name '*.api.md' | wc -l | tr -d ' ')" = 3
+          test -s .artifacts/release/bundle-report.json
+          test -s .artifacts/release/release-manifest.json
       - uses: actions/upload-artifact@v4
         with:
           name: pixiboard-public-packages-rc-${{ env.CANDIDATE_SHA }}
@@ -157,7 +162,8 @@ jobs:
         with:
           workspaces: apps/examples-desktop-sdk/src-tauri
       - uses: ./.github/actions/setup-sdk
-      - run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - shell: bash
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - run: node scripts/run-desktop-platform-gate.mjs --mode tauri
 
   final-gate:

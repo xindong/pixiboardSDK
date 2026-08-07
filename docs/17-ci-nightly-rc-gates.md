@@ -10,13 +10,15 @@
 
 ## Pull Request / Main
 
-`.github/workflows/ci.yml` 保持聚焦：
+`.github/workflows/ci.yml` 执行：
 
 - Static boundaries：文档、公开包、current-only 和 browser/Tauri 静态边界。
 - Core and integration contracts：Core、renderer、capabilities、Agent、MCP、plugin、adapter 与 facade 契约。
 - Browser required Chromium contracts：真实 Chromium 中执行公开入口、IndexedDB、adapter、focus/clipboard 与 WebGL context recovery contracts；media benchmark/soak 独立由 nightly/RC performance gate 承担。
+- Performance regression：在同一 Linux runner 先对目标分支 SHA、再对 candidate SHA 执行 `check-performance-gate.mjs pr`，并用 `check-regression.mjs --tolerance 0.5` 比较两份 Node report。快速 PR harness 使用明确记录的 50% 粗粒度阈值；环境 fingerprint 不一致、报告缺失或 observed 指标消失都会失败关闭，不使用 `--allow-environment-mismatch`。
+- Desktop Tauri gate：macOS 执行 locked Cargo tests 与真实 `--smoke`，Windows 执行 locked Cargo tests 与 native release build。
 
-PR 不执行完整 release staging、三包 pack、全量 benchmark 或桌面平台矩阵。Core gate 只为真实 MCP/package export 需要构建 Core，不执行普通前端 release build/typecheck。
+PR 不执行完整 release staging、三包 pack 或全量 browser benchmark。Core gate 只为真实 MCP/package export 需要构建 Core，不执行普通前端 release build/typecheck。
 
 ## Nightly
 
@@ -35,11 +37,11 @@ PR 不执行完整 release staging、三包 pack、全量 benchmark 或桌面平
 
 ## Release Candidate
 
-`.github/workflows/release-candidate.yml` 校验完整 40 位 `candidate_sha`，查找该 SHA 成功的 `CI gates` run，并确认三个命名 job 均成功，然后对同一 SHA 执行：
+`.github/workflows/release-candidate.yml` 校验完整 40 位 `candidate_sha`，查找该 SHA 成功的 `CI gates` run，并确认 static、Core/integration、required Chromium、真实性能回归、macOS Desktop 和 Windows Desktop jobs 均成功，然后对同一 SHA 执行：
 
 1. 固定 Node/pnpm 与 `pnpm install --frozen-lockfile`。
-2. 三个公开包的 release build、current-document-only、API Extractor production compare、bundle budgets、外部 Node/Vite consumer，以及三次真实 pack。
-3. 上传 `pixiboardjs-*.tgz`、`pixi-board-core-*.tgz`、`pixi-board-plugin-sdk-*.tgz` 和三个 `*.api.md`。
+2. 三个公开包的 release build、current-document-only、API Extractor production compare、bundle budgets、外部 Node/TypeScript/Vite consumer，以及三次真实 pack。
+3. 从 release gate 指定输出目录上传三份 tarball、三个正确的 `*.api.md`、逐文件 bundle JSON report 和 release manifest。
 4. required Chromium browser contracts；不把这些契约误称为 media-heavy benchmark。
 5. Core benchmark 阈值，以及 candidate-bound canonical Chromium WebGL/Konva evidence；浏览器数值仍为 evidence-only/non-blocking。
 6. adapter contract suites。
@@ -51,3 +53,4 @@ PR 不执行完整 release staging、三包 pack、全量 benchmark 或桌面平
 - macOS 可本地执行静态、contract、release、Chromium benchmark 和 macOS Cargo gate。
 - Windows native test/build 只能由 `windows-2022` runner 证明；在该 runner 成功前必须标记为平台待验证。
 - browser benchmark 的 Pixi 8.19.0、Konva 9.3.22、Playwright 1.62.1 和 TypeScript 5.9.3 都由 benchmark package 直接锁定；frozen install 或本地资产解析失败时 nightly/RC fail closed。
+- 真实 media decode/playback、GPU memory/draw calls、idle CPU/GPU 和硬件 GPU throughput 仍未由这些 gate 证明；SwiftShader 报告不能被表述为硬件 GPU 成绩。
