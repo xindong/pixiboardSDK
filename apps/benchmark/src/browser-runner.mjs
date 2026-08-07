@@ -1,160 +1,18 @@
+import { createHash } from "node:crypto";
+import { createServer } from "node:http";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { extname, join, normalize, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
-
-const PIXI_URL = "https://cdn.jsdelivr.net/npm/pixi.js@8.15.0/dist/pixi.min.js";
-const KONVA_URL = "https://cdn.jsdelivr.net/npm/konva@10.3.0/konva.min.js";
-const DEFAULT_COUNTS = [10_000, 50_000, 100_000];
-const DEFAULT_VIEWPORT = { width: 1_920, height: 1_080, dpr: 1 };
-
-function readArgs(argv) {
-  const args = new Map();
-  for (let index = 2; index < argv.length; index += 1) {
-    const key = argv[index];
-    if (!key.startsWith("--")) continue;
-    const next = argv[index + 1];
-    args.set(key, next && !next.startsWith("--") ? next : true);
-    if (next && !next.startsWith("--")) index += 1;
-  }
-  return args;
-}
-
-function percentile(values, rank) {
-  const sorted = [...values].sort((left, right) => left - right);
-  return sorted[Math.max(0, Math.ceil(sorted.length * rank) - 1)] ?? null;
-}
-
-function parseCounts(args) {
-  const raw = args.get("--counts") ?? args.get("--count");
-  if (raw === undefined || raw === true) return DEFAULT_COUNTS;
-  const counts = String(raw).split(",").map((value) => Number(value.trim()));
-  if (counts.some((count) => !Number.isInteger(count) || count < 1)) throw new RangeError("--counts must contain positive integers");
-  return counts;
-}
-
-function parseModes(args) {
-  const raw = args.get("--modes");
-  if (raw === undefined || raw === true) return ["matched-visible"];
-  const modes = String(raw).split(",").map((value) => value.trim());
-  if (modes.some((mode) => mode !== "matched-visible" && mode !== "full-retained")) {
-    throw new RangeError("--modes accepts matched-visible and full-retained");
-  }
-  return [...new Set(modes)];
-}
-
-async function runBrowserBenchmark({ counts, modes, viewport = DEFAULT_VIEWPORT }) {
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--enable-webgl", "--ignore-gpu-blocklist", "--use-angle=swiftshader"],
-  });
-  try {
-    const page = await browser.newPage({ viewport: { width: viewport.width, height: viewport.height }, deviceScaleFactor: viewport.dpr });
-    await page.setContent('<!doctype html><html><body style="margin:0;background:#111"><div id="host"></div></body></html>');
-    await page.addScriptTag({ url: PIXI_URL });
-    await page.addScriptTag({ url: KONVA_URL });
-    await page.waitForFunction(() => Boolean(window.PIXI && window.Konva));
-    const observations = await page.evaluate(async ({ counts: requestedCounts, modes: requestedModes, viewport: requestedViewport }) => {
-      const percentile = (values, rank) => {
-        const sorted = [...values].sort((left, right) => left - right);
-        return sorted[Math.max(0, Math.ceil(sorted.length * rank) - 1)] ?? null;
-      };
-      const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
-      const sample = async (name, count, mode, create, update, destroy) => {
-        const coldStarted = performance.now();
-        const scene = await create(count, mode);
-        await nextFrame();
-        const coldMs = performance.now() - coldStarted;
-        const frames = [];
-        for (let step = 0; step < 20; step += 1) {
-          const started = performance.now();
-          await update(scene, step);
-          await nextFrame();
-          frames.push(performance.now() - started);
-        }
-        const result = {
-          renderer: name,
-          datasetCount: count,
-          retentionMode: mode,
-          viewport: `${requestedViewport.width}x${requestedViewport.height}@${requestedViewport.dpr}`,
-          coldMs,
-          steadyFrameP50Ms: percentile(frames, 0.5),
-          steadyFrameP95Ms: percentile(frames, 0.95),
-          steadyFrameP99Ms: percentile(frames, 0.99),
-          longFrameRatio: frames.filter((value) => value > 33).length / frames.length,
-          activeObjectCount: scene.activeObjectCount,
-          webgl: Boolean(scene.webgl),
-        };
-        await destroy(scene);
-        return result;
-      };
-      const visibleCountFor = (count) => count === 10_000 ? 200 : 300;
-      const makeNodes = (count) => {
-        const nodes = new Array(count);
-        for (let index = 0; index < count; index += 1) {
-          nodes[index] = { x: (index * 7919) % 1_000_000, y: (index * 104_729) % 1_000_000, width: 320, height: 180 };
-        }
-        return nodes;
-      };
-      const createPixi = async (count, mode) => {
-        const app = new window.PIXI.Application();
-        await app.init({ width: requestedViewport.width, height: requestedViewport.height, resolution: requestedViewport.dpr, autoDensity: false, autoStart: false, preference: "webgl", backgroundAlpha: 0 });
-        const world = new window.PIXI.Container();
-        app.stage.addChild(world);
-        const nodes = makeNodes(count);
-        const limit = mode === "matched-visible" ? visibleCountFor(count) : count;
-        for (let index = 0; index < limit; index += 1) {
-          const node = nodes[index];
-          const rect = new window.PIXI.Graphics().rect(0, 0, node.width, node.height).fill(0x4c8dff);
-          rect.position.set(node.x, node.y);
-          world.addChild(rect);
-        }
-        app.render();
-        document.querySelector("#host").appendChild(app.canvas);
-        return { app, world, activeObjectCount: limit, webgl: app.renderer?.type === "webgl" || Boolean(app.renderer?.gl) };
-      };
-      const createKonva = async (count, mode) => {
-        const host = document.querySelector("#host");
-        const element = document.createElement("div");
-        host.appendChild(element);
-        const stage = new window.Konva.Stage({ container: element, width: requestedViewport.width, height: requestedViewport.height });
-        const layer = new window.Konva.Layer();
-        stage.add(layer);
-        const nodes = makeNodes(count);
-        const limit = mode === "matched-visible" ? visibleCountFor(count) : count;
-        for (let index = 0; index < limit; index += 1) {
-          const node = nodes[index];
-          layer.add(new window.Konva.Rect({ x: node.x, y: node.y, width: node.width, height: node.height, fill: "#4c8dff" }));
-        }
-        layer.draw();
-        return { stage, layer, element, activeObjectCount: limit, webgl: false };
-      };
-      const updatePixi = async (scene, step) => { scene.world.position.x = -((step * 97) % 4_000); scene.world.position.y = -((step * 61) % 2_000); scene.app.render(); };
-      const updateKonva = async (scene, step) => { scene.layer.position({ x: -((step * 97) % 4_000), y: -((step * 61) % 2_000) }); scene.layer.draw(); };
-      const destroyPixi = async (scene) => { scene.app.destroy(true); };
-      const destroyKonva = async (scene) => { scene.stage.destroy(); scene.element.remove(); };
-      const output = [];
-      for (const count of requestedCounts) {
-        for (const mode of requestedModes) {
-          output.push(await sample("pixi", count, mode, createPixi, updatePixi, destroyPixi));
-          output.push(await sample("konva", count, mode, createKonva, updateKonva, destroyKonva));
-        }
-      }
-      return output;
-    }, { counts, modes, viewport });
-    return {
-      schemaVersion: 1,
-      environment: { browser: await page.evaluate(() => navigator.userAgent), viewport, renderer: "PixiJS WebGL + Konva Canvas2D" },
-      observations,
-      notObserved: ["GPU memory", "draw calls/batches", "idle CPU/GPU", "hardware-GPU throughput when using SwiftShader"],
-    };
-  } finally {
-    await browser.close();
-  }
-}
-
-const args = readArgs(process.argv);
-try {
-  const report = await runBrowserBenchmark({ counts: parseCounts(args), modes: parseModes(args) });
-  console.log(JSON.stringify(report, null, 2));
-} catch (error) {
-  console.error(`Browser benchmark unavailable: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-}
+import ts from "../../../packages/renderer-pixi/node_modules/typescript/lib/typescript.js";
+export const BROWSER_BENCHMARK_DEFAULTS=Object.freeze({counts:[10000,50000,100000],modes:["matched-visible","full-retained"],engines:["pixiboardjs","konva"],viewport:{width:1920,height:1080},dpr:1,seed:42,warmupFrames:30,sampleFrames:120});
+const APP_ROOT=resolve(fileURLToPath(new URL("..",import.meta.url))),REPO_ROOT=resolve(APP_ROOT,"../.."),ARTIFACT_ROOT=resolve(APP_ROOT,"results/.artifacts"),KONVA_URL="https://cdn.jsdelivr.net/npm/konva@9.3.22/konva.min.js",KONVA_SHA256="4655b6cd12d0d2ee5f6d461fa98c3611b1f9979b9106f18221bf0e6a90ab6745";
+function list(value,defaults,convert=String){if(!value)return defaults;const parsed=value.split(",").filter(Boolean).map(convert);if(!parsed.length)throw new RangeError("browser benchmark list cannot be empty");return parsed}function integer(value,fallback,label){if(value===undefined)return fallback;const parsed=Number(value);if(!Number.isInteger(parsed)||parsed<1)throw new RangeError(`${label} must be positive`);return parsed}function same(a,b){return a.length===b.length&&a.every((v,i)=>v===b[i])}
+export function resolveBrowserBenchmarkConfig(env=process.env){const counts=list(env.PIXIBOARD_BROWSER_COUNTS,BROWSER_BENCHMARK_DEFAULTS.counts,Number);if(counts.some(v=>!BROWSER_BENCHMARK_DEFAULTS.counts.includes(v)))throw new RangeError("browser benchmark counts must be 10000, 50000, or 100000");const modes=list(env.PIXIBOARD_BROWSER_MODES,BROWSER_BENCHMARK_DEFAULTS.modes);if(modes.some(v=>!BROWSER_BENCHMARK_DEFAULTS.modes.includes(v)))throw new RangeError("unknown browser benchmark mode");const engines=list(env.PIXIBOARD_BROWSER_ENGINES,BROWSER_BENCHMARK_DEFAULTS.engines);if(engines.some(v=>!BROWSER_BENCHMARK_DEFAULTS.engines.includes(v)))throw new RangeError("unknown browser benchmark engine");const config={...BROWSER_BENCHMARK_DEFAULTS,counts,modes,engines,warmupFrames:integer(env.PIXIBOARD_BROWSER_WARMUP,30,"warmup frames"),sampleFrames:integer(env.PIXIBOARD_BROWSER_SAMPLES,120,"sample frames"),output:resolve(env.PIXIBOARD_BROWSER_OUTPUT||join(APP_ROOT,"results",`chromium-webgl-${new Date().toISOString().replaceAll(":","-")}.json`)),evidenceOutput:env.PIXIBOARD_BROWSER_EVIDENCE?resolve(env.PIXIBOARD_BROWSER_EVIDENCE):undefined,smoke:env.PIXIBOARD_BROWSER_SMOKE==="1"};config.canonical=same(counts,BROWSER_BENCHMARK_DEFAULTS.counts)&&same(modes,BROWSER_BENCHMARK_DEFAULTS.modes)&&same(engines,BROWSER_BENCHMARK_DEFAULTS.engines)&&config.warmupFrames===30&&config.sampleFrames===120;if(config.evidenceOutput&&(!config.canonical||config.smoke))throw new Error("Publishable evidence requires the complete canonical matrix with 30 warmup and 120 measured frames");return config}
+async function ensureKonva(){const destination=join(ARTIFACT_ROOT,"vendor","konva-9.3.22.min.js");await mkdir(resolve(destination,".."),{recursive:true});let data;try{data=await readFile(destination)}catch{data=undefined}if(!data||createHash("sha256").update(data).digest("hex")!==KONVA_SHA256){const response=await fetch(KONVA_URL);if(!response.ok)throw new Error(`Konva download failed: ${response.status}`);data=Buffer.from(await response.arrayBuffer());const digest=createHash("sha256").update(data).digest("hex");if(digest!==KONVA_SHA256)throw new Error(`Konva checksum mismatch: ${digest}`);await writeFile(destination,data)}return destination}
+function mime(path){return({".html":"text/html",".js":"text/javascript",".mjs":"text/javascript",".ts":"text/javascript",".map":"application/json"})[extname(path)]||"application/octet-stream"}
+async function startServer(konva){const pixi=resolve(REPO_ROOT,"packages/renderer-pixi/node_modules/pixi.js/dist/pixi.mjs"),routes=[["/browser/",resolve(APP_ROOT,"browser")],["/packages/renderer-pixi/src/",resolve(REPO_ROOT,"packages/renderer-pixi/src")],["/packages/core/dist/",resolve(REPO_ROOT,"packages/core/dist")]];const server=createServer(async(req,res)=>{try{const pathname=new URL(req.url||"/","http://127.0.0.1").pathname;if(pathname==="/"){res.writeHead(302,{Location:"/browser/index.html"});res.end();return}let file=pathname==="/vendor/konva.min.js"?konva:pathname==="/vendor/pixi.mjs"?pixi:undefined;if(!file){const route=routes.find(([prefix])=>pathname.startsWith(prefix));if(route)file=resolve(route[1],normalize(pathname.slice(route[0].length)))}if(!file)throw new Error("not found");let source;try{source=await readFile(file)}catch(error){if(extname(file))throw error;file=`${file}.ts`;source=await readFile(file)}if(file.endsWith(".ts"))source=Buffer.from(ts.transpileModule(source.toString("utf8"),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022,verbatimModuleSyntax:true},fileName:file}).outputText);res.writeHead(200,{"Content-Type":mime(file),"Cache-Control":"no-store"});res.end(source)}catch(error){res.writeHead(404,{"Content-Type":"text/plain"});res.end(String(error))}});await new Promise(done=>server.listen(0,"127.0.0.1",done));return{server,origin:`http://127.0.0.1:${server.address().port}`}}
+function fairness(config,items){return config.modes.flatMap(mode=>config.counts.map(count=>{const p=items.find(v=>v.mode===mode&&v.datasetCount===count&&v.engine==="pixiboardjs"),k=items.find(v=>v.mode===mode&&v.datasetCount===count&&v.engine==="konva");return{mode,datasetCount:count,sameMutationPlan:p?.mutationPlanHash===k?.mutationPlanHash,sameVisibleIdPlan:mode==="matched-visible"?p?.visiblePlanHash===k?.visiblePlanHash:"notApplicable",sameActivePopulationRange:p?.minActiveNodeCount===k?.minActiveNodeCount&&p?.maxActiveNodeCount===k?.maxActiveNodeCount,equivalentFullPopulation:mode==="full-retained"?p?.activeNodeCount===count+1&&k?.activeNodeCount===count+1:"notApplicable"}}))}
+function validate(config,items,checks){const errors=[];if(items.length!==config.counts.length*config.modes.length*config.engines.length)errors.push("case count mismatch");for(const item of items){const key=`${item.mode}/${item.datasetCount}/${item.engine}`;if(item.status!=="observed")errors.push(`${key}: not observed`);if(item.summary?.sampleCount!==config.sampleFrames)errors.push(`${key}: sample count mismatch`);if(item.consoleErrors.length)errors.push(`${key}: ${item.consoleErrors.join(" | ")}`);if(item.engine==="pixiboardjs"&&item.renderer?.observed!=="webgl")errors.push(`${key}: not WebGL`);if(item.engine==="konva"&&item.renderer?.observed!=="canvas2d")errors.push(`${key}: not Canvas2D`)}for(const c of checks)if(!c.sameMutationPlan||!c.sameActivePopulationRange||c.sameVisibleIdPlan===false||c.equivalentFullPopulation===false)errors.push(`${c.mode}/${c.datasetCount}: fairness failed`);return errors}
+export async function runBrowserBenchmark(config=resolveBrowserBenchmarkConfig()){const{server,origin}=await startServer(await ensureKonva()),browser=await chromium.launch({headless:true,args:["--enable-precise-memory-info","--disable-background-timer-throttling","--disable-renderer-backgrounding"]}),observations=[],executionOrder=[];try{for(const[mi,mode]of config.modes.entries())for(const[ci,count]of config.counts.entries()){const engines=(mi+ci)%2===0?config.engines:[...config.engines].reverse();for(const engine of engines){executionOrder.push({mode,datasetCount:count,engine});const context=await browser.newContext({viewport:config.viewport,deviceScaleFactor:config.dpr}),page=await context.newPage(),consoleErrors=[];page.on("console",m=>{if(m.type()==="error")consoleErrors.push(m.text())});page.on("pageerror",e=>consoleErrors.push(e.message));await page.goto(origin,{waitUntil:"load"});try{await page.waitForFunction(()=>typeof window.runBenchmarkCase==="function")}catch(error){throw new Error(`Browser case failed to initialize: ${consoleErrors.join(" | ")||"no error captured"}`,{cause:error})}process.stdout.write(`Running ${mode} ${count} ${engine}...\n`);const result=await page.evaluate(caseConfig=>window.runBenchmarkCase(caseConfig),{engine,mode,count,width:config.viewport.width,height:config.viewport.height,dpr:config.dpr,seed:config.seed,warmupFrames:config.warmupFrames,sampleFrames:config.sampleFrames});observations.push({...result,consoleErrors});await context.close()}}}finally{await browser.close();await new Promise(done=>server.close(done))}const checks=fairness(config,observations),errors=validate(config,observations,checks),report={schemaVersion:1,generatedAt:new Date().toISOString(),runKind:config.smoke?"smoke":config.canonical?"canonical":"custom",publishable:config.canonical&&!config.smoke&&!errors.length,claimScope:"Applicable large sparse canvas workloads only; no universal superiority claim.",modes:{"matched-visible":"Identical visible IDs and canonical create/update/delete payloads.","full-retained":"Equivalent complete renderer-object populations."},fixed:{viewport:config.viewport,dpr:config.dpr,seed:config.seed,warmupFrames:config.warmupFrames,sampleFrames:config.sampleFrames,path:"deterministic horizontal pan",datasetCounts:config.counts},frameMeasurement:"Frame-work/render-completion latency from requestAnimationFrame through mutation and completed rendering; Pixi calls gl.finish and Konva Layer.draw is synchronous. Not presentation interval.",firstInteractiveDefinition:"Engine/stage construction through full JavaScript population setup, first completed render, and following requestAnimationFrame; dataset generation excluded.",browser:{name:"chromium",version:browser.version(),headless:true},libraries:{pixi:observations.find(v=>v.engine==="pixiboardjs")?.renderer?.pixiVersion??"notObserved",konva:observations.find(v=>v.engine==="konva")?.renderer?.konvaVersion??"notObserved",pixiboardRenderer:"workspace source"},executionOrder,limitations:["Headless WebGL may use ANGLE SwiftShader; consult webglRenderer before generalizing hardware GPU throughput.","Konva is Canvas2D; this is product-level behavior, not identical graphics APIs.","Each case runs once with 120 within-case samples; AB/BA order is balanced but cross-run thermal variance is not estimated.","Heap is instantaneous and uncollected, not peak, retained-heap, or leak evidence.","GPU memory and equivalent draw-call counts remain notObserved."],fairnessChecks:checks,validation:{passed:!errors.length,failures:errors},observations};await mkdir(resolve(config.output,".."),{recursive:true});await writeFile(config.output,`${JSON.stringify(report,null,2)}\n`);process.stdout.write(`Wrote ${config.output}\n`);if(config.evidenceOutput){if(errors.length)throw new Error(`Validation failed; evidence not written: ${errors.join("; ")}`);await mkdir(resolve(config.evidenceOutput,".."),{recursive:true});await writeFile(config.evidenceOutput,`${JSON.stringify({...report,rawPerFrameSamplesCommitted:false},null,2)}\n`);process.stdout.write(`Wrote ${config.evidenceOutput}\n`)}if(errors.length)throw new Error(`Benchmark validation failed: ${errors.join("; ")}`);return{report,output:config.output}}
+if(process.argv[1]===fileURLToPath(import.meta.url))await runBrowserBenchmark();

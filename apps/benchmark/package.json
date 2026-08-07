@@ -10,6 +10,7 @@
     "benchmark:matrix": "PIXIBOARD_BENCHMARK_MATRIX=1 vitest run --config vitest.config.ts test/benchmark-matrix.test.ts --reporter=verbose",
     "benchmark:report": "PIXIBOARD_SDK_BENCHMARK_REPORT=1 vitest run --config vitest.config.ts test/sdk-report.test.ts --reporter=verbose",
     "benchmark:browser": "node src/browser-runner.mjs",
+    "benchmark:browser:smoke": "PIXIBOARD_BROWSER_SMOKE=1 PIXIBOARD_BROWSER_COUNTS=10000 PIXIBOARD_BROWSER_MODES=matched-visible PIXIBOARD_BROWSER_SAMPLES=5 PIXIBOARD_BROWSER_WARMUP=2 node src/browser-runner.mjs",
     "benchmark:check": "node src/check-regression.mjs",
     "test": "vitest run --config vitest.config.ts"
   },
