@@ -255,7 +255,7 @@ async function runDatasetBenchmarks(dataset: SyntheticDataset, document: BoardDo
       "renderer-single-node-apply": async ({ iteration }: { iteration: number }) => {
         const before = coreForApply!.nodes.get(applyNodeId)!;
         coreForApply!.nodes.update(applyNodeId, { x: before.x + (iteration % 2 === 0 ? 1 : -1) });
-        const applyMs = await asyncDuration(() => rendererForApply!.apply(coreForApply!.document.snapshot(), changeForApply!.changeSet));
+        const applyMs = await asyncDuration(() => rendererForApply!.apply(changeForApply!.documentUpdate, changeForApply!.changeSet));
         return { durationMs: applyMs, activeViewCount: rendererForApply!.activeViews.size, updatedNodeCount: changeForApply!.changeSet.updatedNodeIds.length };
       },
     },

@@ -64,10 +64,12 @@ function launch(mode: "stdio" | "http"): Child {
       if (stderr.includes(stderrWaiters[index].text)) stderrWaiters.splice(index, 1)[0].resolve();
     }
   });
-  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
-    childProcess.once("error", (error) => reject(new Error(`MCP ${mode} child failed to launch: ${error.message}\nFull stderr:\n${stderr}`)));
-    childProcess.once("exit", (code, signal) => {
-      const error = new Error(`MCP ${mode} child exited before expected output with code ${code} signal ${signal ?? "none"}\nFull stderr:\n${stderr}`);
+  let spawnError: Error | undefined;
+  childProcess.once("error", (error) => { spawnError = error; });
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+    childProcess.once("close", (code, signal) => {
+      const reason = spawnError ? `failed to launch: ${spawnError.message}` : `exited before expected output with code ${code} signal ${signal ?? "none"}`;
+      const error = new Error(`MCP ${mode} child ${reason}\nFull stderr:\n${stderr}`);
       for (const waiter of lineWaiters.splice(0)) waiter.reject(error);
       for (const waiter of stderrWaiters.splice(0)) waiter.reject(error);
       resolve({ code, signal });
@@ -81,12 +83,13 @@ function launch(mode: "stdio" | "http"): Child {
     nextLine: () => lines.length ? Promise.resolve(lines.shift()!) : new Promise((resolve, reject) => lineWaiters.push({ resolve, reject })),
     waitForStderr: (text) => stderr.includes(text) ? Promise.resolve() : new Promise((resolve, reject) => stderrWaiters.push({ text, resolve, reject })),
     finish: async () => {
-      const result = await exited;
+      const result = await closed;
+      if (spawnError) throw new Error(`MCP ${mode} child failed to launch: ${spawnError.message}\nFull stderr:\n${stderr}`);
       if (result.code !== 0) throw new Error(`MCP ${mode} child exited with code ${result.code} signal ${result.signal ?? "none"}\nFull stderr:\n${stderr}`);
     },
     cleanup: async () => {
       if (childProcess.exitCode === null && childProcess.signalCode === null) childProcess.kill("SIGTERM");
-      await exited.catch(() => undefined);
+      await closed;
       rmSync(directory, { recursive: true, force: true });
       activeChildren.delete(child);
     },
