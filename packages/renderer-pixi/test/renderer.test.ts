@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BoardDocument, BoardNode } from "@pixi-board/core";
-import { createPixiApplicationFactory, NodeRendererRegistry, PixiBoardRenderer } from "../src/index";
+import { createPixiApplicationFactory, NodeRendererRegistry, PixiBoardRenderer, createPixiViewFactory } from "../src/index";
 
 const node = (id: string, type = "rect", x = 0): BoardNode => ({ id, type, typeVersion: 1, x, y: 0, width: 10, height: 10, rotation: 0, zIndex: 0, props: {} });
 const doc = (nodes: BoardNode[], revision = 0): BoardDocument => ({ schemaVersion: 1, revision, nodes, assets: [] });
@@ -44,8 +44,16 @@ describe("renderer-pixi vertical slice", () => {
     await renderer.destroy(); expect(release).toHaveBeenCalledTimes(1);
   });
   it("exposes a lazy default PixiJS application factory without starting WebGL", () => {
-    const factory = createPixiApplicationFactory();
+    const initOptions = { preference: "webgpu", antialias: true };
+    const app = { stage: {}, init: vi.fn(), destroy: vi.fn() };
+    const factory = createPixiApplicationFactory(initOptions, async () => ({ Application: class { constructor() { return app as any; } }, Container: class {}, Graphics: class {}, Sprite: class {}, Text: class {} } as any));
     expect(typeof factory).toBe("function");
+    return factory().then((created) => expect(created.initOptions).toEqual(initOptions));
+  });
+  it("creates image sprites without treating asset ids as URLs", () => {
+    const sprite = { kind: "sprite" };
+    const viewFactory = createPixiViewFactory({ Application: class {} as any, Container: class {} as any, Graphics: class {} as any, Sprite: class { constructor() { return sprite as any; } } as any, Text: class {} as any });
+    expect(viewFactory.createImage?.({ assetId: "asset-id" }, node("image", "image"))).toBe(sprite);
     const renderer = new PixiBoardRenderer({});
     expect(renderer.registry.has("rect")).toBe(true);
   });

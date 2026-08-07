@@ -5,10 +5,12 @@ export async function loadPixiRuntime(): Promise<PixiRuntimeModule> {
   return (await import("pixi.js")) as unknown as PixiRuntimeModule;
 }
 
-export function createPixiApplicationFactory(options: Record<string, unknown> = {}): PixiApplicationFactory {
+export type PixiRuntimeLoader = () => Promise<PixiRuntimeModule>;
+
+export function createPixiApplicationFactory(options: Record<string, unknown> = {}, runtimeLoader: PixiRuntimeLoader = loadPixiRuntime): PixiApplicationFactory {
   return async () => {
-    const pixi = await loadPixiRuntime();
-    return new pixi.Application() as any;
+    const pixi = await runtimeLoader();
+    return { ...(new pixi.Application() as any), initOptions: { ...options } };
   };
 }
 
@@ -20,7 +22,7 @@ export function createPixiViewFactory(pixi: PixiRuntimeModule): PixiViewFactory 
       graphics.rect?.(0, 0, width, height).fill?.(fill);
       return graphics;
     },
-    createImage: (ref: AssetRef | undefined) => new pixi.Sprite(ref ? pixi.Texture.from(ref.assetId) : undefined),
+    createImage: (_ref: AssetRef | undefined) => new pixi.Sprite(),
     createText: (text, style) => new pixi.Text({ text, style }),
   };
 }

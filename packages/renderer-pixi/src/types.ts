@@ -1,6 +1,6 @@
 import type { AssetRef, BoardChangeSet, BoardNode, BoardDocument, JsonValue, Point, WorldBounds } from "@pixi-board/core";
 export type PixiDisplayObject = { visible?: boolean; x?: number; y?: number; rotation?: number; zIndex?: number; addChild?(child: PixiDisplayObject): void; removeChild?(child: PixiDisplayObject): void; destroy?(options?: unknown): void; [key: string]: unknown };
-export type PixiApplication = { stage: PixiDisplayObject; init?(options?: Record<string, unknown>): Promise<void> | void; destroy?(removeView?: boolean): void; canvas?: unknown; view?: unknown };
+export type PixiApplication = { stage: PixiDisplayObject; init?(options?: Record<string, unknown>): Promise<void> | void; initOptions?: Record<string, unknown>; destroy?(removeView?: boolean): void; canvas?: unknown; view?: unknown };
 export type PixiViewFactory = { createContainer(): PixiDisplayObject; createRect?(width: number, height: number, fill: number | string): PixiDisplayObject; createImage?(ref: AssetRef | undefined, node: Readonly<BoardNode>): PixiDisplayObject | Promise<PixiDisplayObject>; createText?(text: string, style?: Record<string, unknown>): PixiDisplayObject };
 export type PixiApplicationFactory = () => PixiApplication | Promise<PixiApplication>;
 export type PixiRuntimeModule = {
@@ -9,7 +9,7 @@ export type PixiRuntimeModule = {
   Graphics: new () => PixiDisplayObject & { rect?(x: number, y: number, width: number, height: number): PixiDisplayObject; fill?(color: number | string): PixiDisplayObject };
   Sprite: new (texture?: unknown) => PixiDisplayObject;
   Text: new (options?: unknown) => PixiDisplayObject;
-  Texture: { from(source: unknown): unknown };
+  Texture?: { from(source: unknown): unknown };
 };
 export type TextureLease = { texture?: unknown; release?: () => void };
 export type RendererDiagnostics = { creates: number; updates: number; destroys: number; lateUpdates: number };
