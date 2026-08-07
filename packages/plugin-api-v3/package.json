@@ -1,0 +1,13 @@
+{
+  "name": "@pixi-board/plugin-api-v3",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@pixi-board/capabilities": "workspace:*",
+    "@pixi-board/core": "workspace:*"
+  },
+  "devDependencies": { "vitest": "^3.2.4" },
+  "scripts": { "test": "vitest run --config vitest.config.ts" },
+  "exports": { ".": "./src/index.ts", "./fixture": "./src/fixture.ts" }
+}
