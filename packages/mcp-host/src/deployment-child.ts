@@ -38,7 +38,14 @@ export function createDeploymentRuntime() {
     async call(name, input, options = {}) {
       if (options.requestId === "abort-after-start") {
         process.stderr.write("REQUEST_STARTED\n");
-        if (!options.signal?.aborted) await new Promise<void>((resolve) => options.signal?.addEventListener("abort", () => resolve(), { once: true }));
+        if (options.signal?.aborted) {
+          process.stderr.write("REQUEST_ABORTED\n");
+        } else {
+          await new Promise<void>((resolve) => options.signal?.addEventListener("abort", () => {
+            process.stderr.write("REQUEST_ABORTED\n");
+            resolve();
+          }, { once: true }));
+        }
         const result = await base.call(name, input, options);
         process.stderr.write("REQUEST_FINISHED\n");
         return result;

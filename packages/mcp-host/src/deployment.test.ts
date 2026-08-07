@@ -67,10 +67,12 @@ function launch(mode: "stdio" | "http", childSource?: string): Child {
   });
   let spawnError: Error | undefined;
   childProcess.once("error", (error) => { spawnError = error; });
+  let closedError: Error | undefined;
   const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     childProcess.once("close", (code, signal) => {
       const reason = spawnError ? `failed to launch: ${spawnError.message}` : `exited before expected output with code ${code} signal ${signal ?? "none"}`;
       const error = new Error(`MCP ${mode} child ${reason}\nFull stderr:\n${stderr}`);
+      closedError = error;
       for (const waiter of lineWaiters.splice(0)) waiter.reject(error);
       for (const waiter of stderrWaiters.splice(0)) waiter.reject(error);
       resolve({ code, signal });
@@ -81,8 +83,16 @@ function launch(mode: "stdio" | "http", childSource?: string): Child {
     statePath,
     stderr: () => stderr,
     outputLines: () => allLines,
-    nextLine: () => lines.length ? Promise.resolve(lines.shift()!) : new Promise((resolve, reject) => lineWaiters.push({ resolve, reject })),
-    waitForStderr: (text) => stderr.includes(text) ? Promise.resolve() : new Promise((resolve, reject) => stderrWaiters.push({ text, resolve, reject })),
+    nextLine: () => {
+      if (lines.length) return Promise.resolve(lines.shift()!);
+      if (closedError) return Promise.reject(closedError);
+      return new Promise((resolve, reject) => lineWaiters.push({ resolve, reject }));
+    },
+    waitForStderr: (text) => {
+      if (stderr.includes(text)) return Promise.resolve();
+      if (closedError) return Promise.reject(closedError);
+      return new Promise((resolve, reject) => stderrWaiters.push({ text, resolve, reject }));
+    },
     finish: async () => {
       const result = await closed;
       if (spawnError) throw new Error(`MCP ${mode} child failed to launch: ${spawnError.message}\nFull stderr:\n${stderr}`);
@@ -121,7 +131,10 @@ async function post(port: number, body: string): Promise<{ status: number; json:
 describe("MCP real deployment smoke", () => {
   it("includes complete child stderr when startup fails before readiness", async () => {
     const child = launch("stdio", `process.stderr.write("first diagnostic\\n"); setTimeout(() => { process.stderr.write("final diagnostic\\n"); process.exit(9); }, 10);`);
-    await expect(child.waitForStderr("READY")).rejects.toThrow(/first diagnostic[\s\S]*final diagnostic/);
+    const nextLine = child.nextLine();
+    const ready = child.waitForStderr("READY");
+    await expect(nextLine).rejects.toThrow(/first diagnostic[\s\S]*final diagnostic/);
+    await expect(ready).rejects.toThrow(/first diagnostic[\s\S]*final diagnostic/);
     await expect(child.finish()).rejects.toThrow(/first diagnostic[\s\S]*final diagnostic/);
   });
 
@@ -181,6 +194,7 @@ describe("MCP real deployment smoke", () => {
     pending.end(JSON.stringify(writeRequest("abort-write", "abort-after-start")));
     await child.waitForStderr("REQUEST_STARTED");
     pending.destroy();
+    await child.waitForStderr("REQUEST_ABORTED");
     await child.waitForStderr("REQUEST_FINISHED");
     child.process.kill("SIGTERM");
     await child.finish();
