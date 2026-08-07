@@ -59,6 +59,7 @@ const agentTests = await read("packages/agent-tools/src/contract.test.ts");
 const mcpContractTests = await read("packages/mcp-host/src/contract.test.ts");
 const mcpDeploymentTests = await read("packages/mcp-host/src/deployment.test.ts");
 const mcpChild = await read("packages/mcp-host/src/deployment-child.ts");
+const rendererSource = await read("packages/renderer-pixi/src/renderer.ts");
 const pluginSdkManifest = JSON.parse(await read("packages/plugin-sdk/package.json"));
 const pluginSdkSource = await read("packages/plugin-sdk/src/index.ts");
 const pluginSdkTests = await read("packages/plugin-sdk/test/contract.test.ts");
@@ -75,6 +76,7 @@ const releaseGate = await read("scripts/check-release-gate.mjs");
 const releaseDoc = await read("docs/15-release-gate.md");
 const benchmarkRunner = await read("apps/benchmark/src/runner.mjs");
 const benchmarkReport = await readIfExists("docs/benchmarks/2026-08-07-node-instrumented-summary.json");
+const performanceDoc = await read("docs/10-performance-benchmarks.md");
 const benchmarkFiles = await listFiles(resolve(root, "apps/benchmark"));
 const allFiles = await listFiles();
 const hasNightlyWorkflow = allFiles.some((file) =>
@@ -91,6 +93,9 @@ const publicDistPresent = await Promise.all([
 ].map(exists));
 
 const rows = [];
+const testCount = (text) => (text.match(/^\s*(?:it|test)\(/gm) ?? []).length;
+const rendererTestCount = testCount(rendererTests);
+const mcpTestCount = testCount(mcpContractTests) + testCount(mcpDeploymentTests);
 
 rows.push(
   has(documentValidation, /older than supported schema/) &&
@@ -171,16 +176,41 @@ rows.push(
     has(mcpDeploymentTests, /loopback HTTP/) &&
     has(mcpDeploymentTests, /stdin close/) &&
     has(mcpDeploymentTests, /HTTP socket/) &&
-    has(mcpChild, /REQUEST_STARTED/)
+    has(mcpChild, /REQUEST_STARTED/) &&
+    has(mcpChild, /REQUEST_ABORTED/) &&
+    has(mcpDeploymentTests, /Full stderr/) &&
+    has(mcpDeploymentTests, /outputLines/) &&
+    has(mcpDeploymentTests, /afterEach/) &&
+    has(mcpDeploymentTests, /rmSync/) &&
+    mcpTestCount >= 11
     ? achieved(
         "mcp-real-deployment-equivalence",
-        "MCP contract and real deployment tests cover direct/stdio/HTTP semantic equality, child-process framing, loopback socket behavior, abort and no-late-write/save guarantees.",
+        "MCP contract and real deployment tests (" + mcpTestCount + " tests) cover direct/stdio/HTTP semantic equality, child-process framing, complete startup stderr diagnostics, observable REQUEST_ABORTED socket cancellation, stdin EOF no-late-frame output, no write/save/history, and unified child/temp cleanup.",
         "Repeat the deployment smoke in target product hosts; MCP remains current-Document-only.",
       )
     : partial(
         "mcp-real-deployment-equivalence",
         "MCP host source/tests exist but real process/socket evidence is incomplete.",
         "Add child stdio and loopback HTTP deployment smoke with abort/error parity.",
+      ),
+);
+
+rows.push(
+  rendererTestCount >= 19 &&
+    has(rendererTests, /short-circuits a large custom culling iterable/) &&
+    has(rendererTests, /uses culling membership without touching the candidate iterable/) &&
+    has(rendererTests, /requires a rebuild after a failed incremental view update/) &&
+    has(rendererSource, /desynchronized/) &&
+    has(rendererSource, /rebuild-required/)
+    ? achieved(
+        "renderer-incremental-boundary-and-recovery",
+        "Renderer incremental contract has " + rendererTestCount + " focused tests covering lazy culling membership (no full candidate enumeration), changed-node-only updates, revision-gap handling, and desynchronized rebuild recovery.",
+        "Keep incremental commits bounded to changed IDs; any failed apply or revision gap must require a full rebuild before accepting later deltas.",
+      )
+    : partial(
+        "renderer-incremental-boundary-and-recovery",
+        "Renderer incremental source/tests exist but lazy membership or failure-recovery evidence is incomplete.",
+        "Add focused changed-ID, culling membership, revision-gap and desynchronized rebuild tests.",
       ),
 );
 
@@ -287,8 +317,8 @@ rows.push(
   benchmarkHasHarness && await exists("docs/benchmarks/2026-08-07-node-instrumented-summary.json")
     ? partial(
         "deterministic-performance-and-soak",
-        "Deterministic benchmark harness and report cover synthetic 1k/10k/50k/100k Core/spatial/renderer/facade operations plus 100-cycle lifecycle soak; report preserves observed and notObserved fields.",
-        has(benchmarkReport, /Konva comparison/) || has(benchmarkReport, /Konva/) || has(benchmarkReport, /browser\/WebGL frame/) ? "Real browser/WebGL frame, GPU/heap and Konva metrics are still absent; node report also records failed original Core latency targets." : "Add browser/WebGL and regression evidence before claiming stable performance.",
+        "Deterministic Node/instrumented harness and report cover synthetic 1k/10k/50k/100k Core/spatial/renderer/facade operations plus 100-cycle lifecycle soak; the separate canonical Chromium runner and docs/10 record matched-visible/full-retained Pixi/Konva p50/p95/p99 results.",
+        has(benchmarkReport, /browser\/WebGL frame/) ? "Node report still records failed original Core latency targets; hardware GPU memory/draw calls/idle CPU-GPU and controlled heap remain notObserved." : "Add browser/WebGL and regression evidence before claiming stable performance.",
       )
     : missing(
         "deterministic-performance-and-soak",
@@ -312,11 +342,14 @@ rows.push(
 );
 
 rows.push(
-  hasKonvaEvidence
-    ? partial(
+  has(performanceDoc, /2026-08-07 Chromium \/ Konva 对照/) &&
+    has(performanceDoc, /matched-visible/) &&
+    has(performanceDoc, /full-retained/) &&
+    has(performanceDoc, /p50 \/ p95 \/ p99/)
+    ? achieved(
         "konva-comparison",
-        "Some Konva-named evidence exists, but matching dataset/path/result verification is still required.",
-        "Record fixed-environment Pixi vs Konva p50/p95/p99 results for comparable scenarios.",
+        "The canonical Chromium benchmark records fixed 10k/50k/100k matched-visible and full-retained PixiBoardJS-versus-Konva p50/p95/p99, first-interactive and capture results with fairness checks and explicit SwiftShader limitations.",
+        "This is a scoped sparse-card comparison, not a universal superiority claim; hardware GPU metrics and broader media workloads remain open.",
       )
     : missing(
         "konva-comparison",
@@ -363,5 +396,5 @@ for (const row of rows) {
 }
 
 if (rows.some((row) => row.status === "achieved")) {
-  console.log("\nAchieved rows are scoped to the evidence above; release artifacts, Konva, nightly, real media decode/playback and hardware GPU metrics remain open.");
+  console.log("\nAchieved rows are scoped to the evidence above; release artifacts, complete nightly artifacts, real media decode/playback and hardware GPU metrics remain open.");
 }
