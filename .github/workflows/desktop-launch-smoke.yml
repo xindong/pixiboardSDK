@@ -12,16 +12,21 @@ on:
 
 jobs:
   tauri-launch-smoke:
-    name: Tauri launch smoke (${{ matrix.os }})
+    name: Repository Tauri gate (${{ matrix.label }})
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, windows-2022]
+        include:
+          - os: macos-14
+            label: macOS launch smoke
+          - os: windows-2022
+            label: Windows native config/build
     runs-on: ${{ matrix.os }}
+    env:
+      CI: "true"
+      PIXIBOARD_DESKTOP_PLATFORM: ${{ matrix.label }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Launch the minimal Tauri smoke app
-        shell: bash
-        run: |
-          cargo run --manifest-path apps/examples-desktop-sdk/src-tauri/Cargo.toml -- --smoke
+      - uses: ./.github/actions/setup-sdk
+      - run: node scripts/run-desktop-platform-gate.mjs --mode tauri
