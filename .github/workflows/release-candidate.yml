@@ -14,24 +14,25 @@ permissions:
 
 env:
   CI: "true"
+  CANDIDATE_SHA: ${{ inputs.candidate_sha }}
 
 jobs:
   verify-candidate:
     name: Verify candidate commit checks
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    env:
-      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
     steps:
       - uses: actions/github-script@v7
         with:
           script: |
-            const sha = process.env.CANDIDATE_SHA;
-            if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error("candidate_sha must be a full 40-character commit SHA");
+            const rawSha = process.env.CANDIDATE_SHA ?? "";
+            const sha = rawSha.trim();
+            if (rawSha !== sha || !/^[0-9a-f]{40}$/i.test(sha)) throw new Error("candidate_sha must be exactly one full 40-character commit SHA");
             const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               head_sha: sha,
+              status: "completed",
               per_page: 100,
             });
             const run = runs
@@ -58,9 +59,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
       - uses: ./.github/actions/setup-sdk
-      - run: test "$(git rev-parse HEAD)" = "${{ inputs.candidate_sha }}"
+      - run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - run: pnpm build:release
       - run: node scripts/check-current-document-only.mjs
       - run: pnpm release:check
@@ -78,7 +79,7 @@ jobs:
           test "$(find .artifacts/release/api-reports -maxdepth 1 -name '*.api.md' | wc -l | tr -d ' ')" = 3
       - uses: actions/upload-artifact@v4
         with:
-          name: pixiboard-public-packages-rc-${{ inputs.candidate_sha }}
+          name: pixiboard-public-packages-rc-${{ env.CANDIDATE_SHA }}
           path: .artifacts/release/
           if-no-files-found: error
 
@@ -92,28 +93,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
       - uses: ./.github/actions/setup-sdk
+      - run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - run: pnpm --filter pixiboardjs build
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm exec playwright test --config tests/browser/playwright.config.ts --grep-invert "media-heavy"
 
   performance-candidate:
-    name: Core, Chromium WebGL, media and Konva evidence
+    name: Node thresholds and candidate-bound Chromium/Konva evidence
     needs: verify-candidate
     runs-on: ubuntu-24.04
     timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
       - uses: ./.github/actions/setup-sdk
+      - run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - run: pnpm exec playwright install --with-deps chromium
       - run: node scripts/check-performance-gate.mjs rc
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: performance-rc-${{ inputs.candidate_sha }}
+          name: performance-rc-${{ env.CANDIDATE_SHA }}
           path: .artifacts/performance/rc/
           if-no-files-found: error
 
@@ -125,8 +128,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
       - uses: ./.github/actions/setup-sdk
+      - run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - run: pnpm test:adapters
 
   desktop-candidate:
@@ -147,12 +151,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/examples-desktop-sdk/src-tauri
       - uses: ./.github/actions/setup-sdk
+      - run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - run: node scripts/run-desktop-platform-gate.mjs --mode tauri
 
   final-gate:

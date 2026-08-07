@@ -23,15 +23,15 @@ PR 不执行完整 release staging、三包 pack、全量 benchmark 或桌面平
 `.github/workflows/nightly.yml` 每天 `18:17 UTC` 及手工触发：
 
 - 重跑 Core、Plugin、Agent、MCP、adapter 与 facade contracts。
-- 重跑 focused required Chromium browser contracts；media acceptance 和资源基线由独立 performance job 执行，避免把两类失败混为一个证据。
+- 重跑 focused required Chromium browser contracts；canonical performance evidence 由独立 job 执行，避免把契约失败和 benchmark 失败混为一个证据。真实 media decode/playback 仍是未完成项。
 - `scripts/check-performance-gate.mjs nightly` 生成 `.artifacts/performance/nightly/`：
   - Node 真实 1k/10k/50k/100k dataset、Core load/update、spatial index/query、instrumented renderer culling/incremental apply、facade batch 与 100-cycle SDK create/destroy soak；
-  - candidate Core/renderer 对 10k/50k/100k 文档完成校验、索引、可见集渲染与 WebGL 观测；
-  - 同一 Chromium、viewport 和 visible set 下记录 SHA-384 校验的 Konva 10.3.0 Canvas2D reference；Konva 不执行等价的全量文档索引，因此不宣称跨引擎 cold time 可比；
-  - candidate renderer 执行 100-cycle、每轮 8 张真实 decode 的图片纹理创建、render、release soak。
+  - canonical browser runner 固定执行 10k/50k/100k × matched-visible/full-retained × PixiBoardJS/Konva、30 warmup/120 samples；
+  - candidate 侧从当前 checkout 加载 Core/renderer 源码，完整 rebuild/index N-node `BoardDocument`，记录 candidate SHA、document/index/active population，并验证真实 Pixi WebGL；
+  - Konva 9.3.22 从 frozen workspace dependency 本地提供，在相同 Chromium、1920×1080、DPR、seed、pan path、visible/mutation plan 下验证 Canvas2D；不从 CDN 下载运行时。
 - macOS 与 Windows 都对 `apps/examples-desktop-sdk/src-tauri/Cargo.toml` 执行 `cargo test --locked`；macOS 追加真实 launch smoke，Windows 追加 native release build。
 
-CI 可能使用 SwiftShader，因此报告不声称硬件 GPU throughput、GPU memory 或 draw-call 成绩。
+浏览器结构完整性、candidate binding、WebGL/Canvas2D 和公平性 fail closed。数值性能没有固定机器 baseline delta 或获批绝对预算，明确标记为 evidence-only/non-blocking；job 成功不能表述为浏览器性能阈值通过。CI 可能使用 SwiftShader，因此报告也不声称硬件 GPU throughput、GPU memory 或 draw-call 成绩。
 
 ## Release Candidate
 
@@ -40,8 +40,8 @@ CI 可能使用 SwiftShader，因此报告不声称硬件 GPU throughput、GPU m
 1. 固定 Node/pnpm 与 `pnpm install --frozen-lockfile`。
 2. 三个公开包的 release build、current-document-only、API Extractor production compare、bundle budgets、外部 Node/Vite consumer，以及三次真实 pack。
 3. 上传 `pixiboardjs-*.tgz`、`pixi-board-core-*.tgz`、`pixi-board-plugin-sdk-*.tgz` 和三个 `*.api.md`。
-4. required Chromium browser contracts；media-heavy benchmark/soak 由下一项独立证明。
-5. Core benchmark、Chromium WebGL、image-texture soak 与 Konva visible-set reference evidence。
+4. required Chromium browser contracts；不把这些契约误称为 media-heavy benchmark。
+5. Core benchmark 阈值，以及 candidate-bound canonical Chromium WebGL/Konva evidence；浏览器数值仍为 evidence-only/non-blocking。
 6. adapter contract suites。
 7. macOS/Windows 仓库内 Tauri crate 的 Cargo/platform gate。
 8. 只有所有依赖 job 成功，`Release candidate accepted` 才通过。
@@ -50,4 +50,4 @@ CI 可能使用 SwiftShader，因此报告不声称硬件 GPU throughput、GPU m
 
 - macOS 可本地执行静态、contract、release、Chromium benchmark 和 macOS Cargo gate。
 - Windows native test/build 只能由 `windows-2022` runner 证明；在该 runner 成功前必须标记为平台待验证。
-- Konva reference 首次下载依赖 jsDelivr；内容固定为 10.3.0 并验证 SHA-384，下载或校验失败时 nightly/RC fail closed。
+- browser benchmark 的 Pixi 8.19.0、Konva 9.3.22、Playwright 1.62.1 和 TypeScript 5.9.3 都由 benchmark package 直接锁定；frozen install 或本地资产解析失败时 nightly/RC fail closed。
