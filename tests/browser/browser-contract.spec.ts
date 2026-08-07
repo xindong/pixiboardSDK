@@ -110,3 +110,40 @@ test("real WebGL context loss and renderer init failure recover by recreation", 
     },
   });
 });
+
+test("real Pixi/WebGL renderer accepts media-heavy Document nodes and returns all resources to baseline", async ({ page }) => {
+  test.setTimeout(180_000);
+  const result = await page.evaluate(() => window.pixiBoardBrowserContracts.runRendererAcceptanceContract());
+  console.log("RENDERER_ACCEPTANCE_RESULT", JSON.stringify(result));
+  expect(result.incremental.webgl).toBe(true);
+  expect(result.incremental.initialKinds).toMatchObject({ image: "image", video: "video", audio: "audio", text: "text", custom: "contract.card" });
+  expect(result.incremental.activeIds).toEqual(["custom", "image", "image-2", "text", "video"]);
+  expect(result.incremental.text).toBe("renderer text v2");
+  expect(result.incremental.customText).toBe("custom v2");
+  expect(result.incremental.diagnosticsAfterDestroy).toMatchObject({ activeViews: 0, pendingOperations: 0, listeners: 0, tickers: 0, textureLeases: 0 });
+  expect(result.incremental.textureBaseline).toBe(0);
+
+  expect(result.previewRace.winningGeneration).toBe(2);
+  expect(result.previewRace.beforeDestroy.active).toBe(1);
+  expect(result.previewRace.afterDestroy).toMatchObject({ active: 0, diagnostics: { activeViews: 0, pendingOperations: 0, textureLeases: 0 } });
+  expect(result.previewRace.afterDestroy.releases).toEqual(expect.arrayContaining(["race-preview:1", "race-preview:2"]));
+
+  expect(result.dualInstance).toMatchObject({ isolatedTextures: true, secondSurvived: true });
+  expect(result.dualInstance.firstBaseline).toMatchObject({ views: 0, textures: 0, diagnostics: { activeViews: 0, textureLeases: 0 } });
+  expect(result.dualInstance.secondBaseline).toMatchObject({ views: 0, textures: 0, diagnostics: { activeViews: 0, textureLeases: 0 } });
+
+  expect(result.mediaHeavy.map(({ images, videos }) => [images, videos])).toEqual([[100, 1], [500, 4], [2000, 8]]);
+  for (const scale of result.mediaHeavy) {
+    expect(scale.documentNodes).toBe(scale.images + scale.videos);
+    expect(scale.distinctAssetRefs).toBe(scale.documentNodes);
+    expect(scale.maxActiveViews).toBeLessThanOrEqual(scale.visibleLimit);
+    expect(scale.destroyBaseline).toMatchObject({ views: 0, textures: 0, diagnostics: { activeViews: 0, pendingOperations: 0, textureLeases: 0, listeners: 0, tickers: 0 } });
+  }
+
+  expect(result.capture1080p).toMatchObject({ width: 1920, height: 1080, mimeType: "image/png", dataUrlPrefix: "data:image/png;base64," , activeSetPreserved: true });
+  expect(result.capture1080p.latencyMs.p95).toBeLessThan(500);
+  expect(result.capture1080p.destroyBaseline).toMatchObject({ views: 0, textures: 0, diagnostics: { activeViews: 0, textureLeases: 0 } });
+
+  expect(result.destroySoak).toMatchObject({ cycles: 100, failures: [], finalCanvasCount: 0 });
+  expect(result.notObserved).toEqual(expect.arrayContaining(["GPU memory", "draw calls/batches", "idle CPU/GPU"]));
+});

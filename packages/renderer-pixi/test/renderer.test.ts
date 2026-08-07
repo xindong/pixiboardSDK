@@ -82,4 +82,57 @@ describe("renderer-pixi vertical slice", () => {
     await renderer.setVisibleBounds({ minX: 1000, minY: 1000, maxX: 1100, maxY: 1100 }); expect(renderer.activeViews.has("task")).toBe(false);
     await renderer.setVisibleBounds(undefined); await renderer.rebuild(doc([taskCardNode("task", "Saved")], 2)); expect((renderer.activeViews.get("task") as any).state.title).toBe("Saved"); await renderer.destroy();
   });
+  it("updates only touched nodes and deletes removed views incrementally", async () => {
+    const { app, factory } = fake(); const registry = new NodeRendererRegistry(); const updates = new Map<string, number>(); const destroys: string[] = [];
+    registry.register("tracked", {
+      create: (item) => ({ displayObject: factory.createContainer(), state: { id: item.id } }),
+      update: (_view, item) => updates.set(item.id, (updates.get(item.id) ?? 0) + 1),
+      destroy: (view) => destroys.push((view.state as any).id),
+    });
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, registry }); await renderer.init();
+    await renderer.rebuild(doc([node("a", "tracked"), node("b", "tracked")], 1));
+    expect(Object.fromEntries(updates)).toEqual({ a: 1, b: 1 });
+    await renderer.apply(doc([{ ...node("a", "tracked"), x: 20 }], 2), { revision: 2, transactionId: "incremental", origin: "api", addedNodeIds: [], updatedNodeIds: ["a"], removedNodeIds: ["b"], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 });
+    expect(Object.fromEntries(updates)).toEqual({ a: 2, b: 1 });
+    expect(destroys).toContain("b");
+    expect([...renderer.activeViews.keys()]).toEqual(["a"]);
+    await renderer.destroy();
+  });
+  it("reacquires a same-ref preview on asset changes and releases both generations", async () => {
+    const { app, factory } = fake(); const releases: string[] = []; let generation = 0;
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, acquireTexture: async () => { const id = `lease-${++generation}`; return { texture: { id }, release: () => releases.push(id) }; } }); await renderer.init();
+    const image = { ...node("image", "image"), assetRefs: { preview: { assetId: "preview" } } };
+    await renderer.rebuild(doc([image], 1));
+    await renderer.apply(doc([{ ...image, x: 1 }], 2), { revision: 2, transactionId: "preview", origin: "api", addedNodeIds: [], updatedNodeIds: ["image"], removedNodeIds: [], assetChangedNodeIds: ["image"], selectionChanged: false, viewportChanged: false, timestamp: 1 });
+    expect(generation).toBe(2);
+    expect(releases).toEqual(["lease-1"]);
+    expect(renderer.diagnostics.textureLeases).toBe(1);
+    await renderer.destroy();
+    expect(releases).toEqual(["lease-1", "lease-2"]);
+    expect(renderer.diagnostics.textureLeases).toBe(0);
+  });
+  it("prevents a late texture generation from replacing a newer asset refresh", async () => {
+    const { app, factory } = fake(); const releases: string[] = []; const resolvers: Array<(lease: any) => void> = [];
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, acquireTexture: () => new Promise((resolve) => resolvers.push(resolve)) }); await renderer.init();
+    const image = { ...node("race", "image"), assetRefs: { preview: { assetId: "same-ref" } } };
+    const first = renderer.rebuild(doc([image], 1)); await Promise.resolve();
+    const second = renderer.apply(doc([{ ...image, x: 2 }], 2), { revision: 2, transactionId: "race", origin: "api", addedNodeIds: [], updatedNodeIds: ["race"], removedNodeIds: [], assetChangedNodeIds: ["race"], selectionChanged: false, viewportChanged: false, timestamp: 1 }); await Promise.resolve();
+    expect(resolvers).toHaveLength(2);
+    resolvers[1]({ texture: { generation: 2 }, release: () => releases.push("new") }); await second;
+    resolvers[0]({ texture: { generation: 1 }, release: () => releases.push("old") }); await first;
+    expect((renderer.activeViews.get("race")?.displayObject.texture as any).generation).toBe(2);
+    expect(releases).toContain("old");
+    await renderer.destroy();
+    expect(releases).toContain("new");
+  });
+  it("returns managed listener, ticker, view, and texture counts to baseline", async () => {
+    const { app, factory } = fake(); const listeners = new Set<EventListenerOrEventListenerObject>(); const target = { addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => listeners.add(listener), removeEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => listeners.delete(listener) }; const tickers = new Set<(...args: unknown[]) => void>(); app.ticker = { add: (listener: (...args: unknown[]) => void) => tickers.add(listener), remove: (listener: (...args: unknown[]) => void) => tickers.delete(listener) };
+    const registry = new NodeRendererRegistry(); registry.register("managed", { create: (_item, context) => { context.resources.listen(target, "change", () => {}); context.resources.addTicker(() => {}); return { displayObject: factory.createContainer(), state: {} }; }, update: () => {}, destroy: () => {} });
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, registry, acquireTexture: async () => ({ texture: {}, release: vi.fn() }) }); await renderer.init();
+    await renderer.rebuild(doc([node("managed", "managed"), { ...node("image", "image"), assetRefs: { primary: { assetId: "image" } } }], 1));
+    expect(renderer.diagnostics).toMatchObject({ activeViews: 2, listeners: 1, tickers: 1, textureLeases: 1 });
+    await renderer.destroy();
+    expect(renderer.diagnostics).toMatchObject({ activeViews: 0, pendingOperations: 0, listeners: 0, tickers: 0, textureLeases: 0 });
+    expect(listeners.size).toBe(0); expect(tickers.size).toBe(0);
+  });
 });

@@ -1,6 +1,7 @@
 import type { AssetRef, BoardChangeSet, BoardNode, BoardDocument, JsonValue, Point, WorldBounds } from "@pixi-board/core";
 export type PixiDisplayObject = { visible?: boolean; x?: number; y?: number; rotation?: number; zIndex?: number; addChild?(child: PixiDisplayObject): void; removeChild?(child: PixiDisplayObject): void; destroy?(options?: unknown): void; [key: string]: unknown };
-export type PixiApplication = { stage: PixiDisplayObject; init?(options?: Record<string, unknown>): Promise<void> | void; initOptions?: Record<string, unknown>; destroy?(removeView?: boolean): void; canvas?: unknown; view?: unknown; renderer?: { extract?: { base64?(options: Record<string, unknown>): Promise<string> | string } }; screen?: { width: number; height: number } };
+export type PixiTicker = { add?(listener: (...args: unknown[]) => void): void; remove?(listener: (...args: unknown[]) => void): void; count?: number };
+export type PixiApplication = { stage: PixiDisplayObject; init?(options?: Record<string, unknown>): Promise<void> | void; initOptions?: Record<string, unknown>; destroy?(rendererOptions?: boolean | Record<string, unknown>, stageOptions?: boolean | Record<string, unknown>): void; canvas?: unknown; view?: unknown; ticker?: PixiTicker; renderer?: { extract?: { base64?(options: Record<string, unknown>): Promise<string> | string } }; screen?: { width: number; height: number } };
 export type PixiViewFactory = { createContainer(): PixiDisplayObject; createRect?(width: number, height: number, fill: number | string): PixiDisplayObject; createImage?(ref: AssetRef | undefined, node: Readonly<BoardNode>): PixiDisplayObject | Promise<PixiDisplayObject>; createText?(text: string, style?: Record<string, unknown>): PixiDisplayObject };
 export type PixiApplicationFactory = () => PixiApplication | Promise<PixiApplication>;
 export type PixiRuntimeModule = {
@@ -12,8 +13,13 @@ export type PixiRuntimeModule = {
   Texture?: { from(source: unknown): unknown };
 };
 export type TextureLease = { texture?: unknown; release?: () => void };
-export type RendererDiagnostics = { creates: number; updates: number; destroys: number; lateUpdates: number };
-export type PixiNodeRendererContext = { signal: AbortSignal; assets: { acquireTexture(ref: AssetRef, options?: Record<string, unknown>): Promise<TextureLease> }; invalidate(): void; lod: { level?: number; scale?: number }; diagnostics: RendererDiagnostics; display: PixiViewFactory };
+export type RendererDiagnostics = { creates: number; updates: number; destroys: number; lateUpdates: number; activeViews: number; pendingOperations: number; textureLeases: number; listeners: number; tickers: number };
+export type RendererResourceScope = {
+  onCleanup(cleanup: () => void): () => void;
+  listen(target: { addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: unknown): void; removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: unknown): void }, type: string, listener: EventListenerOrEventListenerObject, options?: unknown): () => void;
+  addTicker(listener: (...args: unknown[]) => void): () => void;
+};
+export type PixiNodeRendererContext = { signal: AbortSignal; assets: { acquireTexture(ref: AssetRef, options?: Record<string, unknown>): Promise<TextureLease> }; resources: RendererResourceScope; invalidate(): void; lod: { level?: number; scale?: number }; diagnostics: RendererDiagnostics; display: PixiViewFactory };
 export type PixiNodeView<State = unknown> = { displayObject: PixiDisplayObject; state: State };
 export type PixiNodeRenderer<Props extends JsonValue = JsonValue, State = unknown> = { create(node: Readonly<BoardNode<Props>>, context: PixiNodeRendererContext): PixiNodeView<State> | Promise<PixiNodeView<State>>; update(view: PixiNodeView<State>, node: Readonly<BoardNode<Props>>, context: PixiNodeRendererContext): void | Promise<void>; destroy(view: PixiNodeView<State>, context: PixiNodeRendererContext): void; hitTest?(node: Readonly<BoardNode<Props>>, worldPoint: Point): boolean };
 export type CullingQuery = (bounds: WorldBounds) => Iterable<string>;

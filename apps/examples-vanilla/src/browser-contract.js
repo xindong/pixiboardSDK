@@ -8,6 +8,7 @@ import {
   runBrowserAdapterContract,
 } from "pixiboardjs/browser";
 import { PixiBoardRenderer } from "@pixi-board/renderer-pixi";
+import { runRendererAcceptanceContract } from "./renderer-contract.js";
 
 function boardDocument(revision, marker) {
   return {
@@ -317,4 +318,5 @@ export const browserContracts = {
   runFocusClipboardContract,
   runPersistenceContract,
   runWebGlRecoveryContract,
+  runRendererAcceptanceContract,
 };

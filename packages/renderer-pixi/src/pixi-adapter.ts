@@ -21,7 +21,7 @@ export function createPixiApplicationFactory(options: Record<string, unknown> = 
 
 export function createPixiViewFactory(pixi: PixiRuntimeModule): PixiViewFactory {
   return {
-    createContainer: () => new pixi.Container({ isRenderGroup: true }),
+    createContainer: () => new pixi.Container({ isRenderGroup: true, sortableChildren: true }),
     createRect: (width, height, fill) => {
       const graphics = new pixi.Graphics();
       graphics.rect?.(0, 0, width, height).fill?.(fill);

@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-07",
+  "baselineCommit": "029ad01c7debdef7f32e562827aa32855e05cc0d",
+  "candidate": "commit containing this report",
+  "environment": {
+    "os": "macOS 26.5.2 arm64",
+    "browser": "Google Chrome for Testing 151.0.7922.34",
+    "playwright": "1.62.1",
+    "renderer": "PixiJS WebGLRenderer",
+    "angle": "SwiftShader",
+    "command": "PIXIBOARD_REQUIRE_BROWSER=1 PLAYWRIGHT_HTML_OPEN=never pnpm test:browser"
+  },
+  "acceptance": {
+    "incrementalCreateUpdateDelete": "pass",
+    "imageVideoAudioTextCustom": "pass",
+    "asyncTexturePreviewRace": "pass",
+    "dualInstanceIsolation": "pass",
+    "rapidViewportViewChurn": "pass",
+    "capture1080p": "pass",
+    "destroy100CyclesToBaseline": "pass"
+  },
+  "incremental": {
+    "initialCreates": 5,
+    "finalActiveViews": 5,
+    "creates": 6,
+    "updates": 2,
+    "destroysBeforeRendererDestroy": 1,
+    "lateUpdates": 0,
+    "destroyBaseline": {
+      "activeViews": 0,
+      "pendingOperations": 0,
+      "textureLeases": 0,
+      "listeners": 0,
+      "tickers": 0
+    }
+  },
+  "previewRace": {
+    "winningGeneration": 2,
+    "lateGenerationReleased": true,
+    "lateUpdatesObserved": 1,
+    "textureLeaseBaseline": 0
+  },
+  "mediaHeavy": [
+    {
+      "images": 100,
+      "videos": 1,
+      "documentNodes": 101,
+      "distinctAssetRefs": 101,
+      "firstInteractiveMs": 8.7,
+      "frameMs": { "p50": 16.6, "p95": 16.9, "p99": 17.1, "over33Ratio": 0 },
+      "maxActiveViews": 17,
+      "textureAcquisitionsDuringChurn": 122,
+      "destroyBaseline": true
+    },
+    {
+      "images": 500,
+      "videos": 4,
+      "documentNodes": 504,
+      "distinctAssetRefs": 504,
+      "firstInteractiveMs": 16.3,
+      "frameMs": { "p50": 16.7, "p95": 17.5, "p99": 19.2, "over33Ratio": 0 },
+      "maxActiveViews": 52,
+      "textureAcquisitionsDuringChurn": 368,
+      "destroyBaseline": true
+    },
+    {
+      "images": 2000,
+      "videos": 8,
+      "documentNodes": 2008,
+      "distinctAssetRefs": 2008,
+      "firstInteractiveMs": 16.3,
+      "frameMs": { "p50": 16.7, "p95": 17.0, "p99": 17.2, "over33Ratio": 0 },
+      "maxActiveViews": 56,
+      "textureAcquisitionsDuringChurn": 376,
+      "destroyBaseline": true
+    }
+  ],
+  "capture1080p": {
+    "samples": 5,
+    "warmupSamples": 1,
+    "width": 1920,
+    "height": 1080,
+    "mimeType": "image/png",
+    "p50Ms": 163.9,
+    "p95Ms": 211.8,
+    "p99Ms": 211.8,
+    "activeSetPreserved": true,
+    "targetP95Ms": 500
+  },
+  "destroySoak": {
+    "cycles": 100,
+    "failures": 0,
+    "textureAcquisitions": 100,
+    "listenerBaseline": 0,
+    "tickerBaseline": 0,
+    "viewBaseline": 0,
+    "textureLeaseBaseline": 0,
+    "canvasBaseline": 0
+  },
+  "notObserved": [
+    "GPU memory",
+    "draw calls/batches",
+    "idle CPU/GPU"
+  ],
+  "limitations": [
+    "Chromium ran with ANGLE SwiftShader, so measurements do not represent hardware-GPU throughput.",
+    "Video and audio are verified renderer adapters using preview/waveform texture leases; media decode and playback are outside this slice.",
+    "The media-heavy run validates the documented 100/500/2000 image plus 1/4/8 video data scales and viewport virtualization, not the separate 10k/50k/100k synthetic benchmark matrix."
+  ]
+}
