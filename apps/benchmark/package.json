@@ -1,0 +1,10 @@
+{
+  "name": "pixiboardjs-benchmark-skeleton",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Renderer-agnostic deterministic dataset and metrics contracts",
+  "scripts": {
+    "generate:synthetic-card": "node src/generate.mjs"
+  }
+}

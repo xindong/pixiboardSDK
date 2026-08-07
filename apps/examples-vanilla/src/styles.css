@@ -1,0 +1,26 @@
+:root {
+  color: #e8edf2;
+  background: #101418;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+}
+
+main {
+  width: min(720px, calc(100vw - 48px));
+  padding: 24px;
+  border: 1px solid #2d3944;
+  border-radius: 12px;
+}
+
+#board {
+  min-height: 160px;
+  margin-top: 20px;
+  border: 1px dashed #536576;
+  border-radius: 8px;
+}

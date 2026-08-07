@@ -6,6 +6,7 @@
   "description": "Architecture and delivery plan for PixiBoardJS SDK",
   "scripts": {
     "docs:check": "node scripts/check-docs.mjs",
+    "packages:check": "node scripts/check-packages.mjs",
     "test:core": "pnpm --filter @pixi-board/core test"
   },
   "packageManager": "pnpm@10.25.0"
