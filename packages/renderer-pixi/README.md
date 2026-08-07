@@ -1,7 +1,10 @@
 # @pixi-board/renderer-pixi
 
-Planned internal Pixi renderer package.
+Internal PixiJS 8 renderer vertical slice. It consumes immutable core snapshots
+and `BoardChangeSet` values, and owns view lifecycle, culling and renderer
+registration. The package does not depend on Tauri, plugins, agents or UI.
 
-No renderer code is part of this skeleton. The future package owns Pixi
-application, scene/view lifecycle, spatial index, texture leases and capture;
-it must not depend on plugins, Agent tooling, Tauri or product UI.
+The first slice includes `rect`, `image` (asset lease delegated to the host) and
+`unknown-node` renderers. Video, audio, input, capture, texture caching and
+spatial-index optimisations are intentionally deferred; culling is exposed as
+an injectable bounds query so hosts can provide RBush or another index.

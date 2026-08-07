@@ -1,0 +1,10 @@
+{
+  "name": "@pixi-board/renderer-pixi",
+  "version": "0.0.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@pixi-board/core": "workspace:*", "pixi.js": "^8.15.0" },
+  "scripts": { "test": "vitest run --config vitest.config.ts" },
+  "devDependencies": { "vitest": "^3.2.4", "typescript": "^5.9.2" }
+}
