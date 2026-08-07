@@ -1,42 +1,54 @@
 {
   "name": "pixiboardjs",
   "version": "0.1.0-alpha.0",
-  "description": "PixiBoardJS public SDK facade (implementation placeholder)",
+  "description": "PixiBoardJS public SDK facade",
   "type": "module",
   "private": false,
   "sideEffects": false,
   "files": [
-    "dist",
+    "src",
     "README.md",
     "VERSIONING.md",
     "CHANGELOG.md"
   ],
   "exports": {
     ".": {
-      "types": "./dist/types.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
+      "types": "./src/types.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
     },
     "./browser": {
-      "types": "./dist/types.d.ts",
-      "import": "./dist/browser.js",
-      "default": "./dist/browser.js"
+      "types": "./src/types.ts",
+      "import": "./src/browser.ts",
+      "default": "./src/browser.ts"
     },
     "./node": {
-      "types": "./dist/types.d.ts",
-      "import": "./dist/node.js",
-      "default": "./dist/node.js"
+      "types": "./src/types.ts",
+      "import": "./src/node.ts",
+      "default": "./src/node.ts"
     },
     "./types": {
-      "types": "./dist/types.d.ts",
-      "import": "./dist/types.js",
-      "default": "./dist/types.js"
+      "types": "./src/types.ts",
+      "import": "./src/types.ts",
+      "default": "./src/types.ts"
     },
     "./package.json": "./package.json"
   },
-  "types": "./dist/types.d.ts",
+  "types": "./src/types.ts",
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@pixi-board/adapter-browser": "workspace:*",
+    "@pixi-board/capabilities": "workspace:*",
+    "@pixi-board/core": "workspace:*",
+    "@pixi-board/renderer-pixi": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts"
   },
   "publishConfig": {
     "access": "public"
