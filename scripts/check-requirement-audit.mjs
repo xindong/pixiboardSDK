@@ -77,6 +77,7 @@ const releaseDoc = await read("docs/15-release-gate.md");
 const benchmarkRunner = await read("apps/benchmark/src/runner.mjs");
 const benchmarkReport = await readIfExists("docs/benchmarks/2026-08-07-node-instrumented-summary.json");
 const performanceDoc = await read("docs/10-performance-benchmarks.md");
+const auditDoc = await read("docs/16-requirement-completion-audit.md");
 const benchmarkFiles = await listFiles(resolve(root, "apps/benchmark"));
 const allFiles = await listFiles();
 const hasNightlyWorkflow = allFiles.some((file) =>
@@ -270,19 +271,24 @@ rows.push(
 );
 
 const releaseEvidence =
-  has(releaseGate, /external Node\/Vite consumers/) &&
+  has(releaseGate, /verifyExternalConsumers/) &&
   has(releaseDoc, /pnpm build:release/) &&
   await exists(".changeset/config.json") &&
   await exists("packages/pixiboardjs/etc/pixiboardjs.api.md") &&
   await exists("packages/core/etc/pixi-board-core.api.md") &&
   await exists("packages/plugin-sdk/etc/pixi-board-plugin-sdk.api.md");
+const releaseCommandEvidence =
+  has(auditDoc, /API report compare passed/) &&
+  has(auditDoc, /Bundle budget passed/) &&
+  has(auditDoc, /Release gate passed/) &&
+  has(auditDoc, /consumer node imports passed/) &&
+  has(auditDoc, /consumer npm run build passed/);
 rows.push(
-  releaseEvidence
-    ? partial(
+  releaseEvidence && releaseCommandEvidence
+    ? achieved(
         "public-release-gate",
-        "Release script covers public tarballs, publishable exports, workspace/private dependency leaks, API reports, bundle budgets and external Node/Vite consumers; public package config/reports/Changesets are present.",
-        publicDistPresent.every(Boolean)
-          ? "A successful clean release:check output and external consumer artifact must still be recorded for achieved.": "Run pnpm build:release, then pnpm release:check; current worktree has no dist artifacts, so pack is blocked before external consumer checks.",
+        "A real release run generated the three public package dist artifacts, packed pixiboardjs (18 files), imported all public subpaths in an external Node consumer, and completed the external Vite consumer build; the committed audit records the exact successful release output. Dist/tarballs remain ephemeral and are not committed.",
+        "Re-run pnpm build:release and pnpm release:check on each release candidate; the audit does not treat committed dist as source evidence.",
       )
     : missing(
         "public-release-gate",
@@ -299,11 +305,11 @@ const apiAndBudgetEvidence =
   await exists("packages/core/bundle-budget.json") &&
   await exists("packages/plugin-sdk/bundle-budget.json");
 rows.push(
-  apiAndBudgetEvidence
-    ? partial(
+  apiAndBudgetEvidence && releaseCommandEvidence
+    ? achieved(
         "semver-api-report-changesets-bundle-budget",
-        "Changesets config, public package changelogs, API Extractor configs/reports and independent bundle budgets are committed and wired to release scripts.",
-        "Without generated dist and a recorded production compare, this remains partial; add CI/RC pass output.",
+        "Changesets/config, public changelogs, committed API Extractor reports and independent bundle budgets are present; this audit records API report compare and bundle budget passes from the same real release run.",
+        "Re-run API and bundle checks for every public API change and keep reports/budgets synchronized.",
       )
     : missing(
         "semver-api-report-changesets-bundle-budget",
