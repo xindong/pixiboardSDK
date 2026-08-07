@@ -29,6 +29,6 @@ describe("renderer-pixi vertical slice", () => {
   });
   it("supports injected bounds culling", async () => {
     const { app, factory } = fake(); const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, cullingQuery: () => ["a"] }); await renderer.init(); await renderer.rebuild(doc([node("a"), node("b", "rect", 100)], 1));
-    expect(renderer.activeViews.has("a")).toBe(true); expect(renderer.activeViews.has("b")).toBe(false); await renderer.destroy();
+    await renderer.setVisibleBounds({ minX: 0, minY: 0, maxX: 20, maxY: 20 }); expect(renderer.activeViews.has("a")).toBe(true); expect(renderer.activeViews.has("b")).toBe(false); await renderer.destroy();
   });
 });

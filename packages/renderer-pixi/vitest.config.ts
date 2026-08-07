@@ -1,2 +1,6 @@
-import { defineConfig } from "vitest/config";
-export default defineConfig({ test: { environment: "node", include: ["test/**/*.test.ts"] } });
+import { resolve } from "node:path";
+
+export default {
+  resolve: { alias: { "@pixi-board/core": resolve(process.cwd(), "packages/core/src/index.ts") } },
+  test: { environment: "node", include: ["packages/renderer-pixi/test/**/*.test.ts"] },
+};
