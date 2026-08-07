@@ -2,9 +2,11 @@ import type { AssetRecord, BoardDocument } from "@pixi-board/core";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_OPFS_THRESHOLD_BYTES,
+  BrowserDocumentConflictError,
   BrowserPersistenceAdapter,
   BrowserPersistenceDestroyedError,
   BrowserStorageCapabilityError,
+  BrowserStorageQuotaError,
   BrowserStorageKeyCollisionError,
   NativeIndexedDbPort,
   type BrowserDocumentRecord,
@@ -13,6 +15,7 @@ import {
   type IndexedDbPort,
   type ObjectUrlPort,
   type OpfsPort,
+  type SaveBrowserDocumentOptions,
   type StoredAssetEntry,
 } from "../src";
 
@@ -25,6 +28,7 @@ class MemoryIndexedDbPort implements IndexedDbPort {
   readonly entries = new Map<string, StoredAssetEntry>();
   readonly blobs = new Map<string, Blob>();
   failNextDocumentSave = false;
+  quotaNextDocumentSave = false;
   failNextAssetPut = false;
   blockNextAssetPutUntilRelease = false;
   assetPutStarted?: Promise<void>;
@@ -51,8 +55,20 @@ class MemoryIndexedDbPort implements IndexedDbPort {
     return this.document === undefined ? undefined : clone(this.document);
   }
 
-  async saveDocument(record: BrowserDocumentRecord, signal: AbortSignal): Promise<void> {
+  async saveDocument(
+    record: BrowserDocumentRecord,
+    signal: AbortSignal,
+    options: SaveBrowserDocumentOptions = {},
+  ): Promise<void> {
     signal.throwIfAborted();
+    const actualRevision = this.document?.snapshot.revision ?? null;
+    if (options.expectedRevision !== undefined && options.expectedRevision !== actualRevision) {
+      throw new BrowserDocumentConflictError(options.expectedRevision, actualRevision);
+    }
+    if (this.quotaNextDocumentSave) {
+      this.quotaNextDocumentSave = false;
+      throw new DOMException("quota full", "QuotaExceededError");
+    }
     if (this.failNextDocumentSave) {
       this.failNextDocumentSave = false;
       throw new Error("document transaction failed");
@@ -284,6 +300,47 @@ describe("BrowserPersistenceAdapter contract", () => {
       snapshot: documentWithAssetIds("asset-1"),
       metadata: { projectId: "p-1" },
     });
+  });
+
+  it("allows only one stale browser instance to win a compare-and-swap race", async () => {
+    const indexedDb = new MemoryIndexedDbPort();
+    const first = new BrowserPersistenceAdapter({ indexedDb });
+    const second = new BrowserPersistenceAdapter({ indexedDb });
+    await first.saveDocument({ snapshot: documentWithAssetIds("base"), expectedRevision: null });
+    const firstUpdate = documentWithAssetIds("first");
+    firstUpdate.revision = 2;
+    const secondUpdate = documentWithAssetIds("second");
+    secondUpdate.revision = 2;
+
+    const writes = await Promise.allSettled([
+      first.saveDocument({ snapshot: firstUpdate, expectedRevision: 1 }),
+      second.saveDocument({ snapshot: secondUpdate, expectedRevision: 1 }),
+    ]);
+
+    expect(writes.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+    expect(writes.find(({ status }) => status === "rejected")).toMatchObject({
+      status: "rejected",
+      reason: {
+        name: "BrowserDocumentConflictError",
+        expectedRevision: 1,
+        actualRevision: 2,
+      },
+    });
+    expect([firstUpdate, secondUpdate]).toContainEqual(await second.load());
+  });
+
+  it("normalizes quota failures and permits a later retry", async () => {
+    const { adapter, indexedDb } = setup();
+    await adapter.save(documentWithAssetIds("committed"));
+    indexedDb.quotaNextDocumentSave = true;
+
+    await expect(adapter.save(documentWithAssetIds("too-large"))).rejects.toMatchObject({
+      name: "BrowserStorageQuotaError",
+      retryable: true,
+    });
+    expect(await adapter.load()).toEqual(documentWithAssetIds("committed"));
+    await expect(adapter.save(documentWithAssetIds("recovered"))).resolves.toBeUndefined();
+    expect(new BrowserStorageQuotaError().message).toBe("Browser storage quota was exceeded");
   });
 
   it("uses OPFS generations, resolves assets, and compensates an IndexedDB metadata failure", async () => {

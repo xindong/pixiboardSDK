@@ -9,7 +9,12 @@
     "packages:check": "node scripts/check-packages.mjs",
     "release:check": "node scripts/check-release-gate.mjs",
     "test:core": "pnpm --filter @pixi-board/core test",
-    "test:contracts": "pnpm --filter @pixi-board/capabilities test && pnpm --filter @pixi-board/agent-tools test"
+    "test:contracts": "pnpm --filter @pixi-board/capabilities test && pnpm --filter @pixi-board/agent-tools test",
+    "test:browser": "node scripts/run-browser-contract.mjs",
+    "test:browser-boundary": "node scripts/check-browser-boundary.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
   },
   "packageManager": "pnpm@10.25.0"
 }

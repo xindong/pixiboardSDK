@@ -1,13 +1,15 @@
 import { resolve } from "node:path";
 
+const packageRoot = import.meta.dirname;
+
 export default {
   resolve: {
     alias: {
-      "@pixi-board/core": resolve(process.cwd(), "packages/core/src/index.ts"),
+      "@pixi-board/core": resolve(packageRoot, "../core/src/index.ts"),
     },
   },
   test: {
     environment: "node",
-    include: ["packages/adapter-browser/test/**/*.test.ts"],
+    include: ["test/**/*.test.ts"],
   },
 };

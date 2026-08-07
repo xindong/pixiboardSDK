@@ -12,6 +12,7 @@
     "pixiboardjs": "workspace:*"
   },
   "devDependencies": {
+    "@pixi-board/renderer-pixi": "workspace:*",
     "vite": "^7.0.0"
   }
 }

@@ -4,7 +4,9 @@ import {
   BrowserAssetNotFoundError,
   BrowserPersistenceAbortError,
   BrowserPersistenceDestroyedError,
+  BrowserStorageQuotaError,
   BrowserStorageKeyCollisionError,
+  isBrowserQuotaError,
 } from "./errors";
 import { NativeObjectUrlPort } from "./object-url-port";
 import type {
@@ -135,7 +137,9 @@ export class BrowserPersistenceAdapter {
         savedAt: this.#now(),
       };
       this.#throwIfAborted(signal);
-      await this.#indexedDb.saveDocument(record, signal);
+      await this.#indexedDb.saveDocument(record, signal, {
+        expectedRevision: input.expectedRevision,
+      });
     });
   }
 
@@ -419,6 +423,7 @@ export class BrowserPersistenceAdapter {
       return await operation(controller.signal);
     } catch (error) {
       if (controller.signal.aborted) throw new BrowserPersistenceAbortError(controller.signal.reason);
+      if (isBrowserQuotaError(error)) throw new BrowserStorageQuotaError(error);
       throw error;
     } finally {
       this.signal.removeEventListener("abort", onInstanceAbort);

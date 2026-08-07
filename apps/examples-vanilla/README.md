@@ -1,8 +1,12 @@
 # Vanilla consumer fixture
 
-This is a small Vite app kept as a repository-outside consumer template. It
-imports only the public `pixiboardjs` package root; it does not import `core`,
-`renderer-pixi` or any source file from this repository.
+This is a small Vite app kept as a repository-outside consumer template. Its
+production entry path imports only the public `pixiboardjs` package root.
+
+The in-repository Playwright gate also loads `src/browser-contract.js`. That
+test-only module is loaded only with `?browser-contract=1` and exercises the browser adapter and renderer package directly
+for native IndexedDB CAS/quota and real Chromium WebGL recovery. Production
+example code remains on the public `pixiboardjs` import path.
 
 To exercise it as the release gate described in the roadmap, copy this
 directory outside the repository, install a packed `pixiboardjs` tarball (or a

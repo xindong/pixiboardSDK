@@ -11,6 +11,15 @@ export type BrowserDocumentRecord = {
 export type SaveBrowserDocumentInput = {
   snapshot: BoardDocument;
   metadata?: BrowserDocumentMetadata;
+  /**
+   * Compare-and-swap guard for shared browser storage. `null` requires that no
+   * document exists; `undefined` preserves the legacy unconditional write.
+   */
+  expectedRevision?: number | null;
+};
+
+export type SaveBrowserDocumentOptions = {
+  expectedRevision?: number | null;
 };
 
 export type AssetStorageLocation =
@@ -63,7 +72,11 @@ export interface PortLifecycle {
 
 export interface IndexedDbPort extends PortLifecycle {
   loadDocument(signal: AbortSignal): Promise<BrowserDocumentRecord | undefined>;
-  saveDocument(record: BrowserDocumentRecord, signal: AbortSignal): Promise<void>;
+  saveDocument(
+    record: BrowserDocumentRecord,
+    signal: AbortSignal,
+    options?: SaveBrowserDocumentOptions,
+  ): Promise<void>;
   getAssetEntry(id: string, signal: AbortSignal): Promise<StoredAssetEntry | undefined>;
   listAssetEntries(signal: AbortSignal): Promise<StoredAssetEntry[]>;
   getAssetBlob(id: string, variant: AssetBinaryVariant, signal: AbortSignal): Promise<Blob | undefined>;

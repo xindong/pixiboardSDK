@@ -2,9 +2,10 @@ import type {
   AssetBinaryVariant,
   BrowserDocumentRecord,
   IndexedDbPort,
+  SaveBrowserDocumentOptions,
   StoredAssetEntry,
 } from "./types";
-import { BrowserStorageCapabilityError } from "./errors";
+import { BrowserDocumentConflictError, BrowserStorageCapabilityError } from "./errors";
 
 const DOCUMENT_STORE = "documents";
 const ASSET_STORE = "asset-metadata";
@@ -72,10 +73,38 @@ export class NativeIndexedDbPort implements IndexedDbPort {
     return this.#read<BrowserDocumentRecord>(DOCUMENT_STORE, DOCUMENT_KEY, signal);
   }
 
-  async saveDocument(record: BrowserDocumentRecord, signal: AbortSignal): Promise<void> {
-    await this.#write([DOCUMENT_STORE], signal, (transaction) => {
+  async saveDocument(
+    record: BrowserDocumentRecord,
+    signal: AbortSignal,
+    options: SaveBrowserDocumentOptions = {},
+  ): Promise<void> {
+    const database = await this.#open(signal);
+    if (signal.aborted) throw abortError(signal);
+    const transaction = database.transaction(DOCUMENT_STORE, "readwrite");
+    const done = transactionDone(transaction, signal);
+    try {
+      if (options.expectedRevision !== undefined) {
+        const current = await requestResult(
+          transaction.objectStore(DOCUMENT_STORE).get(DOCUMENT_KEY),
+        ) as BrowserDocumentRecord | undefined;
+        const actualRevision = current?.snapshot.revision ?? null;
+        if (actualRevision !== options.expectedRevision) {
+          transaction.abort();
+          await done.catch(() => undefined);
+          throw new BrowserDocumentConflictError(options.expectedRevision, actualRevision);
+        }
+      }
       transaction.objectStore(DOCUMENT_STORE).put(record, DOCUMENT_KEY);
-    });
+      await done;
+    } catch (error) {
+      try {
+        transaction.abort();
+      } catch {
+        // The transaction may already be committed or aborted.
+      }
+      await done.catch(() => undefined);
+      throw error;
+    }
   }
 
   async getAssetEntry(id: string, signal: AbortSignal): Promise<StoredAssetEntry | undefined> {

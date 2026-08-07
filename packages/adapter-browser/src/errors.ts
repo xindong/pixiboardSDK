@@ -47,3 +47,30 @@ export class BrowserStorageCapabilityError extends BrowserPersistenceError {
     this.capability = capability;
   }
 }
+
+export class BrowserDocumentConflictError extends BrowserPersistenceError {
+  readonly expectedRevision: number | null;
+  readonly actualRevision: number | null;
+
+  constructor(expectedRevision: number | null, actualRevision: number | null) {
+    super(
+      `Browser document revision conflict: expected ${String(expectedRevision)}, found ${String(actualRevision)}`,
+    );
+    this.expectedRevision = expectedRevision;
+    this.actualRevision = actualRevision;
+  }
+}
+
+export class BrowserStorageQuotaError extends BrowserPersistenceError {
+  readonly retryable = true;
+
+  constructor(cause?: unknown) {
+    super("Browser storage quota was exceeded", { cause });
+  }
+}
+
+export function isBrowserQuotaError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { name?: unknown; code?: unknown };
+  return candidate.name === "QuotaExceededError" || candidate.code === 22 || candidate.code === 1014;
+}
