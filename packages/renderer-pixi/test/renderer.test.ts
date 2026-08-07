@@ -31,4 +31,16 @@ describe("renderer-pixi vertical slice", () => {
     const { app, factory } = fake(); const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, cullingQuery: () => ["a"] }); await renderer.init(); await renderer.rebuild(doc([node("a"), node("b", "rect", 100)], 1));
     await renderer.setVisibleBounds({ minX: 0, minY: 0, maxX: 20, maxY: 20 }); expect(renderer.activeViews.has("a")).toBe(true); expect(renderer.activeViews.has("b")).toBe(false); await renderer.destroy();
   });
+  it("reconciles offscreen snapshots when the viewport moves", async () => {
+    const { app, factory } = fake(); const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, cullingQuery: () => [] }); await renderer.init();
+    await renderer.setVisibleBounds({ minX: 0, minY: 0, maxX: 20, maxY: 20 }); await renderer.rebuild(doc([node("a"), node("b", "rect", 100)], 1)); expect(renderer.activeViews.size).toBe(0);
+    renderer.setCullingQuery(() => ["b"]); await renderer.setVisibleBounds({ minX: 90, minY: 0, maxX: 120, maxY: 30 }); expect(renderer.activeViews.has("b")).toBe(true);
+    renderer.setCullingQuery(() => ["a"]); await renderer.setVisibleBounds({ minX: 0, minY: 0, maxX: 20, maxY: 20 }); expect(renderer.activeViews.has("a")).toBe(true); expect(renderer.activeViews.has("b")).toBe(false); await renderer.destroy();
+  });
+  it("preserves custom builtins, releases image leases, and hit-tests by z order", async () => {
+    const { app, factory } = fake(); const registry = new NodeRendererRegistry(); const release = vi.fn(); const custom = { create: () => ({ displayObject: factory.createContainer(), state: {} }), update: vi.fn(), destroy: vi.fn() }; registry.register("rect", custom as any);
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, registry, acquireTexture: async () => ({ texture: {}, release }) }); await renderer.init(); expect(renderer.registry.get("rect")).toBe(custom);
+    await renderer.rebuild(doc([{ ...node("low", "rect"), zIndex: 1 }, { ...node("img", "image", 0), zIndex: 2, assetRefs: { image: { assetId: "a" } } }, { ...node("high", "rect"), zIndex: 3 }], 1)); expect(renderer.hitTest({ x: 1, y: 1 })).toBe("high");
+    await renderer.destroy(); expect(release).toHaveBeenCalledTimes(1);
+  });
 });
