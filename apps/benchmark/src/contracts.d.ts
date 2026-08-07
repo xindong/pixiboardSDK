@@ -44,9 +44,39 @@ export interface BenchmarkSummary {
   p95FrameTimeMs: number | null;
   p99FrameTimeMs: number | null;
   longFrameRatio: number | null;
+  p50DurationMs: number | null;
   p95DurationMs: number | null;
+  p99DurationMs: number | null;
   p95DocumentLoadMs: number | null;
   p95FirstInteractiveMs: number | null;
   p95CoreTransactionLatencyMs: number | null;
   observed: boolean;
+}
+
+export interface BenchmarkObservation {
+  scenario: string;
+  datasetCount?: number;
+  status: "observed" | "not-observed";
+  reason?: string;
+  samples: BenchmarkMetricSample[];
+  summary: BenchmarkSummary;
+  invariants?: Record<string, boolean | number | string>;
+}
+
+export interface BenchmarkReport {
+  schemaVersion: 1;
+  generatedAt: string;
+  environment: {
+    fingerprint: string;
+    runtime: "node";
+    node: string;
+    platform: string;
+    arch: string;
+    cpuModel: string;
+    cpuCount: number;
+    renderer: "instrumented-pixi-adapter";
+  };
+  seed: number;
+  observations: BenchmarkObservation[];
+  notObserved: Array<{ metric: string; reason: string }>;
 }

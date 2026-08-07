@@ -141,3 +141,34 @@ revision: number
 
 > PixiBoardJS 在所有画布场景都比 Konva 快。
 
+## 2026-08-07 验收落地
+
+已将原 benchmark skeleton 接成可执行的 deterministic core/renderer harness：
+
+- `apps/benchmark/src/harness.ts` 固定 seed `42` 生成 1k、10k、50k、100k Synthetic Card，并实际驱动 `BoardCore`、`GridSpatialIndex`、`PixiBoardRenderer` 和 `pixiboardjs` facade。
+- 每个数据规模执行 document load、spatial rebuild/query、可见集合 culling、renderer single-node apply、core single-node update 和 1000-node batch update；facade batch 额外断言一次 revision、一次 change、一次 persistence save。
+- create/destroy soak 执行 100 cycles，记录 listener、ticker、active view、texture lease 峰值与销毁后的基线。
+- renderer 使用 instrumented Pixi adapter，不创建真实 WebGL context；空间查询先由真实 `GridSpatialIndex` 计算，再注入 renderer 的 culling query，以隔离空间索引和 view lifecycle 成本。
+
+完整实测摘要见 [`docs/benchmarks/2026-08-07-node-instrumented-summary.json`](benchmarks/2026-08-07-node-instrumented-summary.json)。环境为 macOS arm64、Node `22.22.0`、Apple M4（10 cores）。关键 p95（ms）如下：
+
+| 场景 | 1k | 10k | 50k | 100k |
+|---|---:|---:|---:|---:|
+| document load | 42.7983 | 602.1180 | 2370.5136 | 10561.2732 |
+| spatial rebuild | 1.7657 | 13.8899 | 85.7040 | 272.6589 |
+| spatial query | 1.2179 | 0.9904 | 0.3643 | 1.2369 |
+| renderer culling/first interactive（instrumented） | 8.7803 | 466.2531 | 208.4991 | 1104.0040 |
+| renderer single-node apply | 19.6701 | 126.3248 | 1589.0450 | 1417.2063 |
+| core single-node update | 65.8196 | 1040.1944 | 3410.7470 | 7852.4993 |
+| core batch update 1000 | 188.6862 | 889.2466 | 8750.7738 | 10467.9096 |
+
+这些结果显示当前 core 的单节点和 batch 目标（分别 `<2ms`、`<50ms`）均未达标；报告保留了真实失败值，没有调整目标或伪造 browser 结果。culling 的 active views 均等于选出的 visible set，且未创建全量 100k views。
+
+以下指标明确为 `not-observed`：browser/WebGL frame p50/p95/p99 与 long-frame ratio、GPU memory、draw calls/batches、idle CPU/GPU、1080p capture、受控 JS heap 回归和 Konva 对照。它们必须在固定 Chromium/WebGL 设备上由后续 nightly/release-candidate job 测量。
+
+运行方式（不构建、不做类型检查）：
+
+```text
+pnpm benchmark:run
+pnpm benchmark:test
+```

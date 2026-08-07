@@ -181,3 +181,15 @@ pixiboardjs
 - Alpha：内部使用，允许频繁 API 调整。
 - Beta：公开使用，breaking change 需 changelog 和 API upgrade note。
 - Stable：semver、弃用周期、当前 Document 格式边界和 API report 强制执行。
+
+## 2026-08-07 性能/稳定性验收落地
+
+仓库提供可重复的 Node benchmark 与 lifecycle baseline：
+
+- `apps/benchmark/src/harness.ts` 实际驱动 Core、空间索引、instrumented Pixi renderer 和 facade，固定输入、seed、操作顺序及 viewport path。
+- `benchmark:run` 覆盖 1k/10k/50k/100k 的 load、spatial、culling、update、batch，并执行 100-cycle create/destroy soak。
+- soak 记录 listener、ticker、observer、active view、texture lease，要求每轮销毁后回到基线。
+- regression gate 比较同环境 baseline/candidate 的 p95，默认阻止超过 10% 的回归及 observed→not-observed。
+- 基线只使用 SDK 当前 `BoardDocument`；不读取、不转换旧数据。
+
+Node/instrumented 结果见 [`docs/benchmarks/2026-08-07-node-instrumented-summary.json`](benchmarks/2026-08-07-node-instrumented-summary.json)。browser/WebGL frame、GPU、idle render、capture、受控 heap 和 Konva 在这份报告中均为 `not-observed`，不能由 Node 测量替代。

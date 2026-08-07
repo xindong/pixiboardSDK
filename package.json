@@ -12,7 +12,10 @@
     "test:core": "pnpm --filter @pixi-board/core test",
     "test:contracts": "pnpm --filter @pixi-board/capabilities test && pnpm --filter @pixi-board/agent-tools test",
     "test:browser": "node scripts/run-browser-contract.mjs",
-    "test:browser-boundary": "node scripts/check-browser-boundary.mjs"
+    "test:browser-boundary": "node scripts/check-browser-boundary.mjs",
+    "benchmark:run": "pnpm --filter pixiboardjs-benchmark benchmark:run",
+    "benchmark:test": "pnpm --filter pixiboardjs-benchmark test",
+    "benchmark:check": "pnpm --filter pixiboardjs-benchmark benchmark:check"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1"

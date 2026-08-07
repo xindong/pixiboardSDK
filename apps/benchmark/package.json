@@ -1,10 +1,21 @@
 {
-  "name": "pixiboardjs-benchmark-skeleton",
+  "name": "pixiboardjs-benchmark",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Renderer-agnostic deterministic dataset and metrics contracts",
+  "description": "Deterministic PixiBoardJS core, spatial, renderer and lifecycle benchmark harness",
   "scripts": {
-    "generate:synthetic-card": "node src/generate.mjs"
+    "generate:synthetic-card": "node src/generate.mjs",
+    "benchmark:run": "PIXIBOARD_BENCHMARK_RUN=1 vitest run --config vitest.config.ts test/benchmark-run.test.ts --reporter=verbose",
+    "benchmark:check": "node src/check-regression.mjs",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@pixi-board/core": "workspace:*",
+    "@pixi-board/renderer-pixi": "workspace:*",
+    "pixiboardjs": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
   }
 }

@@ -12,7 +12,21 @@ importers:
         specifier: ^1.62.1
         version: 1.62.1
 
-  apps/benchmark: {}
+  apps/benchmark:
+    dependencies:
+      '@pixi-board/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pixi-board/renderer-pixi':
+        specifier: workspace:*
+        version: link:../../packages/renderer-pixi
+      pixiboardjs:
+        specifier: workspace:*
+        version: link:../../packages/pixiboardjs
+    devDependencies:
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7
 
   apps/examples-desktop-sdk:
     dependencies:

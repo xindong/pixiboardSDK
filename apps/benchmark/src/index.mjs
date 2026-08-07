@@ -3,3 +3,4 @@ export { createMetricSample, summarizeMetricSamples, createBenchmarkReporter } f
 export { BENCHMARK_SCENARIOS, describeScenario } from "./scenarios.mjs";
 export { BENCHMARK_TARGETS } from "./targets.mjs";
 export { createBenchmarkAdapter, runScenario, createEmptyReport } from "./runner.mjs";
+export { compareBenchmarkReports, DEFAULT_REGRESSION_TOLERANCE } from "./regression.mjs";
