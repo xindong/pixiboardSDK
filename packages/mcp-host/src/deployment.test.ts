@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,10 +33,11 @@ type Child = {
 
 const activeChildren = new Set<Child>();
 
-function launch(mode: "stdio" | "http"): Child {
+function launch(mode: "stdio" | "http", childSource?: string): Child {
   const directory = mkdtempSync(join(tmpdir(), "pixiboard-mcp-"));
   const statePath = join(directory, "state.json");
-  const childPath = fileURLToPath(new URL("./deployment-child.ts", import.meta.url));
+  const childPath = childSource ? join(directory, "child.mjs") : fileURLToPath(new URL("./deployment-child.ts", import.meta.url));
+  if (childSource) writeFileSync(childPath, childSource, "utf8");
   const childProcess = spawn(process.execPath, [childPath, mode], { env: { ...process.env, PIXIBOARD_MCP_STATE_PATH: statePath }, stdio: ["pipe", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
@@ -118,6 +119,12 @@ async function post(port: number, body: string): Promise<{ status: number; json:
 }
 
 describe("MCP real deployment smoke", () => {
+  it("includes complete child stderr when startup fails before readiness", async () => {
+    const child = launch("stdio", `process.stderr.write("first diagnostic\\n"); setTimeout(() => { process.stderr.write("final diagnostic\\n"); process.exit(9); }, 10);`);
+    await expect(child.waitForStderr("READY")).rejects.toThrow(/first diagnostic[\s\S]*final diagnostic/);
+    await expect(child.finish()).rejects.toThrow(/first diagnostic[\s\S]*final diagnostic/);
+  });
+
   it("keeps real child stdio frames ordered and semantically equivalent", async () => {
     const direct = await directBaseline();
     const child = launch("stdio");
