@@ -1,63 +1,57 @@
 # PixiBoardJS benchmark harness
 
-This package contains two deliberately different benchmark paths:
+This package has two benchmark paths:
 
-1. The deterministic Node harness (`benchmark:run`) drives the real
-   `BoardCore`, `GridSpatialIndex`, `PixiBoardRenderer` and `pixiboardjs`
-   facade. Its Pixi application and display objects are instrumented adapters,
-   so it measures document, spatial, culling, renderer lifecycle and core
-   transaction work without claiming browser/WebGL frame results.
-2. The optional Chromium smoke (`benchmark:browser`) creates real PixiJS and
-   Konva scenes in the same headless Chromium page. It is a comparison smoke,
-   not a release baseline: the page loads pinned CDN builds and runs with
-   SwiftShader unless a caller changes the runner.
+1. `benchmark:run` is the deterministic Node harness for core, spatial index,
+   instrumented renderer lifecycle, and facade transactions.
+2. `benchmark:browser` runs the workspace `PixiBoardRenderer` and Konva 9.3.22
+   in real Chromium. Pixi must expose an actual WebGL context; Konva must
+   expose Canvas2D. A renderer mismatch, console error, missing sample, or
+   fairness mismatch fails the run.
 
-## Dataset and retention matrix
+The comparison is limited to a large, sparse rectangle-card infinite-canvas
+workload. It does not establish that either renderer is universally faster.
 
-The deterministic release matrix keeps 10k, 50k and 100k nodes (the generator
-also supports 1k for fast tests). Renderer culling is reported in both modes:
+## Browser modes
 
-- `matched-visible`: Pixi retains exactly the selected visible set. Pixi and
-  Konva browser comparisons must use the same visible count and viewport.
-- `full-retained`: every document node is retained. This is an intentionally
-  expensive baseline that shows the cost of disabling virtualization; it must
-  not be compared with `matched-visible` as if they were the same workload.
+- `matched-visible`: both engines retain the complete flat current-only
+  dataset in JavaScript, receive the identical visible-ID plan, instantiate
+  the same visible population, and execute the same incremental
+  create/update/delete payloads on every frame.
+- `full-retained`: both engines instantiate and retain the equivalent complete
+  renderer-object population. After each create/update/delete step, both have
+  `dataset count + 1` active objects.
 
-The default logical viewport is **1920×1080 CSS pixels at DPR 1**. Node
-instrumented results record this as a contract; they do not measure physical
-pixels or GPU throughput. Browser capture/frame work must report the actual
-viewport and device scale factor in its own output.
+The canonical matrix is fixed at 10k, 50k, and 100k nodes; both modes; both
+engines; seed 42; a 1920×1080 CSS-pixel viewport at DPR 1; 30 warmup frames;
+and 120 measured frames. Formal evidence cannot be written from a reduced
+matrix. `benchmark:browser:smoke` is explicitly marked non-publishable.
 
-## Cold versus steady measurements
-
-Core transaction observations are split into three explicit phases:
-
-- `*-cold`: the first transaction immediately after constructing the core.
-- `*-transition`: three measured transactions after cold, kept separate from
-  steady-state statistics.
-- the ordinary `core-single-node-update` and
-  `core-batch-update-1000`: steady-state samples after the cold and transition
-  phases. Their p95 is the value used for the core target evaluation.
-
-Renderer `firstInteractiveMs` is also a cold mount measurement. Browser
-`steadyFrameP50/P95/P99Ms` is measured only after the scene is mounted and
-updated through a fixed 20-step pan path. The two families must not be mixed.
+Frame-work latency starts at a `requestAnimationFrame` callback and includes
+the incremental mutation plus completed rendering. Pixi calls `gl.finish()`;
+Konva's `Layer.draw()` is synchronous. This is render-completion work, not a
+RAF-to-RAF presentation interval. First-interactive includes engine setup,
+population creation, the first completed render, and the next RAF; deterministic
+dataset generation is excluded.
 
 ## Commands
 
 ```text
-pnpm benchmark:test
-pnpm benchmark:run
-pnpm benchmark:browser -- --counts 10000 --modes matched-visible
+pnpm --filter pixiboardjs-benchmark test
+pnpm --filter pixiboardjs-benchmark benchmark:browser:smoke
+pnpm --filter pixiboardjs-benchmark benchmark:browser
 ```
 
-`benchmark:run` can write a JSON report by setting
-`PIXIBOARD_BENCHMARK_REPORT=/tmp/pixiboard-benchmark.json`. The browser runner
-prints JSON to stdout and does not write `apps/benchmark/results/` or any other
-generated artifact.
+The browser runner writes an ignored raw JSON report under
+`apps/benchmark/results/`. Override it with
+`PIXIBOARD_BROWSER_OUTPUT=/absolute/report.json`. A canonical run may also
+write a summary evidence file with
+`PIXIBOARD_BROWSER_EVIDENCE=/absolute/evidence.json`.
 
-The browser smoke reports PixiJS WebGL and Konva Canvas2D cold/steady timings,
-retention mode, viewport and active object count. It explicitly leaves GPU
-memory, draw calls/batches, idle CPU/GPU and hardware-GPU throughput
-unobserved; SwiftShader numbers are not hardware-GPU evidence. A failed CDN,
-Chromium or WebGL setup is an unavailable smoke, not a fabricated result.
+Reports include frame-work p50/p95/p99 and >33ms ratio, first interactive,
+product-level viewport capture (`PixiBoardRenderer.capture(viewport)` versus
+`Konva.Stage.toDataURL()`), active populations, renderer identity, and
+instantaneous Chromium heap snapshots when available. Heap snapshots are not
+peak/retained/leak measurements. GPU memory and equivalent draw-call counts
+remain `notObserved`. Headless Chromium currently reports ANGLE SwiftShader,
+so results must not be presented as hardware-GPU throughput.
