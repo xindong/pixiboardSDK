@@ -1,0 +1,20 @@
+{
+  "name": "pixiboardjs-example-desktop-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless desktop host fixture for PixiBoardJS Core/Capabilities integration",
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@pixi-board/agent-tools": "workspace:*",
+    "@pixi-board/capabilities": "workspace:*",
+    "@pixi-board/core": "workspace:*",
+    "@pixi-board/plugin-api-v3": "workspace:*",
+    "pixiboardjs": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

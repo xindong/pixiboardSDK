@@ -352,7 +352,7 @@ class PixiBoardFacade implements PixiBoard {
     this.pendingRuntimeWork = this.pendingRuntimeWork.then(async () => {
       if (this.signal.aborted) return;
       if (this.renderer) {
-        await this.renderer.apply(this.core.document.snapshot(), event.changeSet);
+        await waitForAbort(this.renderer.apply(this.core.document.snapshot(), event.changeSet), this.signal);
         if (this.signal.aborted) return;
         this.events.emit("render:complete", {
           revision: event.revision,
@@ -362,7 +362,7 @@ class PixiBoardFacade implements PixiBoard {
       if (this.signal.aborted) return;
       const persistence = this.options.persistence;
       if (persistence?.save) {
-        await persistence.save(this.core.document.toJSON(), { signal: this.signal });
+        await waitForAbort(persistence.save(this.core.document.toJSON(), { signal: this.signal }), this.signal);
       }
       if (this.signal.aborted) return;
       this.events.emit("change", event);
@@ -413,6 +413,18 @@ function mergeSignals(instanceSignal: AbortSignal, externalSignal?: AbortSignal)
   if (externalSignal.aborted) abort(externalSignal);
   else externalSignal.addEventListener("abort", () => abort(externalSignal), { once: true });
   return controller.signal;
+}
+
+function waitForAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T | undefined> {
+  if (signal.aborted) {
+    void operation.catch(() => undefined);
+    return Promise.resolve(undefined);
+  }
+  const aborted = new Promise<undefined>((resolve) => {
+    signal.addEventListener("abort", () => resolve(undefined), { once: true });
+  });
+  void operation.catch(() => undefined);
+  return Promise.race([operation, aborted]);
 }
 
 function scopeCapabilities(
