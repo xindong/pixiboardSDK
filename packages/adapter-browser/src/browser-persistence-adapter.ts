@@ -13,17 +13,21 @@ import type {
   AssetGcOptions,
   AssetGcResult,
   BrowserAsset,
+  BrowserCleanupError,
+  BrowserCleanupOperation,
   BrowserDocumentRecord,
   BrowserPersistenceAdapterOptions,
   GetAssetOptions,
   ObjectUrlLease,
   PutAssetOptions,
+  PortLifecycle,
   SaveBrowserDocumentInput,
   StoredAssetBinary,
   StoredAssetEntry,
 } from "./types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+export const DEFAULT_OPFS_THRESHOLD_BYTES = 1024 * 1024;
 
 type LeaseState = {
   assetId: string;
@@ -35,6 +39,10 @@ type LeaseState = {
 function collect(values: Iterable<string> | undefined, target: Set<string>): void {
   if (values === undefined) return;
   for (const value of values) target.add(value);
+}
+
+function cloneValue<T>(value: T): T {
+  return structuredClone(value);
 }
 
 function documentAssetIds(document: BoardDocument | undefined): Set<string> {
@@ -68,10 +76,12 @@ export class BrowserPersistenceAdapter {
   readonly #storageKeyFactory: (assetId: string, variant: AssetBinaryVariant) => string;
   readonly #opfsThresholdBytes: number;
   readonly #defaultGcQuarantineMs: number;
-  readonly #onCleanupError: (error: unknown) => void;
+  readonly #onCleanupError: (record: BrowserCleanupError) => void;
   readonly #abortController = new AbortController();
   readonly #leasesByAsset = new Map<string, Set<LeaseState>>();
+  readonly #cleanupErrors: BrowserCleanupError[] = [];
   #destroyed = false;
+  #destroyPromise?: Promise<void>;
 
   constructor(options: BrowserPersistenceAdapterOptions) {
     this.#indexedDb = options.indexedDb;
@@ -81,7 +91,7 @@ export class BrowserPersistenceAdapter {
     this.#storageKeyFactory = options.storageKeyFactory ?? ((assetId, variant) =>
       `${safeAssetId(assetId)}-${safeAssetId(variant)}-${randomStorageToken()}`
     );
-    this.#opfsThresholdBytes = options.opfsThresholdBytes ?? 0;
+    this.#opfsThresholdBytes = options.opfsThresholdBytes ?? DEFAULT_OPFS_THRESHOLD_BYTES;
     this.#defaultGcQuarantineMs = options.defaultGcQuarantineMs ?? DAY_MS;
     this.#onCleanupError = options.onCleanupError ?? (() => undefined);
   }
@@ -92,6 +102,10 @@ export class BrowserPersistenceAdapter {
 
   get destroyed(): boolean {
     return this.#destroyed;
+  }
+
+  get cleanupErrors(): readonly BrowserCleanupError[] {
+    return this.#cleanupErrors.map((record) => ({ ...record }));
   }
 
   async load(options: AdapterOperationOptions = {}): Promise<BoardDocument | null> {
@@ -106,7 +120,7 @@ export class BrowserPersistenceAdapter {
     return this.#run(options.signal, async (signal) => {
       const record = await this.#indexedDb.loadDocument(signal);
       this.#throwIfAborted(signal);
-      return record ?? null;
+      return record === undefined ? null : cloneValue(record);
     });
   }
 
@@ -116,8 +130,8 @@ export class BrowserPersistenceAdapter {
   ): Promise<void> {
     await this.#run(options.signal, async (signal) => {
       const record: BrowserDocumentRecord = {
-        snapshot: input.snapshot,
-        metadata: input.metadata ?? {},
+        snapshot: cloneValue(input.snapshot),
+        metadata: cloneValue(input.metadata ?? {}),
         savedAt: this.#now(),
       };
       this.#throwIfAborted(signal);
@@ -132,8 +146,8 @@ export class BrowserPersistenceAdapter {
       const previousBinary = previous?.binaries[variant];
       this.#throwIfAborted(signal);
       const now = this.#now();
-      const useOpfs = options.preferOpfs !== false &&
-        blob.size >= this.#opfsThresholdBytes &&
+      const preferOpfs = options.preferOpfs ?? blob.size >= this.#opfsThresholdBytes;
+      const useOpfs = preferOpfs &&
         this.#opfs !== undefined &&
         await this.#opfs.isAvailable(signal);
       this.#throwIfAborted(signal);
@@ -147,17 +161,21 @@ export class BrowserPersistenceAdapter {
         if (await this.#opfs.get(key, signal) !== undefined) {
           throw new BrowserStorageKeyCollisionError(key);
         }
-        entry = this.#createEntry(record, variant, blob, { kind: "opfs", key }, previous, now);
+        entry = this.#createEntry(cloneValue(record), variant, blob, { kind: "opfs", key }, previous, now);
         await this.#opfs.put(key, blob, signal);
         try {
           this.#throwIfAborted(signal);
           await this.#indexedDb.putAssetEntry(entry, { variant, blob }, signal);
         } catch (error) {
-          await this.#cleanup(() => this.#opfs?.delete(key, new AbortController().signal));
+          await this.#cleanup(
+            "metadata-compensation",
+            { assetId: record.id, variant, key },
+            () => this.#opfs?.delete(key, new AbortController().signal),
+          );
           throw error;
         }
       } else {
-        entry = this.#createEntry(record, variant, blob, { kind: "indexeddb" }, previous, now);
+        entry = this.#createEntry(cloneValue(record), variant, blob, { kind: "indexeddb" }, previous, now);
         this.#throwIfAborted(signal);
         await this.#indexedDb.putAssetEntry(entry, { variant, blob }, signal);
       }
@@ -167,9 +185,13 @@ export class BrowserPersistenceAdapter {
       if (previousBinary?.storage.kind === "opfs" &&
         (binary.storage.kind !== "opfs" || binary.storage.key !== previousBinary.storage.key)) {
         const previousKey = previousBinary.storage.key;
-        await this.#cleanup(() => this.#opfs?.delete(previousKey, new AbortController().signal));
+        await this.#cleanup(
+          "replace-old-opfs",
+          { assetId: record.id, variant, key: previousKey },
+          () => this.#opfs?.delete(previousKey, new AbortController().signal),
+        );
       }
-      return entry;
+      return cloneValue(entry);
     });
   }
 
@@ -197,7 +219,8 @@ export class BrowserPersistenceAdapter {
         : await this.#indexedDb.getAssetBlob(id, variant, signal);
       this.#throwIfAborted(signal);
       if (blob === undefined) throw new BrowserAssetBinaryMissingError(id, variant);
-      return { entry, variant, binary, blob };
+      const clonedEntry = cloneValue(entry);
+      return { entry: clonedEntry, variant, binary: clonedEntry.binaries[variant], blob };
     });
   }
 
@@ -213,7 +236,7 @@ export class BrowserPersistenceAdapter {
     return this.#run(options.signal, async (signal) => {
       const entries = await this.#indexedDb.listAssetEntries(signal);
       this.#throwIfAborted(signal);
-      return entries.sort((left, right) => left.id.localeCompare(right.id));
+      return cloneValue(entries).sort((left, right) => left.id.localeCompare(right.id));
     });
   }
 
@@ -227,7 +250,11 @@ export class BrowserPersistenceAdapter {
       for (const binary of Object.values(entry.binaries)) {
         if (binary.storage.kind === "opfs") {
           const key = binary.storage.key;
-          await this.#cleanup(() => this.#opfs?.delete(key, new AbortController().signal));
+          await this.#cleanup(
+            "delete-opfs",
+            { assetId: id, key },
+            () => this.#opfs?.delete(key, new AbortController().signal),
+          );
         }
       }
       return true;
@@ -310,7 +337,11 @@ export class BrowserPersistenceAdapter {
         for (const binary of Object.values(entry.binaries)) {
           if (binary.storage.kind === "opfs") {
             const key = binary.storage.key;
-            await this.#cleanup(() => this.#opfs?.delete(key, new AbortController().signal));
+            await this.#cleanup(
+              "gc-opfs",
+              { assetId: entry.id, key },
+              () => this.#opfs?.delete(key, new AbortController().signal),
+            );
           }
         }
         result.deleted.push(entry.id);
@@ -319,14 +350,32 @@ export class BrowserPersistenceAdapter {
     });
   }
 
-  destroy(): void {
-    if (this.#destroyed) return;
+  destroy(): Promise<void> {
+    if (this.#destroyPromise !== undefined) return this.#destroyPromise;
     this.#destroyed = true;
     this.#abortController.abort(new BrowserPersistenceDestroyedError());
     for (const leases of [...this.#leasesByAsset.values()]) {
       for (const lease of [...leases]) this.#revokeLease(lease);
     }
     this.#leasesByAsset.clear();
+    const ports: Array<{ name: "indexeddb" | "opfs" | "object-urls"; port: PortLifecycle | undefined }> = [
+      { name: "indexeddb", port: this.#indexedDb },
+      { name: "opfs", port: this.#opfs },
+      { name: "object-urls", port: this.#objectUrls },
+    ];
+    const seen = new Set<PortLifecycle>();
+    this.#destroyPromise = Promise.all(ports.map(async ({ name, port }) => {
+      if (port === undefined || seen.has(port)) return;
+      seen.add(port);
+      const dispose = port.destroy ?? port.close;
+      if (dispose === undefined) return;
+      await this.#cleanup(
+        "destroy-port",
+        { port: name },
+        () => Promise.resolve(dispose.call(port)),
+      );
+    })).then(() => undefined);
+    return this.#destroyPromise;
   }
 
   #createEntry(
@@ -398,11 +447,30 @@ export class BrowserPersistenceAdapter {
     if (leases?.size === 0) this.#leasesByAsset.delete(state.assetId);
   }
 
-  async #cleanup(cleanup: () => Promise<void> | undefined): Promise<void> {
+  async #cleanup(
+    operation: BrowserCleanupOperation,
+    context: Omit<BrowserCleanupError, "operation" | "error" | "timestamp">,
+    cleanup: () => Promise<void> | undefined,
+  ): Promise<void> {
     try {
       await cleanup();
     } catch (error) {
-      this.#onCleanupError(error);
+      const record: BrowserCleanupError = {
+        operation,
+        error,
+        timestamp: this.#now(),
+        ...context,
+      };
+      this.#cleanupErrors.push(record);
+      try {
+        this.#onCleanupError({ ...record });
+      } catch (observerError) {
+        this.#cleanupErrors.push({
+          operation: "cleanup-observer",
+          error: observerError,
+          timestamp: this.#now(),
+        });
+      }
     }
   }
 }

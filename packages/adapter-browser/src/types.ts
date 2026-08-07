@@ -56,7 +56,12 @@ export type AdapterOperationOptions = {
   signal?: AbortSignal;
 };
 
-export interface IndexedDbPort {
+export interface PortLifecycle {
+  close?(): void | Promise<void>;
+  destroy?(): void | Promise<void>;
+}
+
+export interface IndexedDbPort extends PortLifecycle {
   loadDocument(signal: AbortSignal): Promise<BrowserDocumentRecord | undefined>;
   saveDocument(record: BrowserDocumentRecord, signal: AbortSignal): Promise<void>;
   getAssetEntry(id: string, signal: AbortSignal): Promise<StoredAssetEntry | undefined>;
@@ -72,14 +77,14 @@ export interface IndexedDbPort {
   deleteAssetEntry(entry: StoredAssetEntry, signal: AbortSignal): Promise<void>;
 }
 
-export interface OpfsPort {
+export interface OpfsPort extends PortLifecycle {
   isAvailable(signal: AbortSignal): Promise<boolean>;
   get(key: string, signal: AbortSignal): Promise<Blob | undefined>;
   put(key: string, blob: Blob, signal: AbortSignal): Promise<void>;
   delete(key: string, signal: AbortSignal): Promise<void>;
 }
 
-export interface ObjectUrlPort {
+export interface ObjectUrlPort extends PortLifecycle {
   create(blob: Blob): string;
   revoke(url: string): void;
 }
@@ -113,6 +118,24 @@ export type AssetGcResult = {
   deleted: string[];
 };
 
+export type BrowserCleanupOperation =
+  | "metadata-compensation"
+  | "replace-old-opfs"
+  | "delete-opfs"
+  | "gc-opfs"
+  | "destroy-port"
+  | "cleanup-observer";
+
+export type BrowserCleanupError = {
+  operation: BrowserCleanupOperation;
+  error: unknown;
+  timestamp: number;
+  assetId?: string;
+  variant?: AssetBinaryVariant;
+  key?: string;
+  port?: "indexeddb" | "opfs" | "object-urls";
+};
+
 export type BrowserPersistenceAdapterOptions = {
   indexedDb: IndexedDbPort;
   opfs?: OpfsPort;
@@ -121,5 +144,5 @@ export type BrowserPersistenceAdapterOptions = {
   storageKeyFactory?: (assetId: string, variant: AssetBinaryVariant) => string;
   opfsThresholdBytes?: number;
   defaultGcQuarantineMs?: number;
-  onCleanupError?: (error: unknown) => void;
+  onCleanupError?: (record: BrowserCleanupError) => void;
 };

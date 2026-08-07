@@ -38,3 +38,12 @@ export class BrowserStorageKeyCollisionError extends BrowserPersistenceError {
     super(`OPFS storage key is already in use: ${key}`);
   }
 }
+
+export class BrowserStorageCapabilityError extends BrowserPersistenceError {
+  readonly capability: "indexeddb" | "opfs" | "object-url";
+
+  constructor(capability: "indexeddb" | "opfs" | "object-url") {
+    super(`Browser storage capability is unavailable: ${capability}`);
+    this.capability = capability;
+  }
+}

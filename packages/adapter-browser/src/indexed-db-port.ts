@@ -4,6 +4,7 @@ import type {
   IndexedDbPort,
   StoredAssetEntry,
 } from "./types";
+import { BrowserStorageCapabilityError } from "./errors";
 
 const DOCUMENT_STORE = "documents";
 const ASSET_STORE = "asset-metadata";
@@ -48,7 +49,7 @@ function transactionDone(transaction: IDBTransaction, signal: AbortSignal): Prom
 
 export type NativeIndexedDbPortOptions = {
   databaseName?: string;
-  indexedDb?: IDBFactory;
+  indexedDb?: IDBFactory | null;
 };
 
 export class NativeIndexedDbPort implements IndexedDbPort {
@@ -58,7 +59,13 @@ export class NativeIndexedDbPort implements IndexedDbPort {
 
   constructor(options: NativeIndexedDbPortOptions = {}) {
     this.#databaseName = options.databaseName ?? "pixiboardjs";
-    this.#indexedDb = options.indexedDb ?? indexedDB;
+    const factory = Object.prototype.hasOwnProperty.call(options, "indexedDb")
+      ? options.indexedDb
+      : globalThis.indexedDB;
+    if (factory === undefined || factory === null) {
+      throw new BrowserStorageCapabilityError("indexeddb");
+    }
+    this.#indexedDb = factory;
   }
 
   async loadDocument(signal: AbortSignal): Promise<BrowserDocumentRecord | undefined> {
@@ -124,9 +131,12 @@ export class NativeIndexedDbPort implements IndexedDbPort {
     });
   }
 
-  close(): void {
-    void this.#database?.then((database) => database.close());
+  async close(): Promise<void> {
+    const opening = this.#database;
     this.#database = undefined;
+    if (opening === undefined) return;
+    const database = await opening;
+    database.close();
   }
 
   async #read<T>(storeName: string, key: IDBValidKey, signal: AbortSignal): Promise<T | undefined> {

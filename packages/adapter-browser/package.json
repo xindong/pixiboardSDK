@@ -11,7 +11,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@pixi-board/core": "0.0.0"
+    "@pixi-board/core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.2",
