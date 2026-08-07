@@ -1,7 +1,7 @@
 import { cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 
@@ -153,25 +153,6 @@ async function verifyExternalConsumers(tarball, gateDir) {
     }
   }
 
-  const port = 41_000 + (process.pid % 1_000);
-  const vite = spawn(join(fixture, "node_modules/.bin/vite"), ["--host", "127.0.0.1", "--port", String(port), "--strictPort"], { cwd: fixture, stdio: "ignore" });
-  try {
-    const deadline = Date.now() + 15_000;
-    let response;
-    while (Date.now() < deadline) {
-      try {
-        response = await fetch(`http://127.0.0.1:${port}/src/main.js`);
-        if (response.ok) break;
-      } catch {}
-      await new Promise((resolveWait) => setTimeout(resolveWait, 250));
-    }
-    if (!response?.ok) throw new Error("Vite consumer did not become ready");
-    const transformed = await response.text();
-    if (!transformed.includes("pixiboardjs") && !transformed.includes("/node_modules/.vite/")) {
-      throw new Error("Vite consumer did not transform the pixiboardjs import");
-    }
-    console.log(`consumer vite smoke passed (${response.status})`);
-  } finally {
-    vite.kill("SIGTERM");
-  }
+  await run("npm", ["run", "build"], { cwd: fixture });
+  console.log("consumer npm run build passed: browser entry resolved and bundled");
 }

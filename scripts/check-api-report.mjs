@@ -1,7 +1,10 @@
 import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { join, resolve } from "node:path";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
+const run = promisify(execFile);
 const reports = [
   ["pixiboardjs", join(root, "packages/pixiboardjs/etc/pixiboardjs.api.md")],
   ["@pixi-board/core", join(root, "packages/core/etc/pixi-board-core.api.md")],
@@ -26,5 +29,14 @@ if (blockers.length) {
   for (const blocker of blockers) console.error(`- ${blocker}`);
   process.exitCode = 1;
 } else {
-  console.log("API report baselines are present; release:check runs API Extractor production diff next.");
+  try {
+    for (const packageName of ["@pixi-board/core", "pixiboardjs", "@pixi-board/plugin-sdk"]) {
+      await run("pnpm", ["--filter", packageName, "exec", "api-extractor", "run", "--verbose"], { cwd: root });
+    }
+    console.log("API report compare passed: API Extractor production mode matches committed reports.");
+  } catch (error) {
+    console.error("API report compare blocked: API Extractor found a declaration/report difference or could not run.");
+    if (error.stderr) console.error(error.stderr.trim());
+    process.exitCode = 1;
+  }
 }

@@ -6,7 +6,8 @@
   "description": "Copyable external-consumer fixture for pixiboardjs",
   "scripts": {
     "dev": "vite",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build": "vite build"
   },
   "dependencies": {
     "pixiboardjs": "workspace:*"
