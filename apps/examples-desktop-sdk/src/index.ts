@@ -27,6 +27,7 @@ export type DesktopBoardHost = {
 export async function createDesktopBoard(options: DesktopBoardOptions): Promise<DesktopBoardHost> {
   const { boardId, persistence, ...sdkOptions } = options;
   const board = await createPixiBoard({ ...sdkOptions, persistence });
+  await board.ready;
   const events: PluginEventSource = {
     on(event, listener) {
       if (event === "change") return board.on("change", (value) => listener({ type: "change", ...value }));

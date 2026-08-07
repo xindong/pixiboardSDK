@@ -1,6 +1,8 @@
 # Desktop SDK integration fixture
 
-This headless fixture is the smallest desktop-host wiring example for PixiBoardJS:
+This headless fixture is the smallest desktop-host wiring example for PixiBoardJS.
+`src/index.ts` composes the host around the formal `pixiboardjs` export; it does
+not define a second `createPixiBoard` facade.
 
 ```text
 createPixiBoard
