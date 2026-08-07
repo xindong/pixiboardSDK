@@ -4,5 +4,7 @@
   "type": "module",
   "private": true,
   "dependencies": { "@pixi-board/core": "workspace:*" },
+  "devDependencies": { "vitest": "^3.2.4" },
+  "scripts": { "test": "vitest run --config vitest.config.ts" },
   "exports": { ".": "./src/index.ts" }
 }

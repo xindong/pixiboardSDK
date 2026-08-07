@@ -28,4 +28,11 @@ describe("core-backed capabilities", () => {
     await caps.selection.set(["a"], { origin: "ui" }); expect(await caps.selection.get()).toEqual(["a"]);
     await caps.viewport.set({ scale: 2, offset: { x: 3, y: 4 } }, { origin: "ui" }); expect(await caps.viewport.get()).toEqual({ scale: 2, offset: { x: 3, y: 4 } });
   });
+  it("returns deletedAssetIds for asset removal", async () => {
+    const board = core(); const caps = createBoardCapabilities(board);
+    const created = await caps.assets.upsert({ assets: [{ id: "asset-1", kind: "text", source: { content: "hello" } }] }, { origin: "api" });
+    expect(created.changed).toBe(true); caps.history.clear();
+    const removed = await caps.assets.remove({ assetIds: ["asset-1"] }, { origin: "api" });
+    expect(removed.deletedAssetIds).toEqual(["asset-1"]); expect(removed.deletedNodeIds).toBeUndefined(); expect(removed.changeSet).toMatchObject({ revision: 2 });
+  });
 });

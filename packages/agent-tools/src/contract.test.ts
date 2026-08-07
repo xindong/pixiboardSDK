@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { BoardCore, NodeTypeRegistry, type NodeTypeDefinition } from "@pixi-board/core";
-import { createBoardCapabilities } from "@pixi-board/capabilities";
+import { createBoardCapabilities, type BoardCapabilities } from "@pixi-board/capabilities";
 import { createPixiBoardAgentTools } from "./index.ts";
 
 const text: NodeTypeDefinition = { type: "text", version: 1, defaults: {}, validate: (value) => value ?? {}, getBounds: (node) => ({ minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height }) };
-function tools() { const registry = new NodeTypeRegistry(); registry.register(text); const core = new BoardCore({ nodeTypes: registry, idFactory: (() => { let n = 0; return () => `id-${++n}`; })(), now: () => 1 }); return { core, tools: createPixiBoardAgentTools(createBoardCapabilities(core)) }; }
+function tools() { const registry = new NodeTypeRegistry(); registry.register(text); const core = new BoardCore({ nodeTypes: registry, idFactory: (() => { let n = 0; return () => `id-${++n}`; })(), now: () => 1 }); const capabilities: BoardCapabilities = createBoardCapabilities(core); return { core, capabilities, tools: createPixiBoardAgentTools(capabilities) }; }
 describe("agent canvas contract", () => {
   it("preserves requestId and uses discriminated writes", async () => { const fixture = tools(); const response = await fixture.tools.call("canvas.write", { type: "create", nodes: [{ id: "a", type: "text" }] }, { requestId: "req-1" }); expect(response.ok).toBe(true); if (response.ok) expect(response.data).toMatchObject({ revision: 1, requestId: "req-1" }); expect(fixture.core.history.canUndo()).toBe(true); });
   it("serializes invalid input and rejects unsupported fields", async () => { const fixture = tools(); const response = await fixture.tools.call("canvas.write", { type: "delete", nodeIds: ["a"], nodes: [] }, { requestId: "req-2" }); expect(response.ok).toBe(false); if (!response.ok) expect(response.error).toMatchObject({ code: "INVALID_INPUT", requestId: "req-2" }); });
@@ -26,11 +26,17 @@ describe("agent canvas contract", () => {
     const direct = tools(); const viaCapability = tools(); const viaAgent = tools();
     const directEvents: unknown[] = []; direct.core.on("change", (event) => directEvents.push(event.changeSet));
     direct.core.transaction("Create nodes", () => { direct.core.nodes.create({ id: "same", type: "text", x: 0, y: 0, width: 100, height: 100, rotation: 0, zIndex: 0 }); direct.core.nodes.create({ id: "same-2", type: "text", x: 4, y: 5, width: 50, height: 60, rotation: 0, zIndex: 1 }); }, { origin: "api" });
-    const capabilityResult = await viaCapability.tools.call("canvas.write", { type: "create", nodes: [{ id: "same", type: "text" }, { id: "same-2", type: "text", x: 4, y: 5, width: 50, height: 60, zIndex: 1 }] });
+    const capabilityResult = await viaCapability.capabilities.nodes.create({ nodes: [{ id: "same", type: "text", x: 0, y: 0, width: 100, height: 100, rotation: 0, zIndex: 0 }, { id: "same-2", type: "text", x: 4, y: 5, width: 50, height: 60, rotation: 0, zIndex: 1 }] }, { origin: "api" });
     const agentResult = await viaAgent.tools.call("canvas.write", { type: "create", nodes: [{ id: "same", type: "text" }, { id: "same-2", type: "text", x: 4, y: 5, width: 50, height: 60, zIndex: 1 }] });
-    expect(viaCapability.core.document.toJSON()).toEqual(direct.core.document.toJSON()); expect(viaAgent.core.document.toJSON()).toEqual(direct.core.document.toJSON());
-    expect(direct.core.document.toJSON().revision).toBe(1); expect(directEvents).toHaveLength(1); expect(viaCapability.core.history.canUndo()).toBe(true); expect(viaAgent.core.history.canUndo()).toBe(true);
-    expect(capabilityResult.ok && capabilityResult.data).toMatchObject({ revision: 1, changed: true }); expect(agentResult.ok && agentResult.data).toMatchObject({ revision: 1, changed: true });
-    if (capabilityResult.ok && agentResult.ok) expect(capabilityResult.data.changeSet).toMatchObject({ revision: 1, addedNodeIds: ["same", "same-2"] });
+    expect(await viaCapability.capabilities.document.snapshot()).toEqual(direct.core.document.toJSON()); expect(await viaAgent.capabilities.document.snapshot()).toEqual(direct.core.document.toJSON());
+    expect(direct.core.document.toJSON().revision).toBe(1); expect(directEvents).toHaveLength(1); expect(viaCapability.capabilities.history.canUndo()).toBe(true); expect(viaAgent.capabilities.history.canUndo()).toBe(true);
+    expect(capabilityResult).toMatchObject({ revision: 1, changed: true }); expect(agentResult.ok && agentResult.data).toMatchObject({ revision: 1, changed: true });
+    if (agentResult.ok) expect(agentResult.data.changeSet).toMatchObject({ revision: 1, addedNodeIds: ["same", "same-2"] });
+    const directUndo = direct.core.history.undo(); const capabilityUndo = viaCapability.capabilities.history.undo(); const agentUndo = viaAgent.capabilities.history.undo();
+    expect(directUndo).toMatchObject({ origin: "history", revision: 2 }); expect(capabilityUndo).toMatchObject({ origin: "history", revision: 2 }); expect(agentUndo).toMatchObject({ origin: "history", revision: 2 });
+    expect(await viaCapability.capabilities.document.snapshot()).toEqual(direct.core.document.toJSON()); expect(await viaAgent.capabilities.document.snapshot()).toEqual(direct.core.document.toJSON());
+    const directRedo = direct.core.history.redo(); const capabilityRedo = viaCapability.capabilities.history.redo(); const agentRedo = viaAgent.capabilities.history.redo();
+    expect(directRedo).toMatchObject({ origin: "history", revision: 3 }); expect(capabilityRedo).toMatchObject({ origin: "history", revision: 3 }); expect(agentRedo).toMatchObject({ origin: "history", revision: 3 });
+    expect(await viaCapability.capabilities.document.snapshot()).toEqual(direct.core.document.toJSON()); expect(await viaAgent.capabilities.document.snapshot()).toEqual(direct.core.document.toJSON());
   });
 });

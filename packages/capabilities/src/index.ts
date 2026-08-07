@@ -26,11 +26,12 @@ export function createBoardCapabilities(core: BoardCore, services: BoardCapabili
     const hasMore = start + out.length < items.length;
     return { out, page: { hasMore, ...(hasMore ? { nextCursor: String(start + out.length) } : {}) } };
   };
-  const writeResult = (value: { changed: boolean; changeSet?: BoardChangeSet; requestId?: string; nodes?: readonly BoardNode[]; assets?: readonly AssetRecord[]; deletedNodeIds?: readonly string[] }) => ({
+  const writeResult = (value: { changed: boolean; changeSet?: BoardChangeSet; requestId?: string; nodes?: readonly BoardNode[]; assets?: readonly AssetRecord[]; deletedNodeIds?: readonly string[]; deletedAssetIds?: readonly string[] }) => ({
     changed: value.changed,
     nodes: value.nodes ?? [],
     ...(value.assets ? { assets: value.assets } : {}),
     ...(value.deletedNodeIds ? { deletedNodeIds: value.deletedNodeIds } : {}),
+    ...(value.deletedAssetIds ? { deletedAssetIds: value.deletedAssetIds } : {}),
     revision: core.document.snapshot().revision,
     ...(value.changeSet ? { changeSet: value.changeSet } : {}),
     requestId: value.requestId,
@@ -52,7 +53,7 @@ export function createBoardCapabilities(core: BoardCore, services: BoardCapabili
     assets: {
       read: async (input = {}, options = {}) => { try { aborted(options.signal); const assets = core.assets.list().filter((asset) => (!input.ids || input.ids.includes(asset.id)) && (!input.kinds || input.kinds.includes(asset.kind))); const result = page(assets, input.limit, input.cursor); return { assets: result.out, page: result.page, revision: core.document.snapshot().revision, requestId: options.requestId }; } catch (error) { throw mapCoreError(error); } },
       upsert: async (input, options = {}) => { try { if (!input.assets.length) throw new CapabilityError("INVALID_INPUT", "assets must not be empty"); const tx = transact(options.label ?? "Upsert assets", options, () => input.assets.map((asset) => { aborted(options.signal); return core.assets.upsert(asset) as AssetRecord; })); return writeResult({ ...tx, assets: tx.result, requestId: options.requestId }); } catch (error) { throw mapCoreError(error); } },
-      remove: async (input, options = {}) => { try { if (!input.assetIds.length) throw new CapabilityError("INVALID_INPUT", "assetIds must not be empty"); const tx = transact(options.label ?? "Remove assets", options, () => [...new Set(input.assetIds)].map((id) => { aborted(options.signal); core.assets.remove(id); return id; })); return writeResult({ ...tx, deletedNodeIds: tx.result, requestId: options.requestId }); } catch (error) { throw mapCoreError(error); } },
+      remove: async (input, options = {}) => { try { if (!input.assetIds.length) throw new CapabilityError("INVALID_INPUT", "assetIds must not be empty"); const tx = transact(options.label ?? "Remove assets", options, () => [...new Set(input.assetIds)].map((id) => { aborted(options.signal); core.assets.remove(id); return id; })); return writeResult({ ...tx, deletedAssetIds: tx.result, requestId: options.requestId }); } catch (error) { throw mapCoreError(error); } },
     },
     selection: {
       get: async (options = {}) => { aborted(options.signal); return core.selection.get(); },

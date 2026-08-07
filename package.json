@@ -8,7 +8,7 @@
     "docs:check": "node scripts/check-docs.mjs",
     "packages:check": "node scripts/check-packages.mjs",
     "test:core": "pnpm --filter @pixi-board/core test",
-    "test:contracts": "vitest run packages/capabilities/src/contract.test.ts packages/agent-tools/src/contract.test.ts"
+    "test:contracts": "pnpm --filter @pixi-board/capabilities test && pnpm --filter @pixi-board/agent-tools test"
   },
   "packageManager": "pnpm@10.25.0"
 }

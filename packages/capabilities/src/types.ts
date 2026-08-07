@@ -11,7 +11,7 @@ export type ReadAssetsResult = { assets: readonly AssetRecord[]; page: PageInfo;
 export type CreateNodeInput = BoardNodeCreateInput & { asset?: AssetRecord };
 export type UpdateNodeInput = { id: string; patch: BoardNodePatch; asset?: AssetRecord };
 export type ChangeSet = BoardChangeSet;
-export type WriteResult = { changed: boolean; nodes: readonly BoardNode[]; assets?: readonly AssetRecord[]; deletedNodeIds?: readonly string[]; revision: number; changeSet?: BoardChangeSet; requestId?: string };
+export type WriteResult = { changed: boolean; nodes: readonly BoardNode[]; assets?: readonly AssetRecord[]; deletedNodeIds?: readonly string[]; deletedAssetIds?: readonly string[]; revision: number; changeSet?: BoardChangeSet; requestId?: string };
 export type PreviewResult = { nodeId: string; dataUrl: string; mimeType: string; width?: number; height?: number; revision: number; requestId?: string };
 export type CaptureResult = { dataUrl: string; mimeType: string; width?: number; height?: number; revision: number; requestId?: string };
 export type PreviewService = (input: { nodeId: string; maxWidth?: number; maxHeight?: number; frameNumber?: number; fps?: number }, options: RequestOptions) => Promise< Omit<PreviewResult, "revision" | "requestId"> > | Omit<PreviewResult, "revision" | "requestId">;
