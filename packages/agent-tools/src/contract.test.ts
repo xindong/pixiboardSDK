@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BoardCore, NodeTypeRegistry, type NodeTypeDefinition } from "@pixi-board/core";
-import { createBoardCapabilities, type BoardCapabilities } from "@pixi-board/capabilities";
+import { BoardDestroyedError, createBoardCapabilities, type BoardCapabilities } from "@pixi-board/capabilities";
 import { createPixiBoardAgentTools } from "./index.ts";
 
 const text: NodeTypeDefinition = { type: "text", version: 1, defaults: {}, validate: (value) => value ?? {}, getBounds: (node) => ({ minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height }) };
@@ -10,7 +10,7 @@ describe("agent canvas contract", () => {
   it("serializes invalid input and rejects unsupported fields", async () => { const fixture = tools(); const response = await fixture.tools.call("canvas.write", { type: "delete", nodeIds: ["a"], nodes: [] }, { requestId: "req-2" }); expect(response.ok).toBe(false); if (!response.ok) expect(response.error).toMatchObject({ code: "INVALID_INPUT", requestId: "req-2" }); });
   it("preserves lifecycle error mapping from a scoped board capability", async () => {
     const fixture = tools();
-    const destroyed: BoardCapabilities = { ...fixture.capabilities, nodes: { ...fixture.capabilities.nodes, create: async () => { const error = new Error("PixiBoard instance has been destroyed"); error.name = "BoardDestroyedError"; throw error; } } };
+    const destroyed: BoardCapabilities = { ...fixture.capabilities, nodes: { ...fixture.capabilities.nodes, create: async () => { throw new BoardDestroyedError(); } } };
     const response = await createPixiBoardAgentTools(destroyed).call("canvas.write", { type: "create", nodes: [{ type: "text" }] }, { requestId: "req-destroyed" });
     expect(response).toMatchObject({ ok: false, error: { code: "BOARD_DESTROYED", requestId: "req-destroyed" } });
   });

@@ -1,20 +1,18 @@
 import type { AgentCallOptions, AgentToolResponse, AgentTools, CanvasOutput } from "@pixi-board/agent-tools";
 
 export type McpRequest = {
-  jsonrpc?: "2.0";
+  jsonrpc: "2.0";
   id: string | number;
   method: "tools/call";
   params: { name: "canvas.read" | "canvas.write"; arguments: unknown; requestId?: string; origin?: string };
 };
 
-export type McpResponse = {
-  jsonrpc: "2.0";
-  id: string | number;
-  result: AgentToolResponse<CanvasOutput>;
-};
+export type McpResponse = { jsonrpc: "2.0"; id: string | number; result: AgentToolResponse<CanvasOutput> };
+export type McpErrorResponse = { jsonrpc: "2.0"; id: string | number | null; error: { code: number; message: string; data?: unknown } };
+export type McpEnvelope = McpResponse | McpErrorResponse;
 
 export type McpHost = {
-  handle(request: McpRequest, options?: { signal?: AbortSignal }): Promise<McpResponse>;
+  handle(request: unknown, options?: { signal?: AbortSignal }): Promise<McpEnvelope>;
   close(): void;
   readonly signal: AbortSignal;
 };
@@ -23,13 +21,39 @@ function abortedResponse(id: string | number, requestId?: string): McpResponse {
   return { jsonrpc: "2.0", id, result: { ok: false, error: { code: "ABORTED", name: "CapabilityError", message: "The capability request was aborted", retryable: true, requestId } } };
 }
 
-function combineSignals(first: AbortSignal, second?: AbortSignal): AbortSignal {
-  if (!second) return first;
+function protocolError(id: string | number | null, code: number, message: string): McpErrorResponse {
+  return { jsonrpc: "2.0", id, error: { code, message } };
+}
+
+function requestIdOf(value: Record<string, unknown>): string | undefined {
+  const params = value.params;
+  if (!params || typeof params !== "object" || Array.isArray(params)) return undefined;
+  const requestId = (params as Record<string, unknown>).requestId;
+  return typeof requestId === "string" ? requestId : undefined;
+}
+
+function idOf(value: unknown): string | number | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const id = (value as Record<string, unknown>).id;
+  return typeof id === "string" || typeof id === "number" ? id : null;
+}
+
+function combineSignals(first: AbortSignal, second?: AbortSignal): { signal: AbortSignal; dispose: () => void } {
+  if (!second) return { signal: first, dispose: () => undefined };
   const controller = new AbortController();
-  const abort = (source: AbortSignal) => { if (!controller.signal.aborted) controller.abort(source.reason); };
-  if (first.aborted) abort(first); else first.addEventListener("abort", () => abort(first), { once: true });
-  if (second.aborted) abort(second); else second.addEventListener("abort", () => abort(second), { once: true });
-  return controller.signal;
+  const onFirstAbort = () => controller.abort(first.reason);
+  const onSecondAbort = () => controller.abort(second.reason);
+  first.addEventListener("abort", onFirstAbort, { once: true });
+  second.addEventListener("abort", onSecondAbort, { once: true });
+  if (first.aborted) onFirstAbort();
+  if (second.aborted) onSecondAbort();
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      first.removeEventListener("abort", onFirstAbort);
+      second.removeEventListener("abort", onSecondAbort);
+    },
+  };
 }
 
 export function createMcpHost(agent: AgentTools): McpHost {
@@ -38,63 +62,75 @@ export function createMcpHost(agent: AgentTools): McpHost {
   return {
     signal: controller.signal,
     async handle(request, options = {}) {
-      const requestId = request.params.requestId;
-      const signal = combineSignals(controller.signal, options.signal);
-      if (closed || signal.aborted) {
-        return abortedResponse(request.id, requestId);
+      const id = idOf(request);
+      if (!request || typeof request !== "object" || Array.isArray(request)) return protocolError(id, -32600, "Invalid Request");
+      const value = request as Record<string, unknown>;
+      if (value.jsonrpc !== "2.0" || typeof value.id !== "string" && typeof value.id !== "number") return protocolError(id, -32600, "Invalid Request");
+      if (value.method !== "tools/call") return protocolError(id, -32601, "Method not found");
+      const params = value.params;
+      if (!params || typeof params !== "object" || Array.isArray(params)) return protocolError(id, -32602, "Invalid params");
+      const p = params as Record<string, unknown>;
+      if ((p.name !== "canvas.read" && p.name !== "canvas.write") || !("arguments" in p) || p.requestId !== undefined && typeof p.requestId !== "string" || p.origin !== undefined && typeof p.origin !== "string") return protocolError(id, -32602, "Invalid params");
+
+      const requestId = requestIdOf(value);
+      const combined = combineSignals(controller.signal, options.signal);
+      try {
+        if (closed || combined.signal.aborted) return abortedResponse(id!, requestId);
+        const callOptions: AgentCallOptions = { signal: combined.signal, requestId, ...(typeof p.origin === "string" ? { origin: p.origin } : {}) };
+        const result = await agent.call(p.name, p.arguments, callOptions);
+        // A synchronous capability transaction cannot be rolled back by transport close;
+        // once the Agent reports success, preserve the committed result.
+        return { jsonrpc: "2.0", id: id!, result: result as AgentToolResponse<CanvasOutput> };
+      } finally {
+        combined.dispose();
       }
-      const callOptions: AgentCallOptions = { signal, requestId, ...(request.params.origin ? { origin: request.params.origin } : {}) };
-      const result = await agent.call(request.params.name, request.params.arguments, callOptions);
-      if (signal.aborted) return abortedResponse(request.id, requestId);
-      return { jsonrpc: "2.0", id: request.id, result: result as AgentToolResponse<CanvasOutput> };
     },
     close() { if (!closed) { closed = true; controller.abort(new Error("MCP host closed")); } },
   };
 }
 
-export type StdioEndpoint = { readable: AsyncIterable<string>; write(chunk: string): void };
+export type StdioEndpoint = { readable: AsyncIterable<string>; write(chunk: string): void; closeInput?: () => void };
 
-export function createStdioMcpServer(host: McpHost, endpoint: StdioEndpoint): { close(): void } {
+export function createStdioMcpServer(host: McpHost, endpoint: StdioEndpoint): { close(): void; ready: Promise<void>; completed: Promise<void> } {
   let stopped = false;
-  const close = () => { if (!stopped) { stopped = true; host.close(); } };
-  void (async () => {
-    for await (const line of endpoint.readable) {
-      if (stopped) break;
-      if (!line.trim()) continue;
-      try {
-        const request = JSON.parse(line) as McpRequest;
+  let resolveReady!: () => void;
+  const ready = new Promise<void>((resolve) => { resolveReady = resolve; });
+  const close = () => { if (!stopped) { stopped = true; host.close(); endpoint.closeInput?.(); } };
+  const completed = (async () => {
+    resolveReady();
+    try {
+      for await (const line of endpoint.readable) {
+        if (stopped) break;
+        if (!line.trim()) continue;
+        let request: unknown;
+        try { request = JSON.parse(line); } catch { if (!stopped) endpoint.write(`${JSON.stringify(protocolError(null, -32700, "Parse error"))}\n`); continue; }
         const response = await host.handle(request);
-        endpoint.write(`${JSON.stringify(response)}\n`);
-      } catch (error) {
-        endpoint.write(`${JSON.stringify({ jsonrpc: "2.0", id: null, result: { ok: false, error: { code: "INVALID_INPUT", name: "CapabilityError", message: error instanceof Error ? error.message : String(error), retryable: false } } })}\n`);
+        if (!stopped) endpoint.write(`${JSON.stringify(response)}\n`);
       }
+    } finally {
+      resolveReady();
     }
   })();
-  return { close };
+  return { close, ready, completed };
 }
 
-export async function callStdioMcp(endpoint: StdioEndpoint, request: McpRequest): Promise<McpResponse> {
+export async function callStdioMcp(endpoint: StdioEndpoint, request: McpRequest): Promise<McpEnvelope> {
   endpoint.write(`${JSON.stringify(request)}\n`);
-  for await (const line of endpoint.readable) {
-    if (line.trim()) return JSON.parse(line) as McpResponse;
-  }
+  for await (const line of endpoint.readable) if (line.trim()) return JSON.parse(line) as McpEnvelope;
   throw new Error("stdio MCP endpoint ended before a response");
 }
 
 export function createHttpMcpHandler(host: McpHost): (request: Request) => Promise<Response> {
   return async (request) => {
     if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
-    try {
-      const body = await request.json() as McpRequest;
-      const response = await host.handle(body, { signal: request.signal });
-      return Response.json(response);
-    } catch (error) {
-      return Response.json({ jsonrpc: "2.0", id: null, result: { ok: false, error: { code: "INVALID_INPUT", name: "CapabilityError", message: error instanceof Error ? error.message : String(error), retryable: false } } }, { status: 400 });
-    }
+    let body: unknown;
+    try { body = await request.json(); } catch { return Response.json(protocolError(null, -32700, "Parse error"), { status: 400 }); }
+    try { return Response.json(await host.handle(body, { signal: request.signal })); }
+    catch (error) { return Response.json(protocolError(idOf(body), -32603, error instanceof Error ? error.message : String(error)), { status: 500 }); }
   };
 }
 
-export async function callHttpMcp(handler: (request: Request) => Promise<Response>, request: McpRequest, options: { signal?: AbortSignal } = {}): Promise<McpResponse> {
+export async function callHttpMcp(handler: (request: Request) => Promise<Response>, request: McpRequest, options: { signal?: AbortSignal } = {}): Promise<McpEnvelope> {
   const response = await handler(new Request("http://mcp.test", { method: "POST", body: JSON.stringify(request), headers: { "content-type": "application/json" }, signal: options.signal }));
-  return await response.json() as McpResponse;
+  return await response.json() as McpEnvelope;
 }

@@ -12,7 +12,7 @@ export function createPixiBoardAgentTools(capabilities: BoardCapabilities): Agen
       if (name === "canvas.read") return { ok: true, data: await read(capabilities, validateRead(raw), options) };
       if (name === "canvas.write") return { ok: true, data: await write(capabilities, validateWrite(raw), options) };
       throw new CapabilityError("INVALID_INPUT", `Unknown tool: ${name}`);
-    } catch (error) { const e = error instanceof CapabilityError ? error : error instanceof Error && error.name === "BoardDestroyedError" ? new CapabilityError("BOARD_DESTROYED", error.message) : new CapabilityError("INTERNAL_ERROR", error instanceof Error ? error.message : String(error)); return { ok: false, error: { code: e.code, name: e.name, message: e.message, retryable: e.code === "ABORTED" || e.code === "TRANSACTION_CONFLICT", requestId, details: e.details ? { ...e.details } : undefined } }; }
+    } catch (error) { const e = error instanceof CapabilityError ? error : new CapabilityError("INTERNAL_ERROR", error instanceof Error ? error.message : String(error)); return { ok: false, error: { code: e.code, name: e.name, message: e.message, retryable: e.code === "ABORTED" || e.code === "TRANSACTION_CONFLICT", requestId, details: e.details ? { ...e.details } : undefined } }; }
   } };
 }
 async function read(c: BoardCapabilities, input: CanvasReadInput, options: AgentCallOptions): Promise<CanvasOutput> {

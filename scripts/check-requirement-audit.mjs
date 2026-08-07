@@ -77,8 +77,8 @@ const rows = [
   {
     id: "mcp-direct-equivalence",
     status: (await exists("packages/mcp-host/src/contract.test.ts")) ? "achieved" : "missing",
-    evidence: "packages/mcp-host/src/contract.test.ts covers direct Agent, stdio, HTTP document/revision/ChangeSet/history/persistence equivalence, error mapping, abort and close",
-    missing: "real socket/process integration remains a separate host deployment gate",
+    evidence: "packages/mcp-host/src/contract.test.ts passed the focused suite with exact direct Agent/stdio/HTTP ChangeSet/event/history/persistence comparisons, read/error parity, framing, abort and close coverage",
+    missing: "real socket/process deployment smoke remains a separate host integration gate",
   },
   {
     id: "desktop-parity-tauri-smoke",
