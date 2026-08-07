@@ -174,3 +174,41 @@ revision: number
 pnpm benchmark:run
 pnpm benchmark:test
 ```
+
+## 2026-08-07 Chromium / Konva 对照
+
+后续 canonical browser matrix 已补齐上节当时尚未观察的浏览器指标。命令为：
+
+```text
+PIXIBOARD_BROWSER_OUTPUT=/tmp/pixi-vs-konva-final.json pnpm --filter pixiboardjs-benchmark benchmark:browser
+```
+
+固定条件为 Chromium `151.0.7922.34`、1920×1080、DPR 1、seed 42；每组 30 帧预热、120 帧采样。PixiBoardJS 使用 workspace `PixiBoardRenderer` 并逐组验证 WebGL 2 context；该 headless 环境实际 renderer 为 ANGLE SwiftShader。Konva 9.3.22 逐组验证为 Canvas2D。
+
+公平性检查全部通过：`matched-visible` 两端 visible ID、create/update/delete payload 和活动对象范围相同；`full-retained` 两端均保留完整 renderer object population，逐帧 mutation 后活动数均为 `document nodes + 1`。
+
+以下是 frame-work/render-completion latency（ms，`p50 / p95 / p99`），不是 RAF-to-RAF presentation interval：
+
+| 模式 | 节点数 | PixiBoardJS | Konva | >33ms ratio（Pixi / Konva） |
+|---|---:|---:|---:|---:|
+| matched-visible | 10k | 0.60 / 1.20 / 1.30 | 0.50 / 1.10 / 1.20 | 0 / 0 |
+| matched-visible | 50k | 0.60 / 0.80 / 0.88 | 0.70 / 1.10 / 1.28 | 0 / 0 |
+| matched-visible | 100k | 0.60 / 0.71 / 0.80 | 0.70 / 1.00 / 1.20 | 0 / 0 |
+| full-retained | 10k | 3.80 / 4.30 / 5.49 | 5.80 / 6.90 / 7.42 | 0 / 0 |
+| full-retained | 50k | 17.30 / 18.62 / 24.07 | 41.70 / 46.84 / 50.53 | 0 / 1 |
+| full-retained | 100k | 35.95 / 41.80 / 69.12 | 93.60 / 147.03 / 180.83 | 1 / 1 |
+
+单次 first-interactive / 1920×1080 capture latency（ms）：
+
+| 模式 | 节点数 | PixiBoardJS | Konva |
+|---|---:|---:|---:|
+| matched-visible | 10k | 50.20 / 169.80 | 11.00 / 12.80 |
+| matched-visible | 50k | 80.20 / 145.10 | 16.10 / 13.30 |
+| matched-visible | 100k | 134.90 / 142.30 | 20.60 / 10.60 |
+| full-retained | 10k | 156.00 / 156.30 | 62.10 / 17.10 |
+| full-retained | 50k | 573.10 / 156.80 | 280.30 / 56.10 |
+| full-retained | 100k | 1388.30 / 180.40 | 545.90 / 113.80 |
+
+失败值没有隐藏：full-retained 50k Konva 和 100k 两端的 >33ms ratio 为 1；full-retained 100k PixiBoardJS p95 为 41.80ms。matched-visible 的三个规模均保持 353–369 个活动对象，说明该 workload 的帧工作主要随可见内容而非文档总节点数变化。
+
+限制：这些数据只适用于固定的稀疏矩形卡片 workload，且 SwiftShader 不能代表硬件 GPU 吞吐。capture 使用双方产品级路径 `PixiBoardRenderer.capture(viewport)` 与 `Konva.Stage.toDataURL()`。JS heap 仅为未 GC 的 `performance.memory` 瞬时快照，不能解释为 peak、retained heap 或 leak；GPU memory、双方等价 draw calls 和 idle CPU/GPU 仍为 `notObserved`。因此结果不支持“PixiBoardJS 在所有画布场景都比 Konva 快”。
