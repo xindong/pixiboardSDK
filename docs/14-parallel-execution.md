@@ -8,9 +8,10 @@
 |---|---|---|---|
 | Core | 已合并 | `730c024` | 17 个定向测试通过；扁平 Store、Registry、同步 transaction、data patch history、Selection、Viewport 和 ChangeSet 已落地。 |
 | Package / Benchmark | 已合并 | `87300aa` | package contract、Vanilla consumer fixture、10k/50k/100k synthetic-card 与 no-fake-results benchmark skeleton 已落地。 |
-| Capabilities / Agent | 退回重构 | 暂未合并 | `f92dc8e` 实现了第二套 Store/Revision/History，与 Core 漂移；必须重构为 `BoardCore` adapter 后再合并。 |
+| Capabilities / Agent | 已合并 | `4fb877e`～`e73b18e` | BoardCore adapter、document/selection/viewport/history、changed/no-op、稳定错误映射、Agent fields/source translation 与契约测试已落地。 |
 | Renderer code map | 已完成只读勘察 | 未改源项目 | 已定位 `BoardScene`、NodeView、RBush、texture/media runtime、input、overlay/capture 和 teardown 接入点。 |
 | Renderer Pixi vertical slice | 已合并 | `08d3518`～`6cfcd55` | Registry、snapshot/ChangeSet 同步、viewport reconcile、TextureLease、z-order hit test、默认 lazy PixiJS adapter 与 6 个定向测试已落地；capture、真实空间索引和 browser/WebGL 验证仍属后续 P2 工作。 |
+| Browser Adapter vertical slice | 已合并 | `80d7911`～`4873cba` | Document/asset persistence、OPFS/IndexedDB fallback、variants、URL lease、GC、cleanup ledger、lifecycle 与 11 个定向测试已落地；真实 browser E2E、配额和跨实例 CAS 仍属后续验收。 |
 
 Capabilities 重构必须满足：
 
@@ -67,9 +68,9 @@ session 完成
 ## 统筹检查表
 
 - [x] Core commit 已完成，测试和 public types 可读。
-- [ ] Capabilities 只依赖 core contract，不依赖 Pixi/Tauri。
+- [x] Capabilities 只依赖 core contract，不依赖 Pixi/Tauri。
 - [x] Package skeleton 无 `workspace:*` 发布泄漏。
 - [x] Renderer registry 使用 core 的 NodeTypeDefinition 和 bounds；当前已合并 vertical slice，完整 P2 仍需 capture、空间索引和真实 browser/WebGL 验证。
-- [ ] Browser adapter 通过 adapter contract，不恢复宽泛 Repository。
+- [x] Browser adapter 通过 adapter contract，不恢复宽泛 Repository。
 - [ ] New Plugin API v3 示例使用 BoardCapabilities。
 - [ ] 主分支集成后运行 docs check、package tests 和 benchmark smoke。
