@@ -12,6 +12,18 @@ export function createBenchmarkAdapter(adapter) {
   return adapter;
 }
 
+/** Run concrete adapter operations and return one report per dataset/scenario. */
+export async function runBenchmarkScenarios({ adapter, datasets, scenarios, iterations = 1, warmup = 0 }) {
+  const normalizedAdapter = createBenchmarkAdapter(adapter);
+  const reports = [];
+  for (const dataset of datasets ?? [{ name: "unknown" }]) {
+    for (const scenario of scenarios ?? BENCHMARK_SCENARIOS) {
+      reports.push(await runScenario({ adapter: normalizedAdapter, dataset, scenario, iterations, warmup }));
+    }
+  }
+  return reports;
+}
+
 export async function runScenario({ adapter, dataset, scenario, iterations = 1, warmup = 0 }) {
   if (!BENCHMARK_SCENARIOS.includes(scenario)) {
     throw new RangeError(`unknown benchmark scenario: ${scenario}`);

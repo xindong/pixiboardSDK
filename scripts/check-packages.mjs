@@ -37,8 +37,11 @@ for (const file of [
   "apps/benchmark/src/metrics.mjs",
   "apps/benchmark/src/scenarios.mjs",
   "apps/benchmark/src/harness.ts",
+  "apps/benchmark/src/adapter.ts",
+  "apps/benchmark/src/run.ts",
   "apps/benchmark/src/check-regression.mjs",
   "apps/benchmark/test/benchmark-run.test.ts",
+  "apps/benchmark/test/adapter-runner.test.ts",
   "apps/benchmark/test/regression.test.ts",
   "apps/examples-vanilla/index.html",
 ]) await access(resolve(root, file));

@@ -146,6 +146,7 @@ revision: number
 已将原 benchmark skeleton 接成可执行的 deterministic core/renderer harness：
 
 - `apps/benchmark/src/harness.ts` 固定 seed `42` 生成 1k、10k、50k、100k Synthetic Card，并实际驱动 `BoardCore`、`GridSpatialIndex`、`PixiBoardRenderer` 和 `pixiboardjs` facade。
+- `apps/benchmark/src/adapter.ts` 的 `createPixiBoardBenchmarkAdapter()` 是真实 adapter；`apps/benchmark/src/run.ts` 的 `runBenchmark()` 是可调用 runner，负责执行 harness 并写出 JSON report。
 - 每个数据规模执行 document load、spatial rebuild/query、可见集合 culling、renderer single-node apply、core single-node update 和 1000-node batch update；facade batch 额外断言一次 revision、一次 change、一次 persistence save。
 - create/destroy soak 执行 100 cycles，记录 listener、ticker、active view、texture lease 峰值与销毁后的基线。
 - renderer 使用 instrumented Pixi adapter，不创建真实 WebGL context；空间查询先由真实 `GridSpatialIndex` 计算，再注入 renderer 的 culling query，以隔离空间索引和 view lifecycle 成本。
