@@ -2,6 +2,10 @@
 node_modules/
 dist/
 coverage/
+test-results/
+.artifacts/
+apps/benchmark/results/
+packages/*/temp/
 .DS_Store
 apps/examples-desktop-sdk/src-tauri/target/
 apps/examples-desktop-sdk/src-tauri/gen/
