@@ -1,0 +1,9 @@
+{
+  "packageFormat": "pixiboard-plugin-directory-v1",
+  "entry": "./main.mjs",
+  "id": "fixture.denied-v3",
+  "name": "Denied V3",
+  "version": "1.0.0",
+  "apiVersion": "3",
+  "permissions": ["canvas.write"]
+}

@@ -1,0 +1,1 @@
+This is deliberately not a zip archive. The v3 directory loader must reject the legacy .zip path before inspecting contents.

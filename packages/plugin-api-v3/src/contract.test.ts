@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BoardCore, NodeTypeRegistry, type NodeTypeDefinition } from "@pixi-board/core";
 import { createBoardCapabilities } from "@pixi-board/capabilities";
-import { PluginHost, serializeChangeSet, serializePluginError, type PluginEvent, type PluginEventSource } from "./index.ts";
+import { PluginHost, assertV3Manifest, serializeChangeSet, serializePluginError, type PluginEvent, type PluginEventSource } from "./index.ts";
 import { taskCardPlugin } from "./fixture.ts";
 
 const text: NodeTypeDefinition = { type: "text", version: 1, defaults: {}, validate: (value) => value ?? {}, getBounds: (node) => ({ minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height }) };
@@ -17,7 +17,7 @@ describe("Plugin API v3 contract", () => {
     const { core, host } = fixture(); const seen: PluginEvent[] = [];
     const definition = { ...taskCardPlugin, start: async (context: Parameters<NonNullable<typeof taskCardPlugin.start>>[0]) => { context.panels.register("task-card.panel"); context.tools.register("task-card.create"); context.events.subscribe("change", (event) => seen.push(event)); } };
     await host.load(definition); await createBoardCapabilities(core).nodes.create({ nodes: [{ id: "task-1", type: "text" }] }, { origin: "api" });
-    expect(seen).toHaveLength(1); expect(host.getRegistrations().panels).toContain("example.task-card:task-card.panel"); await host.destroy(); expect(host.getRegistrations()).toEqual({ panels: [], tools: [] }); await createBoardCapabilities(core).nodes.create({ nodes: [{ id: "task-2", type: "text" }] }, { origin: "api" }); expect(seen).toHaveLength(1);
+    expect(seen).toHaveLength(1); expect(host.getRegistrations().panels).toContain("example.task-card:task-card.panel"); await host.destroy(); expect(host.getRegistrations()).toEqual({ panels: [], tools: [], processes: [] }); await createBoardCapabilities(core).nodes.create({ nodes: [{ id: "task-2", type: "text" }] }, { origin: "api" }); expect(seen).toHaveLength(1);
   });
 
   it("negotiates permissions before writes and preserves atomicity", async () => {
@@ -36,5 +36,13 @@ describe("Plugin API v3 contract", () => {
     const error = serializePluginError(new Error("boom")); expect(error).toMatchObject({ code: "INTERNAL_ERROR", message: "boom" });
     const changeSet = { transactionId: "t", revision: 1, origin: "plugin:x", addedNodeIds: ["a"], updatedNodeIds: [], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 } as const;
     const serialized = serializeChangeSet(changeSet); serialized.addedNodeIds.push("b"); expect(changeSet.addedNodeIds).toEqual(["a"]);
+  });
+
+  it("rejects ambiguous plugin and contribution namespace separators", () => {
+    expect(() => assertV3Manifest({ ...taskCardPlugin.manifest, id: "example:task-card" })).toThrow(/id cannot contain/);
+    expect(() => assertV3Manifest({
+      ...taskCardPlugin.manifest,
+      contributions: { ...taskCardPlugin.manifest.contributions, tools: ["task-card:create"] },
+    })).toThrow(/ids cannot contain/);
   });
 });

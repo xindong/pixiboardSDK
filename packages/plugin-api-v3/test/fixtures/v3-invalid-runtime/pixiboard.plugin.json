@@ -1,0 +1,12 @@
+{
+  "packageFormat": "pixiboard-plugin-directory-v1",
+  "entry": "./main.mjs",
+  "id": "fixture.invalid-runtime",
+  "name": "Invalid Runtime Calls",
+  "version": "1.0.0",
+  "apiVersion": "3",
+  "permissions": ["events.subscribe", "tool.register"],
+  "contributions": {
+    "tools": ["invalid.tool"]
+  }
+}

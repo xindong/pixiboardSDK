@@ -70,7 +70,7 @@ describe("desktop SDK integration fixture", () => {
       manifest: { apiVersion: "2", id: "old-plugin", name: "Old Plugin", version: "1.0.0", permissions: [] },
       start: () => undefined,
     } as never)).rejects.toMatchObject({ code: "INVALID_INPUT" });
-    expect(host.plugins.getRegistrations()).toEqual({ panels: [], tools: [] });
+    expect(host.plugins.getRegistrations()).toEqual({ panels: [], tools: [], processes: [] });
     await host.destroy();
   });
 

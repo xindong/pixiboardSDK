@@ -122,6 +122,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@pixi-board/agent-tools':
+        specifier: workspace:*
+        version: link:../agent-tools
       vitest:
         specifier: ^3.2.4
         version: 3.2.7

@@ -1,0 +1,21 @@
+{
+  "packageFormat": "pixiboard-plugin-directory-v1",
+  "entry": "./main.mjs",
+  "id": "fixture.packaged-task-card",
+  "name": "Packaged Task Card",
+  "version": "1.0.0",
+  "apiVersion": "3",
+  "permissions": [
+    "canvas.read",
+    "canvas.write",
+    "events.subscribe",
+    "panel.register",
+    "tool.register",
+    "process.spawn"
+  ],
+  "contributions": {
+    "panels": ["task-card.panel"],
+    "tools": ["task-card.create"],
+    "processes": ["task-card.worker"]
+  }
+}

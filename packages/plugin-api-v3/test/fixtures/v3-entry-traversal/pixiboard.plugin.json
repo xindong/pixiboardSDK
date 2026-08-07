@@ -1,0 +1,9 @@
+{
+  "packageFormat": "pixiboard-plugin-directory-v1",
+  "entry": "./../outside.mjs",
+  "id": "fixture.entry-traversal",
+  "name": "Entry Traversal",
+  "version": "1.0.0",
+  "apiVersion": "3",
+  "permissions": []
+}

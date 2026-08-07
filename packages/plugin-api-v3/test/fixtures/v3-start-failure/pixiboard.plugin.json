@@ -1,0 +1,14 @@
+{
+  "packageFormat": "pixiboard-plugin-directory-v1",
+  "entry": "./main.mjs",
+  "id": "fixture.start-failure",
+  "name": "Start Failure",
+  "version": "1.0.0",
+  "apiVersion": "3",
+  "permissions": ["panel.register", "tool.register", "process.spawn"],
+  "contributions": {
+    "panels": ["failure.panel"],
+    "tools": ["failure.tool"],
+    "processes": ["failure.worker"]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "packageFormat": "pixiboard-plugin-directory-v1",
+  "entry": "./main.mjs",
+  "id": "fixture.legacy-v2",
+  "name": "Legacy V2",
+  "version": "2.0.0",
+  "apiVersion": "2",
+  "permissions": []
+}
