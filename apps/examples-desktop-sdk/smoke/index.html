@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>PixiBoardJS Tauri launch smoke</title>
+<body>
+  <pre id="status">starting…</pre>
+  <script>
+    const status = document.querySelector("#status");
+    const invoke = window.__TAURI__?.core?.invoke;
+    if (!invoke) {
+      status.textContent = "Tauri bridge unavailable";
+    } else {
+      invoke("pixiboard_sdk_smoke_ping")
+        .then((value) => { status.textContent = JSON.stringify(value); })
+        .catch((error) => { status.textContent = `smoke failed: ${String(error)}`; });
+    }
+  </script>
+</body>

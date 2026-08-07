@@ -18,6 +18,20 @@ does not expose the legacy `TauriBoardRepository`. Plugin manifests must declare
 `apiVersion: 3`; v2 manifests are rejected without an adapter or migration path.
 The host reuses the internal `@pixi-board/plugin-api-v3` contract package.
 
+The real Tauri boundary is in `@pixi-board/adapter-tauri`. The minimal launch
+smoke lives in `src-tauri/` and uses the checked-in `smoke/` page, so it does
+not require a frontend build:
+
+```sh
+cargo run --manifest-path apps/examples-desktop-sdk/src-tauri/Cargo.toml -- --smoke
+```
+
+Project sessions only accept the new SDK document format. They do not open,
+migrate, or round-trip legacy schema-v4 projects, and there is no legacy adapter.
+The CI workflow at `.github/workflows/desktop-launch-smoke.yml` is a configured
+macOS/Windows gate; report a local macOS run separately from the Windows CI
+evidence, which must not be described as locally executed.
+
 Run only this fixture's tests with:
 
 ```sh

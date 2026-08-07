@@ -8,6 +8,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@pixi-board/adapter-tauri": "workspace:*",
     "@pixi-board/agent-tools": "workspace:*",
     "@pixi-board/capabilities": "workspace:*",
     "@pixi-board/core": "workspace:*",

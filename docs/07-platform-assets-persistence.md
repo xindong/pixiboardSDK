@@ -218,3 +218,5 @@ parse JSON
 - 原始文件、preview、waveform 和 metadata 不丢失。
 - project switch 后前一个 runtime 完全销毁。
 - Finder/dialog/process/MCP 不进入 Web bundle。
+
+`@pixi-board/adapter-tauri` 通过注入的 invoke bridge 实现 document、asset、derivative、dialog、download/reveal 与 process ports。每个 board 使用独立 lease/context；项目切换时先销毁旧 facade 和 lease，再打开新项目，避免异步回调写入已关闭项目。

@@ -193,3 +193,10 @@ pixiboardjs
 - 基线只使用 SDK 当前 `BoardDocument`；不读取、不转换旧数据。
 
 Node/instrumented 结果见 [`docs/benchmarks/2026-08-07-node-instrumented-summary.json`](benchmarks/2026-08-07-node-instrumented-summary.json)。browser/WebGL frame、GPU、idle render、capture、受控 heap 和 Konva 在这份报告中均为 `not-observed`，不能由 Node 测量替代。
+
+## Desktop/Tauri 验收落地
+
+- memory、browser 与 Tauri adapter 共享同一 persistence contract suite。
+- Desktop 示例覆盖项目切换：旧 facade/lease 必须先销毁，迟到的异步请求不得写入新项目。
+- macOS 本地运行 `cargo test` 和真实二进制 `--smoke`；Windows 仅由 CI matrix 配置验证，不能表述为本地实测。
+- Tauri adapter 只保存和读取 SDK 当前 `BoardDocument`，不承担旧项目兼容或迁移。

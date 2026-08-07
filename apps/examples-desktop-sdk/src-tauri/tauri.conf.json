@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PixiBoardJS Desktop SDK Smoke",
+  "version": "0.1.0",
+  "identifier": "com.pixiboardjs.desktop-sdk-smoke",
+  "build": {
+    "frontendDist": "../smoke"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [{
+      "title": "PixiBoardJS Desktop SDK Smoke",
+      "width": 520,
+      "height": 260,
+      "visible": false
+    }]
+  },
+  "bundle": { "active": false, "icon": [] }
+}

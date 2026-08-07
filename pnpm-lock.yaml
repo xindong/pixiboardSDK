@@ -30,6 +30,9 @@ importers:
 
   apps/examples-desktop-sdk:
     dependencies:
+      '@pixi-board/adapter-tauri':
+        specifier: workspace:*
+        version: link:../../packages/adapter-tauri
       '@pixi-board/agent-tools':
         specifier: workspace:*
         version: link:../../packages/agent-tools
@@ -69,9 +72,35 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@pixi-board/adapter-contract-tests':
+        specifier: workspace:*
+        version: link:../adapter-contract-tests
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7
+
+  packages/adapter-contract-tests:
+    dependencies:
+      '@pixi-board/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7
+
+  packages/adapter-tauri:
+    dependencies:
+      '@pixi-board/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@pixi-board/adapter-contract-tests':
+        specifier: workspace:*
+        version: link:../adapter-contract-tests
       vitest:
         specifier: ^3.2.4
         version: 3.2.7

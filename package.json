@@ -11,6 +11,7 @@
     "audit:requirements": "node scripts/check-requirement-audit.mjs",
     "test:core": "pnpm --filter @pixi-board/core test",
     "test:contracts": "pnpm --filter @pixi-board/capabilities test && pnpm --filter @pixi-board/agent-tools test",
+    "test:adapters": "pnpm --filter @pixi-board/adapter-contract-tests test && pnpm --filter @pixi-board/adapter-browser test && pnpm --filter @pixi-board/adapter-tauri test",
     "test:browser": "node scripts/run-browser-contract.mjs",
     "test:browser-boundary": "node scripts/check-browser-boundary.mjs",
     "benchmark:run": "pnpm --filter pixiboardjs-benchmark benchmark:run",

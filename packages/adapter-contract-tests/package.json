@@ -1,21 +1,18 @@
 {
-  "name": "@pixi-board/adapter-browser",
+  "name": "@pixi-board/adapter-contract-tests",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts"
-  },
-  "scripts": {
-    "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "@pixi-board/core": "workspace:*"
   },
   "devDependencies": {
-    "@pixi-board/adapter-contract-tests": "workspace:*",
-    "typescript": "^5.9.2",
     "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts"
   }
 }

@@ -1,0 +1,27 @@
+name: Desktop launch smoke
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "packages/adapter-tauri/**"
+      - "apps/examples-desktop-sdk/src/**"
+      - "apps/examples-desktop-sdk/src-tauri/**"
+      - "apps/examples-desktop-sdk/smoke/**"
+      - ".github/workflows/desktop-launch-smoke.yml"
+
+jobs:
+  tauri-launch-smoke:
+    name: Tauri launch smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Launch the minimal Tauri smoke app
+        shell: bash
+        run: |
+          cargo run --manifest-path apps/examples-desktop-sdk/src-tauri/Cargo.toml -- --smoke

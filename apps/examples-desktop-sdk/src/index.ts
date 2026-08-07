@@ -5,6 +5,7 @@ import type { DesktopDocumentLease } from "./ports";
 
 export * from "@pixi-board/plugin-api-v3";
 export * from "./ports";
+export * from "./project-session-controller";
 export { createPixiBoard } from "pixiboardjs";
 export type { PixiBoard, PixiBoardOptions } from "pixiboardjs";
 

@@ -1,0 +1,18 @@
+[package]
+name = "pixiboardjs-desktop-sdk-smoke"
+version = "0.1.0"
+description = "Minimal Tauri launch smoke for the PixiBoardJS desktop SDK boundary"
+authors = ["PixiBoardJS"]
+edition = "2021"
+
+[lib]
+name = "pixiboardjs_desktop_sdk_smoke_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }

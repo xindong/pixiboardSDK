@@ -1,5 +1,5 @@
 {
-  "name": "@pixi-board/adapter-browser",
+  "name": "@pixi-board/adapter-tauri",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -15,7 +15,6 @@
   },
   "devDependencies": {
     "@pixi-board/adapter-contract-tests": "workspace:*",
-    "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   }
 }
