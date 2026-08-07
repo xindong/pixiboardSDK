@@ -1,0 +1,8 @@
+{
+  "name": "@pixi-board/capabilities",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "dependencies": { "@pixi-board/core": "workspace:*" },
+  "exports": { ".": "./src/index.ts" }
+}
