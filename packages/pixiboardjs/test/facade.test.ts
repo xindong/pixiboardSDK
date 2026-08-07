@@ -5,6 +5,7 @@ import {
   CapabilityUnavailableError,
   createPixiBoard,
   type BrowserEventPort,
+  type CustomNodeDefinition,
   type RuntimeRenderer,
 } from "../src/index";
 
@@ -130,12 +131,62 @@ describe("pixiboardjs facade contract", () => {
     await board.destroy();
   });
 
+<<<<<<< ours
   it("passes only changed nodes to incremental renderer commits", async () => {
     const apply = vi.fn(async () => undefined);
     const renderer: RuntimeRenderer = {
       init: async () => undefined,
       rebuild: async () => undefined,
       apply,
+=======
+  it("supports lightweight find/findOne queries and exact document.validate signature", async () => {
+    const board = await createPixiBoard(options());
+    await board.ready;
+    await board.nodes.create(card("a"));
+    await board.nodes.create({ ...card("b"), type: "card", x: 200 });
+
+    expect(board.find({ type: "card" }).map((node) => node.id)).toEqual(["a", "b"]);
+    expect(board.find({ bounds: { minX: -10, minY: -10, maxX: 120, maxY: 120 } }).map((node) => node.id)).toEqual(["a"]);
+    expect(board.findOne("#b")).toMatchObject({ id: "b", props: { title: "b" } });
+    expect(board.findOne("missing")).toBeUndefined();
+    expect(board.document.validate(board.document.toJSON())).toEqual(board.document.toJSON());
+    await board.destroy();
+  });
+
+  it("keeps NodeHandle change subscriptions and transaction event semantics aligned", async () => {
+    const board = await createPixiBoard(options());
+    await board.ready;
+    const handle = await board.nodes.create<CardProps>(card("evented"));
+    await flush();
+    const order: string[] = [];
+    const offBoard = board.on("change", () => order.push("change"));
+    const offNode = handle.on("change", () => order.push("node:change"));
+
+    board.transaction("Move evented", () => {
+      handle.x(12);
+      handle.y(24);
+    }, { origin: "api" });
+    await flush();
+
+    expect(order).toEqual(["change", "node:change"]);
+    expect(board.document.snapshot().revision).toBe(2);
+    offNode();
+    offBoard();
+    board.nodes.update(handle.id, { x: 48 });
+    await flush();
+    expect(order).toEqual(["change", "node:change"]);
+    await board.destroy();
+  });
+
+  it("awaits renderer refresh when registering a custom node type after ready", async () => {
+    let finishRefresh!: () => void;
+    const refreshDone = new Promise<void>((resolve) => { finishRefresh = resolve; });
+    const renderer: RuntimeRenderer & { refreshRegisteredTypes(): Promise<void> } = {
+      init: async () => undefined,
+      rebuild: async () => undefined,
+      apply: async () => undefined,
+      refreshRegisteredTypes: async () => refreshDone,
+>>>>>>> theirs
       destroy: async () => undefined,
     };
     const board = await createPixiBoard({
@@ -145,6 +196,7 @@ describe("pixiboardjs facade contract", () => {
       rendererFactory: () => renderer,
     });
     await board.ready;
+<<<<<<< ours
 
     await board.nodes.create(card("a"));
     await flush();
@@ -154,6 +206,46 @@ describe("pixiboardjs facade contract", () => {
       changedNodes: [{ id: "a" }],
     });
     expect(Object.isFrozen(apply.mock.calls[0][0])).toBe(true);
+=======
+    const definition: CustomNodeDefinition<CardProps> = {
+      ...cardType,
+      type: "custom.ready-card",
+    };
+    let registered = false;
+    const registration = board.nodeTypes.register(definition).then(() => { registered = true; });
+    await Promise.resolve();
+    expect(registered).toBe(false);
+    finishRefresh();
+    await registration;
+    expect(registered).toBe(true);
+    expect(board.nodeTypes.has("custom.ready-card")).toBe(true);
+    await board.destroy();
+  });
+
+  it("rolls back both registries when a ready-time renderer refresh fails", async () => {
+    let refreshCount = 0;
+    const renderer: RuntimeRenderer = {
+      init: async () => undefined,
+      rebuild: async () => undefined,
+      apply: async () => undefined,
+      refreshRegisteredTypes: async () => {
+        refreshCount += 1;
+        if (refreshCount === 1) throw new Error("refresh failed");
+      },
+      destroy: async () => undefined,
+    };
+    const board = await createPixiBoard({
+      ...options(),
+      headless: false,
+      container: {} as Element,
+      rendererFactory: () => renderer,
+    });
+    await board.ready;
+    await expect(board.nodeTypes.register({ ...cardType, type: "custom.failed-card" }))
+      .rejects.toThrow("refresh failed");
+    expect(board.nodeTypes.has("custom.failed-card")).toBe(false);
+    expect(refreshCount).toBe(2);
+>>>>>>> theirs
     await board.destroy();
   });
 

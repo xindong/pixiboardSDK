@@ -1,0 +1,17 @@
+{
+  "name": "pixiboardjs-example-custom-node",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Executable custom task-card lifecycle fixture for PixiBoardJS",
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@pixi-board/renderer-pixi": "workspace:*",
+    "pixiboardjs": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

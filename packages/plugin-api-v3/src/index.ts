@@ -19,6 +19,12 @@ import {
 
 export const PLUGIN_API_VERSION = "3" as const;
 
+export { definePlugin } from "./define-plugin.ts";
+export type {
+  PluginDeveloperContract,
+  TypedPluginContext,
+} from "./define-plugin.ts";
+
 export type PluginPermission =
   | "canvas.read"
   | "canvas.write"

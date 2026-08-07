@@ -7,8 +7,44 @@ export type PluginCanvas = { read(input?: unknown, options?: unknown): Promise<{
 export type PluginToolHandler = (input: unknown) => unknown | Promise<unknown>;
 export type PluginProcessRequest = { command: string; args?: readonly string[]; cwd?: string; env?: Readonly<Record<string, string>> };
 export type PluginProcessHandle = { stop(): void | Promise<void> };
-export type PluginContext = { manifest: Readonly<PluginManifest>; canvas: PluginCanvas; events: { subscribe(event: "change" | "selection:change" | "viewport:change", listener: (event: PluginEvent) => void): () => void }; panels: { register(id: string): () => void }; tools: { register(id: string, handler?: PluginToolHandler): () => void }; processes: { start(id: string, request: PluginProcessRequest): Promise<PluginProcessHandle> } };
-export type PluginDefinition = { manifest: PluginManifest; start(context: PluginContext): void | Promise<void>; stop?(): void | Promise<void> };
+export type PluginContext<Manifest extends PluginManifest = PluginManifest> = { manifest: Readonly<Manifest>; canvas: PluginCanvas; events: { subscribe(event: "change" | "selection:change" | "viewport:change", listener: (event: PluginEvent) => void): () => void }; panels: { register(id: string): () => void }; tools: { register(id: string, handler?: PluginToolHandler): () => void }; processes: { start(id: string, request: PluginProcessRequest): Promise<PluginProcessHandle> } };
+export type PluginDefinition<Manifest extends PluginManifest = PluginManifest> = { manifest: Manifest; start(context: PluginContext<Manifest>): void | Promise<void>; stop?(): void | Promise<void> };
+export type PluginDeveloperContract<Manifest extends PluginManifest = PluginManifest> = PluginDefinition<Manifest>;
+export type TypedPluginContext<Manifest extends PluginManifest = PluginManifest> = PluginContext<Manifest>;
 export type SerializedPluginError = { code: string; name: string; message: string; details?: Record<string, unknown> };
-export function assertV3Manifest(value: unknown): asserts value is PluginManifest { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Plugin manifest must be an object"); const manifest = value as Partial<PluginManifest>; if (manifest.apiVersion !== PLUGIN_API_VERSION) throw new Error("Only Plugin API v3 manifests are accepted"); for (const field of ["id", "name", "version"] as const) if (typeof manifest[field] !== "string" || !manifest[field]?.trim()) throw new Error(`Plugin manifest requires ${field}`); if (!Array.isArray(manifest.permissions)) throw new Error("Plugin manifest permissions must be an array"); }
-export function serializePluginError(error: unknown): SerializedPluginError { if (error instanceof Error) return { code: "INTERNAL_ERROR", name: error.name, message: error.message }; return { code: "INTERNAL_ERROR", name: "Error", message: String(error) }; }
+
+export function assertV3Manifest(value: unknown): asserts value is PluginManifest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Plugin manifest must be an object");
+  const manifest = value as Partial<PluginManifest>;
+  if (manifest.apiVersion !== PLUGIN_API_VERSION) throw new Error("Only Plugin API v3 manifests are accepted");
+  for (const field of ["id", "name", "version"] as const) if (typeof manifest[field] !== "string" || !manifest[field]?.trim()) throw new Error(`Plugin manifest requires ${field}`);
+  if (!Array.isArray(manifest.permissions)) throw new Error("Plugin manifest permissions must be an array");
+}
+
+export function definePlugin<Manifest extends PluginManifest>(
+  definition: PluginDeveloperContract<Manifest>,
+): Readonly<PluginDefinition<Manifest>> {
+  assertV3Manifest(definition.manifest);
+  if (typeof definition.start !== "function") throw new TypeError("definePlugin requires a start function");
+  return Object.freeze({
+    manifest: Object.freeze({
+      ...definition.manifest,
+      permissions: Object.freeze([...definition.manifest.permissions]),
+      ...(definition.manifest.contributions
+        ? { contributions: Object.freeze({
+            ...definition.manifest.contributions,
+            ...(definition.manifest.contributions.panels ? { panels: Object.freeze([...definition.manifest.contributions.panels]) } : {}),
+            ...(definition.manifest.contributions.tools ? { tools: Object.freeze([...definition.manifest.contributions.tools]) } : {}),
+            ...(definition.manifest.contributions.processes ? { processes: Object.freeze([...definition.manifest.contributions.processes]) } : {}),
+          }) }
+        : {}),
+    }) as Readonly<Manifest>,
+    start: definition.start,
+    ...(definition.stop ? { stop: definition.stop } : {}),
+  });
+}
+
+export function serializePluginError(error: unknown): SerializedPluginError {
+  if (error instanceof Error) return { code: "INTERNAL_ERROR", name: error.name, message: error.message };
+  return { code: "INTERNAL_ERROR", name: "Error", message: String(error) };
+}

@@ -40,6 +40,19 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@12.20.55)
 
+  apps/examples-custom-node:
+    dependencies:
+      '@pixi-board/renderer-pixi':
+        specifier: workspace:*
+        version: link:../../packages/renderer-pixi
+      pixiboardjs:
+        specifier: workspace:*
+        version: link:../../packages/pixiboardjs
+    devDependencies:
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7
+
   apps/examples-desktop-sdk:
     dependencies:
       '@pixi-board/adapter-tauri':
@@ -204,6 +217,9 @@ importers:
       '@pixi-board/core':
         specifier: workspace:*
         version: link:../core
+      '@pixi-board/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
     devDependencies:
       '@pixi-board/agent-tools':
         specifier: workspace:*
@@ -220,6 +236,15 @@ importers:
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
+
+  packages/plugin-sdk:
+    devDependencies:
+      pixiboardjs:
+        specifier: workspace:*
+        version: link:../pixiboardjs
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7
 
   packages/renderer-pixi:
     dependencies:

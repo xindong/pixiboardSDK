@@ -5,7 +5,8 @@
   "private": true,
   "dependencies": {
     "@pixi-board/capabilities": "workspace:*",
-    "@pixi-board/core": "workspace:*"
+    "@pixi-board/core": "workspace:*",
+    "@pixi-board/plugin-sdk": "workspace:*"
   },
   "devDependencies": {
     "@pixi-board/agent-tools": "workspace:*",

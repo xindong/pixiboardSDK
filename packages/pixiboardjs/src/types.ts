@@ -22,7 +22,6 @@ import type {
   PreviewService,
   RequestOptions,
 } from "@pixi-board/capabilities";
-import type { PixiBoardRendererOptions } from "@pixi-board/renderer-pixi";
 
 export type { PixiBoardRendererOptions } from "@pixi-board/renderer-pixi";
 
@@ -61,8 +60,88 @@ export type DocumentPersistence = {
 export type RuntimeRenderer = {
   init(): Promise<void>;
   rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
+<<<<<<< ours
   apply(update: BoardDocumentUpdate, changeSet: BoardChangeEvent["changeSet"]): Promise<void>;
+=======
+  apply(snapshot: Readonly<BoardDocument>, changeSet?: BoardChangeEvent["changeSet"]): Promise<void>;
+  refreshRegisteredTypes?(): Promise<void>;
+>>>>>>> theirs
   destroy(): Promise<void>;
+};
+
+export type CustomDisplayObject = {
+  visible?: boolean;
+  x?: number;
+  y?: number;
+  rotation?: number;
+  zIndex?: number;
+  addChild?(child: CustomDisplayObject): void;
+  removeChild?(child: CustomDisplayObject): void;
+  destroy?(options?: unknown): void;
+  [key: string]: unknown;
+};
+
+export type CustomDisplayFactory = {
+  createContainer(): CustomDisplayObject;
+  createRect?(width: number, height: number, fill: number | string): CustomDisplayObject;
+  createText?(text: string, style?: Record<string, unknown>): CustomDisplayObject;
+};
+
+export type CustomTextureLease = { texture?: unknown; release?: () => void };
+
+export type CustomNodeRendererContext = {
+  assets: {
+    acquireTexture(ref: { assetId: string; variant?: "original" | "preview" | "waveform" }, options?: Record<string, unknown>): Promise<CustomTextureLease>;
+  };
+  invalidate(): void;
+  signal: AbortSignal;
+  lod: { level?: number; scale?: number };
+  diagnostics: { creates: number; updates: number; destroys: number; lateUpdates: number };
+  display: CustomDisplayFactory;
+};
+
+export type CustomNodeView<State = unknown> = {
+  displayObject: CustomDisplayObject;
+  state: State;
+};
+
+export type CustomNodeRenderer<Props extends JsonValue = JsonValue, State = unknown> = {
+  create(node: Readonly<BoardNode<Props>>, context: CustomNodeRendererContext): CustomNodeView<State> | Promise<CustomNodeView<State>>;
+  update(view: CustomNodeView<State>, node: Readonly<BoardNode<Props>>, context: CustomNodeRendererContext): void | Promise<void>;
+  destroy(view: CustomNodeView<State>, context: CustomNodeRendererContext): void;
+  hitTest?(node: Readonly<BoardNode<Props>>, worldPoint: Point): boolean;
+};
+
+export type CustomResizePolicy<Props extends JsonValue> =
+  | { mode: "free" }
+  | { mode: "aspect-ratio"; ratio?: number }
+  | { mode: "fixed" }
+  | { mode: "custom"; resize(input: { node: Readonly<BoardNode<Props>>; width: number; height: number }): BoardNodePatch<Props> };
+
+export type CustomNodeDefinition<Props extends JsonValue = JsonValue, State = unknown> = {
+  type: string;
+  version: number;
+  defaults?: Partial<Props>;
+  validate(value: unknown): Props;
+  getBounds(node: BoardNode<Props>): WorldBounds;
+  resize?: CustomResizePolicy<Props>;
+  renderer?: CustomNodeRenderer<Props, State>;
+};
+
+export type PublicNodeTypeDefinition<Props extends JsonValue = JsonValue, State = unknown> = CustomNodeDefinition<Props, State>;
+export type CustomNodeDataDefinition<Props extends JsonValue = JsonValue> = Omit<CustomNodeDefinition<Props>, "renderer">;
+export type NodeTypeDefinition<Props extends JsonValue = JsonValue> = CustomNodeDataDefinition<Props>;
+
+export type CustomNodeRendererRegistry = {
+  register(type: string, renderer: CustomNodeRenderer, options?: NodeTypeRegistrationOptions): () => void;
+  get(type: string): CustomNodeRenderer | undefined;
+  has(type: string): boolean;
+  list(): string[];
+};
+
+export type PublicRendererOptions = {
+  registry?: CustomNodeRendererRegistry;
+  [key: string]: unknown;
 };
 
 export type BrowserEventPort = {
@@ -96,8 +175,8 @@ export type PixiBoardOptions = {
   interactions?: { pointer?: boolean; keyboard?: boolean; clipboard?: boolean };
   ports?: BoardRuntimePorts;
   core?: Omit<BoardCoreOptions, "document">;
-  renderer?: PixiBoardRendererOptions;
-  rendererFactory?: (options: PixiBoardRendererOptions) => RuntimeRenderer;
+  renderer?: PublicRendererOptions;
+  rendererFactory?: (options: PublicRendererOptions) => RuntimeRenderer;
   preview?: PreviewService;
   capture?: CaptureService;
 };
@@ -115,6 +194,14 @@ export type ViewportChangeEvent = {
 export type HistoryChangeEvent = { canUndo: boolean; canRedo: boolean };
 export type RenderCompleteEvent = { revision: number; frameId: number };
 
+export type NodeTypeRegistrationOptions = {
+  replace?: boolean;
+};
+
+export type NodeTypeRegistrationDisposer = () => Promise<void>;
+
+export type NodeQuery = NodeListFilter;
+
 export type PublicBoardEventMap = {
   change: BoardChangeEvent;
   "selection:change": SelectionChangeEvent;
@@ -123,6 +210,10 @@ export type PublicBoardEventMap = {
   "assets:change": BoardChangeEvent;
   "capability:change": { capability: string; available: boolean };
   "render:complete": RenderCompleteEvent;
+};
+
+export type NodeHandleEventMap = {
+  change: BoardChangeEvent;
 };
 
 export interface NodeHandle<Props extends JsonValue = JsonValue> {
@@ -142,7 +233,10 @@ export interface NodeHandle<Props extends JsonValue = JsonValue> {
   visible(): boolean;
   visible(value: boolean): this;
   remove(): void;
-  on(eventName: string, listener: (event: unknown) => void): () => void;
+  on<EventName extends keyof NodeHandleEventMap>(
+    eventName: EventName,
+    listener: (event: NodeHandleEventMap[EventName]) => void,
+  ): () => void;
 }
 
 export interface PixiBoard {
@@ -156,6 +250,15 @@ export interface PixiBoard {
     remove(nodeId: string): void;
     get<Props extends JsonValue = JsonValue>(nodeId: string): Readonly<BoardNode<Props>> | undefined;
     list(filter?: NodeListFilter): ReadonlyArray<Readonly<BoardNode>>;
+  };
+  readonly nodeTypes: {
+    register<Props extends JsonValue, State = unknown>(
+      definition: PublicNodeTypeDefinition<Props, State>,
+      options?: NodeTypeRegistrationOptions,
+    ): Promise<NodeTypeRegistrationDisposer>;
+    has(type: string): boolean;
+    get(type: string): CustomNodeDataDefinition | undefined;
+    list(): ReadonlyArray<CustomNodeDataDefinition>;
   };
   readonly selection: {
     get(): string[];
@@ -187,6 +290,8 @@ export interface PixiBoard {
     load(input: unknown, options?: DocumentLoadOptions): Promise<void>;
     validate(input: unknown): BoardDocument;
   };
+  find(filter?: NodeQuery): ReadonlyArray<Readonly<BoardNode>>;
+  findOne(selector: string): Readonly<BoardNode> | undefined;
   node<Props extends JsonValue = JsonValue>(nodeId: string): NodeHandle<Props>;
   transaction<Result>(label: string, operation: () => Result, options?: TransactionOptions): Result;
   on<EventName extends keyof PublicBoardEventMap>(

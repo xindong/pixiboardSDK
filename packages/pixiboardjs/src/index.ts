@@ -5,6 +5,7 @@ import {
   type BoardNode,
   type BoardNodePatch,
   type JsonValue,
+  type NodeTypeDefinition as InternalNodeTypeDefinition,
 } from "@pixi-board/core";
 import {
   CapabilityUnavailableError,
@@ -12,12 +13,20 @@ import {
   type BoardCapabilities,
   type RequestOptions,
 } from "@pixi-board/capabilities";
-import { PixiBoardRenderer } from "@pixi-board/renderer-pixi";
+import {
+  NodeRendererRegistry,
+  PixiBoardRenderer,
+  type PixiBoardRendererOptions as InternalRendererOptions,
+  type PixiNodeRenderer as InternalNodeRenderer,
+} from "@pixi-board/renderer-pixi";
 import { BoardDestroyedError } from "./errors";
 import type {
   BoardLifecycleState,
   CaptureInput,
+  CustomNodeRendererRegistry,
+  NodeQuery,
   NodeHandle,
+  PublicNodeTypeDefinition,
   PixiBoard,
   PixiBoardOptions,
   PublicBoardEventMap,
@@ -104,7 +113,7 @@ class PublicNodeHandle<Props extends JsonValue = JsonValue> implements NodeHandl
 
   remove(): void { this.board.removeNode(this.id); }
 
-  on(eventName: string, listener: (event: unknown) => void): () => void {
+  on(eventName: "change", listener: (event: BoardChangeEvent) => void): () => void {
     return this.board.onNode(this.id, eventName, listener);
   }
 
@@ -123,6 +132,7 @@ class PixiBoardFacade implements PixiBoard {
   readonly signal: AbortSignal;
   readonly capabilities: BoardCapabilities;
   readonly nodes: PixiBoard["nodes"];
+  readonly nodeTypes: PixiBoard["nodeTypes"];
   readonly selection: PixiBoard["selection"];
   readonly viewport: PixiBoard["viewport"];
   readonly history: PixiBoard["history"];
@@ -135,6 +145,7 @@ class PixiBoardFacade implements PixiBoard {
   private readonly nodeEvents = new EventHub();
   private readonly cleanup = new Set<() => void>();
   private readonly options: PixiBoardOptions;
+  private readonly rendererRegistry: NodeRendererRegistry;
   private renderer?: RuntimeRenderer;
   private frameId = 0;
   private pendingRuntimeWork = Promise.resolve();
@@ -142,9 +153,17 @@ class PixiBoardFacade implements PixiBoard {
   private transactionDepth = 0;
 
   constructor(options: PixiBoardOptions) {
-    this.options = options;
+    const rendererRegistry = (options.renderer?.registry as unknown as NodeRendererRegistry | undefined) ?? new NodeRendererRegistry();
+    this.rendererRegistry = rendererRegistry;
+    this.options = {
+      ...options,
+      renderer: {
+        ...options.renderer,
+        registry: rendererRegistry as unknown as CustomNodeRendererRegistry,
+      },
+    };
     this.signal = this.abortController.signal;
-    this.core = new BoardCore({ ...options.core, document: options.document });
+    this.core = new BoardCore({ ...this.options.core, document: this.options.document });
     const capabilities = createBoardCapabilities(this.core, {
       preview: options.preview,
       capture: options.capture,
@@ -164,6 +183,15 @@ class PixiBoardFacade implements PixiBoard {
       remove: (nodeId) => this.removeNode(nodeId),
       get: <Props extends JsonValue = JsonValue>(nodeId: string) => this.getNode<Props>(nodeId),
       list: (filter = {}) => { this.assertAlive(); return this.core.nodes.list(filter); },
+    };
+    this.nodeTypes = {
+      register: <Props extends JsonValue, State = unknown>(
+        definition: PublicNodeTypeDefinition<Props, State>,
+        registrationOptions = {},
+      ) => this.registerNodeType(definition, registrationOptions),
+      has: (type) => { this.assertAlive(); return this.core.nodeTypes.has(type); },
+      get: (type) => { this.assertAlive(); return this.core.nodeTypes.get(type); },
+      list: () => { this.assertAlive(); return this.core.nodeTypes.list(); },
     };
     this.selection = {
       get: () => { this.assertAlive(); return this.core.selection.get(); },
@@ -213,6 +241,18 @@ class PixiBoardFacade implements PixiBoard {
   node<Props extends JsonValue = JsonValue>(nodeId: string): NodeHandle<Props> {
     this.assertAlive();
     return new PublicNodeHandle<Props>(this, nodeId);
+  }
+
+  find(filter: NodeQuery = {}): ReadonlyArray<Readonly<BoardNode>> {
+    this.assertAlive();
+    return this.core.nodes.list(filter);
+  }
+
+  findOne(selector: string): Readonly<BoardNode> | undefined {
+    this.assertAlive();
+    const nodeId = selector.startsWith("#") ? selector.slice(1) : selector;
+    if (!nodeId) return undefined;
+    return this.core.nodes.get(nodeId);
   }
 
   transaction<Result>(label: string, operation: () => Result, options = {}): Result {
@@ -265,7 +305,60 @@ class PixiBoardFacade implements PixiBoard {
     this.core.nodes.remove(nodeId);
   }
 
-  onNode(nodeId: string, eventName: string, listener: (event: unknown) => void): () => void {
+  private async registerNodeType<Props extends JsonValue, State = unknown>(
+    definition: PublicNodeTypeDefinition<Props, State>,
+    registrationOptions: { replace?: boolean },
+  ): Promise<() => Promise<void>> {
+    this.assertAlive();
+    if (registrationOptions.replace) {
+      throw new Error("Public node type replacement is not supported; unregister the current definition first");
+    }
+    const { renderer, ...dataDefinition } = definition;
+    const unregisterData = this.core.nodeTypes.register(
+      dataDefinition as InternalNodeTypeDefinition<Props>,
+      registrationOptions,
+    );
+    let unregisterRenderer: (() => void) | undefined;
+    try {
+      if (renderer) {
+        unregisterRenderer = this.rendererRegistry.register(
+          definition.type,
+          renderer as unknown as InternalNodeRenderer<Props, State>,
+          registrationOptions,
+        );
+      }
+      await this.refreshRendererTypes();
+    } catch (error) {
+      unregisterRenderer?.();
+      unregisterData();
+      try {
+        await this.refreshRendererTypes();
+      } catch (rollbackError) {
+        throw new AggregateError([error, rollbackError], "Node type registration and renderer rollback both failed");
+      }
+      throw error;
+    }
+    let active = true;
+    return async () => {
+      if (!active) return;
+      unregisterRenderer?.();
+      unregisterData();
+      await this.refreshRendererTypes();
+      active = false;
+    };
+  }
+
+  private refreshRendererTypes(): Promise<void> {
+    const renderer = this.renderer;
+    if (!renderer?.refreshRegisteredTypes) return Promise.resolve();
+    const work = this.pendingRuntimeWork.then(async () => {
+      if (!this.signal.aborted) await renderer.refreshRegisteredTypes?.();
+    });
+    this.pendingRuntimeWork = work.catch(() => undefined);
+    return work;
+  }
+
+  onNode(nodeId: string, eventName: "change", listener: (event: BoardChangeEvent) => void): () => void {
     this.assertAlive();
     return this.nodeEvents.on(`${nodeId}:${eventName}` as never, listener as never);
   }
@@ -285,7 +378,7 @@ class PixiBoardFacade implements PixiBoard {
     }
     if (this.signal.aborted) return;
     if (!this.options.headless && this.options.container) {
-      const factory = this.options.rendererFactory ?? ((rendererOptions) => new PixiBoardRenderer(rendererOptions));
+      const factory = this.options.rendererFactory ?? ((rendererOptions) => new PixiBoardRenderer(rendererOptions as unknown as InternalRendererOptions));
       const renderer = factory({ ...this.options.renderer, nodeTypes: this.core.nodeTypes });
       this.renderer = renderer;
       await renderer.init();
@@ -370,6 +463,9 @@ class PixiBoardFacade implements PixiBoard {
   private queueChange(event: BoardChangeEvent): void {
     this.pendingRuntimeWork = this.pendingRuntimeWork.then(async () => {
       if (this.signal.aborted) return;
+      // Initial persistence hydration is rendered by mount().rebuild() after the
+      // runtime is initialized; do not race that path with an incremental apply.
+      if (this.lifecycle === "mounting" && event.changeSet.origin === "load") return;
       if (this.renderer) {
         await waitForAbort(this.renderer.apply(event.documentUpdate, event.changeSet), this.signal);
         if (this.signal.aborted) return;

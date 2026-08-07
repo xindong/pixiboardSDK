@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { BoardCore, NodeTypeRegistry, type NodeTypeDefinition } from "@pixi-board/core";
 import { createBoardCapabilities } from "@pixi-board/capabilities";
-import { PluginHost, assertV3Manifest, serializeChangeSet, serializePluginError, type PluginEvent, type PluginEventSource } from "./index.ts";
+import { PluginHost, assertV3Manifest, definePlugin, serializeChangeSet, serializePluginError, type PluginEvent, type PluginEventSource } from "./index.ts";
 import { taskCardPlugin } from "./fixture.ts";
 
 const text: NodeTypeDefinition = { type: "text", version: 1, defaults: {}, validate: (value) => value ?? {}, getBounds: (node) => ({ minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height }) };
@@ -13,6 +13,27 @@ function fixture() {
 }
 
 describe("Plugin API v3 contract", () => {
+  it("defines a typed v3 developer contract without exposing host internals", () => {
+    const plugin = definePlugin({
+      manifest: {
+        id: "example.typed",
+        name: "Typed example",
+        version: "1.0.0",
+        apiVersion: "3",
+        permissions: ["canvas.read"],
+      } as const,
+      start(context) {
+        expectTypeOf(context.manifest.id).toEqualTypeOf<"example.typed">();
+        expect("capabilities" in context).toBe(false);
+        expect("renderer" in context).toBe(false);
+      },
+    });
+    expectTypeOf(plugin.manifest.id).toEqualTypeOf<"example.typed">();
+    expect(plugin.manifest).toMatchObject({ id: "example.typed", apiVersion: "3" });
+    expect(Object.isFrozen(plugin.manifest)).toBe(true);
+    expect(() => definePlugin({ ...plugin, manifest: { ...plugin.manifest, apiVersion: "2" as never } })).toThrow(/Only Plugin API v3/);
+  });
+
   it("loads a new task-card plugin and cleans event subscriptions on destroy", async () => {
     const { core, host } = fixture(); const seen: PluginEvent[] = [];
     const definition = { ...taskCardPlugin, start: async (context: Parameters<NonNullable<typeof taskCardPlugin.start>>[0]) => { context.panels.register("task-card.panel"); context.tools.register("task-card.create"); context.events.subscribe("change", (event) => seen.push(event)); } };

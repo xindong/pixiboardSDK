@@ -19,6 +19,8 @@ NodeTypeDefinition<Props>       PixiNodeRenderer<Props, ViewState>
 
 Core 只认识前者；renderer-pixi 认识后者。
 
+主包提供受控的组合注册便利 API：`await board.nodeTypes.register()` 接受 public `CustomNodeDefinition`（数据定义以及可选 `renderer` 字段），内部仍分别写入 Core registry 和 renderer registry。注册 Promise 只在可见节点 refresh 完成后 resolve，避免 ready 后注册产生静默 race；返回的 async disposer 同时注销并刷新两侧。public facade 不支持 `replace: true`，需要先 dispose 当前定义再注册，避免 refresh 失败时无法恢复旧定义。公开类型由 `pixiboardjs` 自身定义，不在 `.d.ts` 中引用内部 renderer 包，也不会向调用方暴露 Pixi scene、Store 或全局 texture cache。
+
 ## 数据定义
 
 ```ts
@@ -139,7 +141,7 @@ type PixiNodeRendererContext = {
 ## 示例
 
 ```ts
-board.nodeTypes.register<TaskCardProps>({
+await board.nodeTypes.register<TaskCardProps>({
   type: "acme.task-card",
   version: 1,
   validate: validateTaskCard,

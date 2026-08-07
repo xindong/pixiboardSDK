@@ -489,12 +489,20 @@ export class BoardNodesController {
       if (idFilter && !idFilter.has(node.id)) return false;
       if (typeFilter && !typeFilter.has(node.type)) return false;
       if (filter.type && node.type !== filter.type) return false;
+      if (filter.bounds && !boundsIntersect(this.core.getBounds(node.id), filter.bounds)) return false;
       if (filter.visible !== undefined && (node.visible ?? true) !== filter.visible) return false;
       if (filter.selected !== undefined && selected.has(node.id) !== filter.selected) return false;
       return true;
     });
     return immutableClone(result.slice(0, limit));
   }
+}
+
+function boundsIntersect(left: WorldBounds, right: WorldBounds): boolean {
+  return left.maxX >= right.minX &&
+    left.minX <= right.maxX &&
+    left.maxY >= right.minY &&
+    left.minY <= right.maxY;
 }
 
 export class BoardAssetsController {

@@ -18,11 +18,13 @@
   "dependencies": {},
   "devDependencies": {
     "tsup": "^8.5.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   },
   "scripts": {
     "build": "tsup",
-    "api:report": "api-extractor run --local --verbose"
+    "api:report": "api-extractor run --local --verbose",
+    "test": "vitest run --config vitest.config.ts"
   },
   "publishConfig": { "access": "public" }
 }

@@ -63,16 +63,16 @@ node.x();
 node.x(200);
 node.setAttrs({ width: 800, height: 450 });
 node.getAttrs();
-node.on("pointerdown", listener);
+const off = node.on("change", listener);
 node.remove();
 ```
 
-`NodeHandle` 只保存 board reference 和 node ID。`getAttrs()` 返回 immutable snapshot；setter 内部调用 transaction，绝不暴露 Store 或 Pixi View。
+`NodeHandle` 只保存 board reference 和 node ID。`getAttrs()` 返回 immutable snapshot；setter 内部调用 transaction，绝不暴露 Store 或 Pixi View。v1 的 handle 事件只承诺 `change`；pointer/gesture 输入仍由 scoped interactions 处理，在有正式命中测试事件契约前不伪装成 Konva 事件 API。
 
 ## Transactions
 
 ```ts
-await board.transaction("Arrange generated assets", () => {
+board.transaction("Arrange generated assets", () => {
   board.nodes.update("a", { x: 0, y: 0 });
   board.nodes.update("b", { x: 720, y: 0 });
   board.nodes.update("c", { x: 0, y: 480 });
@@ -80,6 +80,8 @@ await board.transaction("Arrange generated assets", () => {
   origin: "api",
 });
 ```
+
+transaction callback 必须同步执行；传入 async callback 会以 `TransactionConflictError` 拒绝，避免 callback 在回滚后继续写入。返回值就是 callback 的同步返回值。
 
 语义：
 
