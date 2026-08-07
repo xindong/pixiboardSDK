@@ -14,6 +14,19 @@ export function validateBrowserEvidence(report, expectedSha) {
   if (JSON.stringify(report?.fixed?.datasetCounts) !== JSON.stringify([10_000, 50_000, 100_000])) failures.push("formal evidence requires 10k/50k/100k datasets");
   if (report?.validation?.passed !== true || report?.validation?.failures?.length) failures.push("browser structural/fairness validation failed");
   if (!Array.isArray(report?.observations) || report.observations.length !== 12) failures.push("formal evidence requires all 12 mode/count/engine cases");
+  else {
+    const expected = new Set(["matched-visible", "full-retained"].flatMap((mode) => [10_000, 50_000, 100_000].flatMap((count) => ["pixiboardjs", "konva"].map((engine) => `${mode}/${count}/${engine}`))));
+    const seen = new Set();
+    for (const item of report.observations) {
+      const key = `${item?.mode}/${item?.datasetCount}/${item?.engine}`;
+      if (!expected.has(key) || seen.has(key)) failures.push(`${key}: unexpected or duplicate formal matrix observation`);
+      seen.add(key);
+      const pan = item?.panEvidence;
+      if (pan?.scenario !== "deterministic-horizontal-pan" || pan?.viewportWidthPx !== 1920 || !Number.isFinite(pan?.distancePx) || pan.distancePx < 3840 || pan?.endX - pan?.startX !== pan.distancePx || !Number.isFinite(pan?.viewportWidths) || Math.abs(pan.viewportWidths - pan.distancePx / 1920) > 1e-9 || pan?.gridCellWidthPx !== 90 || pan.distancePx < pan.gridCellWidthPx || !Number.isFinite(pan?.gridCellWidths) || Math.abs(pan.gridCellWidths - pan.distancePx / 90) > 1e-9) failures.push(`${key}: invalid multi-viewport pan evidence`);
+      if (item?.mode === "matched-visible" && (pan?.visiblePlanChanged !== true || !Number.isInteger(pan?.startVisibleCount) || pan.startVisibleCount < 1 || !Number.isInteger(pan?.endVisibleCount) || pan.endVisibleCount < 1 || typeof pan?.startVisiblePlanHash !== "string" || typeof pan?.endVisiblePlanHash !== "string" || pan.startVisiblePlanHash === pan.endVisiblePlanHash)) failures.push(`${key}: visible plan change was not proven`);
+    }
+    if (seen.size !== expected.size) failures.push("formal browser matrix is incomplete");
+  }
   return failures;
 }
 

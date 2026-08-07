@@ -3,7 +3,7 @@
 ## 证据原则
 
 - 对外发布包固定为 `pixiboardjs`、`@pixi-board/core`、`@pixi-board/plugin-sdk`。RC 必须同时上传三份 tarball 和三份 API report，并执行已合入的 API、外部消费与 bundle budget 检查。
-- SDK 只接受当前 `BoardDocument` 与 Plugin API v3。PR 与 RC 都执行 `scripts/check-current-document-only.mjs`，扫描 Core、facade、plugin-sdk、plugin-api-v3 的公开源码和 manifest；BoardDocument `schemaVersion` 分支采用 fail-closed allowlist，新增缺省/间接旧 schema 分支也必须先经过审查；明确拒绝旧格式的错误分支允许保留。
+- SDK 只接受当前 `BoardDocument` 与 Plugin API v3。PR 与 RC 都执行 `scripts/check-current-document-only.mjs`，扫描 Core、facade、plugin-sdk、plugin-api-v3 的公开源码和 manifest；`sourceVersion`/`schemaVersion` 只允许已审查位置，所有 BoardDocument 或 plugin version 比较必须在 AST 上直接终止为明确拒绝（例如 `DocumentValidationError`），normalize/upgrade/old-manifest helper 与仅改写版本号的分支都会失败关闭。
 - Chromium job 设置 `PIXIBOARD_REQUIRE_BROWSER=1` 并显式安装 Chromium，缺少浏览器时失败而不是 skip。
 - 文件存在性不是测试证据；contract、浏览器、benchmark、Cargo 和打包命令必须真实执行。
 - 平台证据按实际 runner 命名。本机 macOS 结果不能代表 Windows。
@@ -28,7 +28,7 @@ PR 不执行完整 release staging、三包 pack 或全量 browser benchmark。C
 - 重跑 focused required Chromium browser contracts；canonical performance evidence 由独立 job 执行，避免把契约失败和 benchmark 失败混为一个证据。真实 media decode/playback 仍是未完成项。
 - `scripts/check-performance-gate.mjs nightly` 生成 `.artifacts/performance/nightly/`：
   - Node 真实 1k/10k/50k/100k dataset、Core load/update、spatial index/query、instrumented renderer culling/incremental apply、facade batch 与 100-cycle SDK create/destroy soak；
-  - canonical browser runner 固定执行 10k/50k/100k × matched-visible/full-retained × PixiBoardJS/Konva、30 warmup/120 samples；
+  - canonical browser runner 固定执行 10k/50k/100k × matched-visible/full-retained × PixiBoardJS/Konva、30 warmup/120 samples；每个 case 必须横移至少两个 viewport 且跨过 fixture grid cell，matched-visible 还必须证明首尾 visible ID plan 已改变，否则 fail closed；
   - candidate 侧从当前 checkout 加载 Core/renderer 源码，完整 rebuild/index N-node `BoardDocument`，记录 candidate SHA、document/index/active population，并验证真实 Pixi WebGL；
   - Konva 9.3.22 从 frozen workspace dependency 本地提供，在相同 Chromium、1920×1080、DPR、seed、pan path、visible/mutation plan 下验证 Canvas2D；不从 CDN 下载运行时。
 - macOS 与 Windows 都对 `apps/examples-desktop-sdk/src-tauri/Cargo.toml` 执行 `cargo test --locked`；macOS 追加真实 launch smoke，Windows 追加 native release build。

@@ -10,6 +10,7 @@ const commands = [
   ["docs:check"],
   ["packages:check"],
   ["exec", "node", "scripts/check-current-document-only.mjs"],
+  ["exec", "node", "--test", "scripts/check-current-document-only.test.mjs"],
   ["--filter", "@pixi-board/core", "test"],
   ["--filter", "@pixi-board/renderer-pixi", "test"],
   ["--filter", "@pixi-board/capabilities", "test"],
