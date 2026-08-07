@@ -51,7 +51,7 @@ importers:
     devDependencies:
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7
+        version: 3.2.7(@types/node@12.20.55)
 
   apps/examples-desktop-sdk:
     dependencies:
@@ -236,15 +236,9 @@ importers:
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
-
-  packages/plugin-sdk:
-    devDependencies:
-      pixiboardjs:
-        specifier: workspace:*
-        version: link:../pixiboardjs
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7
+        version: 3.2.7(@types/node@12.20.55)
 
   packages/renderer-pixi:
     dependencies:

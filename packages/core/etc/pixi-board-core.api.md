@@ -244,6 +244,7 @@ export type NodeListFilter = {
     ids?: string[];
     types?: string[];
     type?: string;
+    bounds?: WorldBounds;
     visible?: boolean;
     selected?: boolean;
     limit?: number;

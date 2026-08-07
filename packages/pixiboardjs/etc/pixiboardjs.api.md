@@ -217,6 +217,108 @@ export type ChangeOrigin = "api" | "ui" | "plugin" | "agent" | "history" | "load
 export function createPixiBoard(options?: PixiBoardOptions): Promise<PixiBoard>;
 
 // @public (undocumented)
+export type CustomDisplayFactory = {
+    createContainer(): CustomDisplayObject;
+    createRect?(width: number, height: number, fill: number | string): CustomDisplayObject;
+    createText?(text: string, style?: Record<string, unknown>): CustomDisplayObject;
+};
+
+// @public (undocumented)
+export type CustomDisplayObject = {
+    visible?: boolean;
+    x?: number;
+    y?: number;
+    rotation?: number;
+    zIndex?: number;
+    addChild?(child: CustomDisplayObject): void;
+    removeChild?(child: CustomDisplayObject): void;
+    destroy?(options?: unknown): void;
+    [key: string]: unknown;
+};
+
+// @public (undocumented)
+export type CustomNodeDataDefinition<Props extends JsonValue = JsonValue> = Omit<CustomNodeDefinition<Props>, "renderer">;
+
+// @public (undocumented)
+export type CustomNodeDefinition<Props extends JsonValue = JsonValue, State = unknown> = {
+    type: string;
+    version: number;
+    defaults?: Partial<Props>;
+    validate(value: unknown): Props;
+    getBounds(node: BoardNode<Props>): WorldBounds;
+    resize?: CustomResizePolicy<Props>;
+    renderer?: CustomNodeRenderer<Props, State>;
+};
+
+// @public (undocumented)
+export type CustomNodeRenderer<Props extends JsonValue = JsonValue, State = unknown> = {
+    create(node: Readonly<BoardNode<Props>>, context: CustomNodeRendererContext): CustomNodeView<State> | Promise<CustomNodeView<State>>;
+    update(view: CustomNodeView<State>, node: Readonly<BoardNode<Props>>, context: CustomNodeRendererContext): void | Promise<void>;
+    destroy(view: CustomNodeView<State>, context: CustomNodeRendererContext): void;
+    hitTest?(node: Readonly<BoardNode<Props>>, worldPoint: Point): boolean;
+};
+
+// @public (undocumented)
+export type CustomNodeRendererContext = {
+    assets: {
+        acquireTexture(ref: {
+            assetId: string;
+            variant?: "original" | "preview" | "waveform";
+        }, options?: Record<string, unknown>): Promise<CustomTextureLease>;
+    };
+    invalidate(): void;
+    signal: AbortSignal;
+    lod: {
+        level?: number;
+        scale?: number;
+    };
+    diagnostics: {
+        creates: number;
+        updates: number;
+        destroys: number;
+        lateUpdates: number;
+    };
+    display: CustomDisplayFactory;
+};
+
+// @public (undocumented)
+export type CustomNodeRendererRegistry = {
+    register(type: string, renderer: CustomNodeRenderer, options?: NodeTypeRegistrationOptions): () => void;
+    get(type: string): CustomNodeRenderer | undefined;
+    has(type: string): boolean;
+    list(): string[];
+};
+
+// @public (undocumented)
+export type CustomNodeView<State = unknown> = {
+    displayObject: CustomDisplayObject;
+    state: State;
+};
+
+// @public (undocumented)
+export type CustomResizePolicy<Props extends JsonValue> = {
+    mode: "free";
+} | {
+    mode: "aspect-ratio";
+    ratio?: number;
+} | {
+    mode: "fixed";
+} | {
+    mode: "custom";
+    resize(input: {
+        node: Readonly<BoardNode<Props>>;
+        width: number;
+        height: number;
+    }): BoardNodePatch<Props>;
+};
+
+// @public (undocumented)
+export type CustomTextureLease = {
+    texture?: unknown;
+    release?: () => void;
+};
+
+// @public (undocumented)
 export type DocumentLoadOptions = {
     replaceHistory?: boolean;
 };
@@ -267,7 +369,7 @@ export interface NodeHandle<Props extends JsonValue = JsonValue> {
     // (undocumented)
     readonly id: string;
     // (undocumented)
-    on(eventName: string, listener: (event: unknown) => void): () => void;
+    on<EventName extends keyof NodeHandleEventMap>(eventName: EventName, listener: (event: NodeHandleEventMap[EventName]) => void): () => void;
     // (undocumented)
     remove(): void;
     // (undocumented)
@@ -295,6 +397,11 @@ export interface NodeHandle<Props extends JsonValue = JsonValue> {
 }
 
 // @public (undocumented)
+export type NodeHandleEventMap = {
+    change: BoardChangeEvent;
+};
+
+// @public (undocumented)
 export type NodeInput<Props extends JsonValue = JsonValue> = BoardNodeCreateInput<Props>;
 
 // @public (undocumented)
@@ -302,6 +409,7 @@ export type NodeListFilter = {
     ids?: string[];
     types?: string[];
     type?: string;
+    bounds?: WorldBounds;
     visible?: boolean;
     selected?: boolean;
     limit?: number;
@@ -316,9 +424,23 @@ export class NodeNotFoundError extends PixiBoardCoreError {
 export type NodePatch<Props extends JsonValue = JsonValue> = BoardNodePatch<Props>;
 
 // @public (undocumented)
+export type NodeQuery = NodeListFilter;
+
+// @public (undocumented)
+export type NodeTypeDefinition<Props extends JsonValue = JsonValue> = CustomNodeDataDefinition<Props>;
+
+// @public (undocumented)
 export class NodeTypeNotRegisteredError extends PixiBoardCoreError {
     constructor(type: string);
 }
+
+// @public (undocumented)
+export type NodeTypeRegistrationDisposer = () => Promise<void>;
+
+// @public (undocumented)
+export type NodeTypeRegistrationOptions = {
+    replace?: boolean;
+};
 
 // @public (undocumented)
 export class NodeValidationError extends PixiBoardCoreError {
@@ -356,6 +478,10 @@ export interface PixiBoard {
         validate(input: unknown): BoardDocument;
     };
     // (undocumented)
+    find(filter?: NodeQuery): ReadonlyArray<Readonly<BoardNode>>;
+    // (undocumented)
+    findOne(selector: string): Readonly<BoardNode> | undefined;
+    // (undocumented)
     focus(): void;
     // (undocumented)
     readonly history: {
@@ -374,6 +500,13 @@ export interface PixiBoard {
         remove(nodeId: string): void;
         get<Props extends JsonValue = JsonValue>(nodeId: string): Readonly<BoardNode<Props>> | undefined;
         list(filter?: NodeListFilter): ReadonlyArray<Readonly<BoardNode>>;
+    };
+    // (undocumented)
+    readonly nodeTypes: {
+        register<Props extends JsonValue, State = unknown>(definition: PublicNodeTypeDefinition<Props, State>, options?: NodeTypeRegistrationOptions): Promise<NodeTypeRegistrationDisposer>;
+        has(type: string): boolean;
+        get(type: string): CustomNodeDataDefinition | undefined;
+        list(): ReadonlyArray<CustomNodeDataDefinition>;
     };
     // (undocumented)
     on<EventName extends keyof PublicBoardEventMap>(eventName: EventName, listener: (event: PublicBoardEventMap[EventName]) => void): () => void;
@@ -419,14 +552,14 @@ export type PixiBoardOptions = {
     };
     ports?: BoardRuntimePorts;
     core?: Omit<BoardCoreOptions, "document">;
-    renderer?: PixiBoardRendererOptions;
-    rendererFactory?: (options: PixiBoardRendererOptions) => RuntimeRenderer;
+    renderer?: PublicRendererOptions;
+    rendererFactory?: (options: PublicRendererOptions) => RuntimeRenderer;
     preview?: PreviewService;
     capture?: CaptureService;
 };
 
-// @public
-export type PixiBoardRendererOptions = Readonly<Record<string, unknown>>;
+// @public (undocumented)
+export type PixiBoardRendererOptions = PublicRendererOptions;
 
 // @public (undocumented)
 export type Point = {
@@ -449,6 +582,15 @@ export type PublicBoardEventMap = {
 };
 
 // @public (undocumented)
+export type PublicNodeTypeDefinition<Props extends JsonValue = JsonValue, State = unknown> = CustomNodeDefinition<Props, State>;
+
+// @public (undocumented)
+export type PublicRendererOptions = {
+    registry?: CustomNodeRendererRegistry;
+    [key: string]: unknown;
+};
+
+// @public (undocumented)
 export type RenderCompleteEvent = {
     revision: number;
     frameId: number;
@@ -465,6 +607,7 @@ export type RuntimeRenderer = {
     init(): Promise<void>;
     rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
     apply(update: BoardDocumentUpdate, changeSet: BoardChangeEvent["changeSet"]): Promise<void>;
+    refreshRegisteredTypes?(): Promise<void>;
     destroy(): Promise<void>;
 };
 
@@ -514,22 +657,22 @@ export type WorldBounds = {
 
 // Warnings were encountered during analysis:
 //
-// dist/types-BihQuryi.d.ts:45:5 - (ae-forgotten-export) The symbol "AssetRef" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:240:9 - (ae-forgotten-export) The symbol "RequestOptions" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:241:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:241:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:244:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:250:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:250:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:251:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:252:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:255:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:262:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:269:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:297:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:360:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:363:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point index.d.ts
-// dist/types-BihQuryi.d.ts:364:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:45:5 - (ae-forgotten-export) The symbol "AssetRef" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:241:9 - (ae-forgotten-export) The symbol "RequestOptions" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:242:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:242:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:245:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:251:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:251:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:252:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:253:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:256:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:263:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:270:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:298:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:448:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:451:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point index.d.ts
+// dist/types-nmooDNT_.d.ts:452:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

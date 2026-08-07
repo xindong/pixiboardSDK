@@ -8,6 +8,9 @@
 export function assertV3Manifest(value: unknown): asserts value is PluginManifest;
 
 // @public (undocumented)
+export function definePlugin<Manifest extends PluginManifest>(definition: PluginDeveloperContract<Manifest>): Readonly<PluginDefinition<Manifest>>;
+
+// @public (undocumented)
 export const PLUGIN_API_VERSION: "3";
 
 // @public (undocumented)
@@ -27,8 +30,8 @@ export type PluginCanvas = {
 };
 
 // @public (undocumented)
-export type PluginContext = {
-    manifest: Readonly<PluginManifest>;
+export type PluginContext<Manifest extends PluginManifest = PluginManifest> = {
+    manifest: Readonly<Manifest>;
     canvas: PluginCanvas;
     events: {
         subscribe(event: "change" | "selection:change" | "viewport:change", listener: (event: PluginEvent) => void): () => void;
@@ -45,11 +48,14 @@ export type PluginContext = {
 };
 
 // @public (undocumented)
-export type PluginDefinition = {
-    manifest: PluginManifest;
-    start(context: PluginContext): void | Promise<void>;
+export type PluginDefinition<Manifest extends PluginManifest = PluginManifest> = {
+    manifest: Manifest;
+    start(context: PluginContext<Manifest>): void | Promise<void>;
     stop?(): void | Promise<void>;
 };
+
+// @public (undocumented)
+export type PluginDeveloperContract<Manifest extends PluginManifest = PluginManifest> = PluginDefinition<Manifest>;
 
 // @public (undocumented)
 export type PluginEvent = {
@@ -114,6 +120,9 @@ export type SerializedPluginError = {
 
 // @public (undocumented)
 export function serializePluginError(error: unknown): SerializedPluginError;
+
+// @public (undocumented)
+export type TypedPluginContext<Manifest extends PluginManifest = PluginManifest> = PluginContext<Manifest>;
 
 // (No @packageDocumentation comment for this package)
 
