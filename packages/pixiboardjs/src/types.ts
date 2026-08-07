@@ -23,8 +23,6 @@ import type {
   RequestOptions,
 } from "@pixi-board/capabilities";
 
-export type { PixiBoardRendererOptions } from "@pixi-board/renderer-pixi";
-
 export type {
   BoardCapabilities,
   BoardChangeEvent,
@@ -60,12 +58,8 @@ export type DocumentPersistence = {
 export type RuntimeRenderer = {
   init(): Promise<void>;
   rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
-<<<<<<< ours
   apply(update: BoardDocumentUpdate, changeSet: BoardChangeEvent["changeSet"]): Promise<void>;
-=======
-  apply(snapshot: Readonly<BoardDocument>, changeSet?: BoardChangeEvent["changeSet"]): Promise<void>;
   refreshRegisteredTypes?(): Promise<void>;
->>>>>>> theirs
   destroy(): Promise<void>;
 };
 
@@ -143,6 +137,8 @@ export type PublicRendererOptions = {
   registry?: CustomNodeRendererRegistry;
   [key: string]: unknown;
 };
+
+export type PixiBoardRendererOptions = PublicRendererOptions;
 
 export type BrowserEventPort = {
   addEventListener(type: string, listener: EventListenerOrEventListenerObject): void;

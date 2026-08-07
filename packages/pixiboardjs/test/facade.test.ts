@@ -131,14 +131,33 @@ describe("pixiboardjs facade contract", () => {
     await board.destroy();
   });
 
-<<<<<<< ours
   it("passes only changed nodes to incremental renderer commits", async () => {
     const apply = vi.fn(async () => undefined);
     const renderer: RuntimeRenderer = {
       init: async () => undefined,
       rebuild: async () => undefined,
       apply,
-=======
+      destroy: async () => undefined,
+    };
+    const board = await createPixiBoard({
+      ...options(),
+      headless: false,
+      container: {} as Element,
+      rendererFactory: () => renderer,
+    });
+    await board.ready;
+
+    await board.nodes.create(card("a"));
+    await flush();
+
+    expect(apply).toHaveBeenCalledOnce();
+    expect(apply.mock.calls[0][0]).toMatchObject({
+      changedNodes: [{ id: "a" }],
+    });
+    expect(Object.isFrozen(apply.mock.calls[0][0])).toBe(true);
+    await board.destroy();
+  });
+
   it("supports lightweight find/findOne queries and exact document.validate signature", async () => {
     const board = await createPixiBoard(options());
     await board.ready;
@@ -186,7 +205,6 @@ describe("pixiboardjs facade contract", () => {
       rebuild: async () => undefined,
       apply: async () => undefined,
       refreshRegisteredTypes: async () => refreshDone,
->>>>>>> theirs
       destroy: async () => undefined,
     };
     const board = await createPixiBoard({
@@ -196,17 +214,6 @@ describe("pixiboardjs facade contract", () => {
       rendererFactory: () => renderer,
     });
     await board.ready;
-<<<<<<< ours
-
-    await board.nodes.create(card("a"));
-    await flush();
-
-    expect(apply).toHaveBeenCalledOnce();
-    expect(apply.mock.calls[0][0]).toMatchObject({
-      changedNodes: [{ id: "a" }],
-    });
-    expect(Object.isFrozen(apply.mock.calls[0][0])).toBe(true);
-=======
     const definition: CustomNodeDefinition<CardProps> = {
       ...cardType,
       type: "custom.ready-card",
@@ -245,7 +252,6 @@ describe("pixiboardjs facade contract", () => {
       .rejects.toThrow("refresh failed");
     expect(board.nodeTypes.has("custom.failed-card")).toBe(false);
     expect(refreshCount).toBe(2);
->>>>>>> theirs
     await board.destroy();
   });
 
