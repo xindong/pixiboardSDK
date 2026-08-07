@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BoardDocument, BoardNode } from "@pixi-board/core";
 import { createPixiApplicationFactory, NodeRendererRegistry, PixiBoardRenderer, createPixiViewFactory } from "../src/index";
+import { registerTaskCardRenderer, taskCardNode } from "./fixtures";
 
 const node = (id: string, type = "rect", x = 0): BoardNode => ({ id, type, typeVersion: 1, x, y: 0, width: 10, height: 10, rotation: 0, zIndex: 0, props: {} });
 const doc = (nodes: BoardNode[], revision = 0): BoardDocument => ({ schemaVersion: 1, revision, nodes, assets: [] });
@@ -62,5 +63,23 @@ describe("renderer-pixi vertical slice", () => {
     expect(viewFactory.createImage?.({ assetId: "asset-id" }, node("image", "image"))).toBe(sprite);
     const renderer = new PixiBoardRenderer({});
     expect(renderer.registry.has("rect")).toBe(true);
+  });
+  it("uses the real spatial index for bounds culling and updates it from the document", async () => {
+    const { app, factory } = fake(); const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory }); await renderer.init();
+    await renderer.setVisibleBounds({ minX: -1, minY: -1, maxX: 20, maxY: 20 }); await renderer.rebuild(doc([node("near"), node("far", "rect", 1000)], 1));
+    expect(renderer.activeViews.has("near")).toBe(true); expect(renderer.activeViews.has("far")).toBe(false);
+    await renderer.apply(doc([{ ...node("far", "rect", 5) }, node("near")], 2), { revision: 2, transactionId: "t", origin: "api", addedNodeIds: [], updatedNodeIds: ["far"], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 });
+    expect(renderer.activeViews.has("far")).toBe(true); await renderer.destroy();
+  });
+  it("captures viewport, bounds, and node through an injectable contract without changing the active scene", async () => {
+    const { app, factory } = fake(); const requests: any[] = []; const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, capture: (frame, request, signal) => { requests.push({ frame, request, signal }); return { dataUrl: "data:image/png;base64,ok", mimeType: "image/png", width: 10, height: 20 }; } }); await renderer.init(); await renderer.rebuild(doc([node("a")], 7));
+    const before = [...renderer.activeViews.keys()]; const viewport = await renderer.capture({ target: "viewport", scale: 2 }, { requestId: "r1" }); const bounds = await renderer.capture({ target: "bounds", bounds: { minX: 0, minY: 0, maxX: 10, maxY: 20 } }); const single = await renderer.capture({ target: "node", nodeId: "a" });
+    expect(viewport).toMatchObject({ mimeType: "image/png", revision: 7, requestId: "r1" }); expect(bounds.dataUrl).toContain("data:image/png"); expect(single.width).toBe(10); expect(requests).toHaveLength(3); expect([...renderer.activeViews.keys()]).toEqual(before); await renderer.destroy();
+  });
+  it("rehydrates a custom task-card from document props and destroys/recreates its cached view", async () => {
+    const { app, factory } = fake(); const registry = new NodeRendererRegistry(); registerTaskCardRenderer(registry, factory); const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, registry }); await renderer.init();
+    await renderer.rebuild(doc([taskCardNode("task", "Draft")], 1)); expect((renderer.activeViews.get("task") as any).state.title).toBe("Draft");
+    await renderer.setVisibleBounds({ minX: 1000, minY: 1000, maxX: 1100, maxY: 1100 }); expect(renderer.activeViews.has("task")).toBe(false);
+    await renderer.setVisibleBounds(undefined); await renderer.rebuild(doc([taskCardNode("task", "Saved")], 2)); expect((renderer.activeViews.get("task") as any).state.title).toBe("Saved"); await renderer.destroy();
   });
 });
