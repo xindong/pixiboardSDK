@@ -18,10 +18,11 @@ describe("external consumer contract", () => {
     expect(browser.NativeIndexedDbPort).toBeTypeOf("function");
   });
 
-  it("resolves every public subpath to an implemented source entry", () => {
-    expect(packageJson.exports["."].import).toBe("./src/index.ts");
-    expect(packageJson.exports["./browser"].import).toBe("./src/browser.ts");
-    expect(packageJson.exports["./node"].import).toBe("./src/node.ts");
-    expect(packageJson.exports["./types"].import).toBe("./src/types.ts");
+  it("resolves every public subpath to publishable artifacts", () => {
+    expect(packageJson.exports["."].import).toBe("./dist/index.js");
+    expect(packageJson.exports["./browser"].import).toBe("./dist/browser.js");
+    expect(packageJson.exports["./node"].import).toBe("./dist/node.js");
+    expect(packageJson.exports["./types"].import).toBe("./dist/types.js");
+    expect(packageJson.exports["."].types).toBe("./dist/index.d.ts");
   });
 });

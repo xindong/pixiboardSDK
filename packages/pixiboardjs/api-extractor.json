@@ -1,0 +1,17 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/api-extractor/v7/api-extractor.schema.json",
+  "projectFolder": ".",
+  "mainEntryPointFilePath": "<projectFolder>/dist/index.d.ts",
+  "apiReport": {
+    "enabled": true,
+    "reportFolder": "<projectFolder>/etc",
+    "reportFileName": "pixiboardjs.api.md"
+  },
+  "docModel": { "enabled": false },
+  "dtsRollup": { "enabled": false },
+  "compiler": { "tsconfigFilePath": "<projectFolder>/tsconfig.build.json" },
+  "messages": {
+    "extractorMessageReporting": { "default": { "logLevel": "warning" } },
+    "tsdocMessageReporting": { "default": { "logLevel": "warning" } }
+  }
+}

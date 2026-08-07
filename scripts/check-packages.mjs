@@ -15,13 +15,15 @@ if (workspace.name !== "pixiboardjs" || workspace.private !== false) throw new E
 for (const subpath of [".", "./browser", "./node", "./types"]) {
   const contract = workspace.exports?.[subpath];
   if (!contract) throw new Error(`missing pixiboardjs export: ${subpath}`);
-  for (const target of new Set([contract.types, contract.import, contract.default])) {
+  if (!contract.types?.endsWith(".d.ts")) throw new Error(`types export must be a declaration artifact: ${subpath}`);
+  for (const target of new Set([contract.import, contract.default])) {
     if (!target) throw new Error(`incomplete pixiboardjs export: ${subpath}`);
-    await access(resolve(root, "packages/pixiboardjs", target));
+    if (!target.endsWith(".js")) throw new Error(`runtime export must point at JavaScript: ${subpath} -> ${target}`);
   }
 }
+if (workspace.dependencies?.["pixi.js"] === undefined) throw new Error("pixiboardjs must declare pixi.js runtime dependency");
 for (const [name, version] of Object.entries(workspace.dependencies ?? {})) {
-  if (!version.startsWith("workspace:")) throw new Error(`local pixiboardjs dependency must use workspace protocol: ${name}`);
+  if (String(version).startsWith("workspace:")) throw new Error(`published pixiboardjs dependency must not use workspace protocol: ${name}`);
 }
 if (fixture.dependencies?.pixiboardjs !== "workspace:*") throw new Error("Vanilla fixture must link the workspace package in-repo");
 if (benchmark.private !== true || !benchmark.scripts?.["generate:synthetic-card"]) throw new Error("benchmark must remain private and retain deterministic fixture generation");

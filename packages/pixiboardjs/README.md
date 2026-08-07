@@ -33,6 +33,12 @@ await board.destroy();
 See [`VERSIONING.md`](VERSIONING.md) for the separate SDK, document, node,
 plugin and Agent-tool version dimensions.
 
-`pnpm release:check` packs the real facade without creating build artifacts.
-It currently reports raw TypeScript runtime exports and internal workspace
-dependencies as release blockers; it does not substitute a placeholder runtime.
+`pnpm build:release` reproducibly creates ESM JavaScript, source maps and
+declaration artifacts under `dist/`. The public facade bundles private workspace
+implementation packages and keeps `pixi.js` as its only registry runtime
+dependency.
+
+`pnpm api:report` refreshes the approved API reports. `pnpm release:check`
+requires those real artifacts, packs the facade, and installs the tarball into
+clean Node and Vite consumers outside the repository before checking API and
+bundle-size budgets. It never creates or substitutes release artifacts.

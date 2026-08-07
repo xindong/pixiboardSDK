@@ -11,7 +11,23 @@ const packageDir = resolve(root, "packages/pixiboardjs");
 const sourceManifest = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8"));
 const gateDir = await mkdtemp(join(tmpdir(), "pixiboardjs-release-gate-"));
 
+await main();
+
+async function main() {
 try {
+  const artifactBlockers = [];
+  for (const target of ["dist/index.js", "dist/browser.js", "dist/node.js", "dist/types.js", "dist/index.d.ts", "dist/browser.d.ts", "dist/node.d.ts", "dist/types.d.ts"]) {
+    try { await readFile(join(packageDir, target)); } catch (error) {
+      if (error.code === "ENOENT") artifactBlockers.push(`missing release artifact: ${target}`);
+      else throw error;
+    }
+  }
+  if (artifactBlockers.length) {
+    console.error("Release gate blocked before pack; generate real artifacts with pnpm build:release:");
+    for (const blocker of artifactBlockers) console.error(`- ${blocker}`);
+    process.exitCode = 1;
+    return;
+  }
   const { stdout } = await run("pnpm", ["pack", "--pack-destination", gateDir, "--json"], { cwd: packageDir });
   const parsedPackInfo = JSON.parse(stdout);
   const packInfo = Array.isArray(parsedPackInfo) ? parsedPackInfo[0] : parsedPackInfo;
@@ -21,14 +37,9 @@ try {
   const manifest = JSON.parse(await readFile(join(packedDir, "package.json"), "utf8"));
   const blockers = [];
   const packedFiles = new Set(packInfo.files.map((file) => file.path));
-  const sourceWorkspaceDependencies = Object.entries(sourceManifest.dependencies ?? {})
-    .filter(([, version]) => String(version).startsWith("workspace:"));
   const packedWorkspaceDependencies = Object.entries(manifest.dependencies ?? {})
     .filter(([, version]) => String(version).startsWith("workspace:"));
 
-  if (sourceWorkspaceDependencies.length === 0) {
-    blockers.push("source manifest has no workspace dependencies for pack rewrite contract");
-  }
   for (const [name, version] of packedWorkspaceDependencies) {
     blockers.push(`packed dependency leaks workspace protocol: ${name}@${version}`);
   }
@@ -61,6 +72,9 @@ try {
     if (extname(contract.types) !== ".ts" || !contract.types.endsWith(".d.ts")) {
       blockers.push(`types export is not a declaration artifact: ${subpath} -> ${contract.types}`);
     }
+    for (const target of new Set([contract.import, contract.default, contract.types])) {
+      if (!packedFiles.has(target.replace(/^\.\//, ""))) blockers.push(`packed export target is missing: ${subpath} -> ${target}`);
+    }
   }
 
   const internalDependencies = new Set([
@@ -73,19 +87,24 @@ try {
     if (version === "0.0.0") blockers.push(`placeholder dependency version is not publishable: ${name}@${version}`);
   }
 
-  if (packedWorkspaceDependencies.length === 0) {
-    console.log(`Packed ${sourceManifest.name}@${sourceManifest.version}: ${packInfo.files.length} files; workspace protocol rewritten.`);
-  }
+  console.log(`Packed ${sourceManifest.name}@${sourceManifest.version}: ${packInfo.files.length} files; runtime dependencies are registry-safe.`);
   if (blockers.length > 0) {
     console.error("Release gate blocked; external install/import/Vite checks were not run:");
     for (const blocker of [...new Set(blockers)].sort()) console.error(`- ${blocker}`);
     process.exitCode = 1;
   } else {
     await verifyExternalConsumers(tarball, gateDir);
+    await run(process.execPath, [resolve(root, "scripts/check-api-report.mjs")], { cwd: root });
+    await verifyBundleBudget();
     console.log("Release gate passed: packed manifest and external Node/Vite consumers are valid.");
   }
 } finally {
   await rm(gateDir, { recursive: true, force: true });
+}
+}
+
+async function verifyBundleBudget() {
+  await run(process.execPath, [resolve(root, "scripts/check-bundle-budget.mjs")], { cwd: root });
 }
 
 async function verifyExternalConsumers(tarball, gateDir) {
@@ -93,6 +112,9 @@ async function verifyExternalConsumers(tarball, gateDir) {
   await cp(resolve(root, "apps/examples-vanilla"), fixture, { recursive: true });
   const fixtureManifest = JSON.parse(await readFile(join(fixture, "package.json"), "utf8"));
   fixtureManifest.dependencies = { pixiboardjs: `file:${tarball}` };
+  fixtureManifest.devDependencies = Object.fromEntries(
+    Object.entries(fixtureManifest.devDependencies ?? {}).filter(([, version]) => !String(version).startsWith("workspace:")),
+  );
   await writeFile(join(fixture, "package.json"), `${JSON.stringify(fixtureManifest, null, 2)}\n`);
   await run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: fixture });
 
@@ -114,6 +136,10 @@ async function verifyExternalConsumers(tarball, gateDir) {
       await new Promise((resolveWait) => setTimeout(resolveWait, 250));
     }
     if (!response?.ok) throw new Error("Vite consumer did not become ready");
+    const transformed = await response.text();
+    if (!transformed.includes("pixiboardjs") && !transformed.includes("/node_modules/.vite/")) {
+      throw new Error("Vite consumer did not transform the pixiboardjs import");
+    }
     console.log(`consumer vite smoke passed (${response.status})`);
   } finally {
     vite.kill("SIGTERM");

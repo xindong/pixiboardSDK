@@ -7,8 +7,13 @@
   "scripts": {
     "docs:check": "node scripts/check-docs.mjs",
     "packages:check": "node scripts/check-packages.mjs",
+    "build:release": "pnpm --filter @pixi-board/core build && pnpm --filter pixiboardjs build",
+    "api:report": "pnpm --filter @pixi-board/core api:report && pnpm --filter pixiboardjs api:report",
+    "api:check": "node scripts/check-api-report.mjs",
+    "bundle:check": "node scripts/check-bundle-budget.mjs",
     "release:check": "node scripts/check-release-gate.mjs",
     "audit:requirements": "node scripts/check-requirement-audit.mjs",
+    "version:packages": "changeset version",
     "test:core": "pnpm --filter @pixi-board/core test",
     "test:contracts": "pnpm --filter @pixi-board/capabilities test && pnpm --filter @pixi-board/agent-tools test",
     "test:adapters": "pnpm --filter @pixi-board/adapter-contract-tests test && pnpm --filter @pixi-board/adapter-browser test && pnpm --filter @pixi-board/adapter-tauri test",
@@ -20,7 +25,11 @@
     "benchmark:check": "pnpm --filter pixiboardjs-benchmark benchmark:check"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1"
+    "@changesets/cli": "^2.29.7",
+    "@microsoft/api-extractor": "^7.52.8",
+    "@playwright/test": "^1.62.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2"
   },
   "packageManager": "pnpm@10.25.0"
 }

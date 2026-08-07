@@ -1,4 +1,4 @@
-# Versioning placeholder
+# Versioning policy
 
 `pixiboardjs` follows normal SemVer. Until the first stable release, prerelease
 identifiers (for example `0.1.0-alpha.0`) communicate internal-alpha status.
@@ -13,8 +13,12 @@ encoded as one shared number:
 - Plugin API version (new SDK host starts at v3; no v2 adapter).
 - Agent tool schema version.
 
+Changesets keeps `pixiboardjs` and `@pixi-board/core` in a fixed version group.
+Private workspace packages also use the current alpha train instead of `0.0.0`,
+but they are bundled into the main package and are not registry dependencies.
+
 `pnpm release:check` verifies the real packed manifest and only runs external
-consumers when publishable JavaScript/types and dependency versions exist. It
-does not build or invent those artifacts. Changesets/API reports remain release
-requirements. Internal packages stay private unless a future ADR explicitly
-makes them public.
+consumers when generated JavaScript, declarations and API reports exist. It does
+not build or invent artifacts. Internal packages stay private unless an ADR
+explicitly makes them public; the planned `@pixi-board/plugin-sdk` is not the
+current private `@pixi-board/plugin-api-v3` package.

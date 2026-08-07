@@ -6,49 +6,54 @@
   "private": false,
   "sideEffects": false,
   "files": [
-    "src",
+    "dist",
+    "etc",
     "README.md",
     "VERSIONING.md",
     "CHANGELOG.md"
   ],
   "exports": {
     ".": {
-      "types": "./src/types.ts",
-      "import": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./browser": {
-      "types": "./src/types.ts",
-      "import": "./src/browser.ts",
-      "default": "./src/browser.ts"
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js",
+      "default": "./dist/browser.js"
     },
     "./node": {
-      "types": "./src/types.ts",
-      "import": "./src/node.ts",
-      "default": "./src/node.ts"
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js",
+      "default": "./dist/node.js"
     },
     "./types": {
-      "types": "./src/types.ts",
-      "import": "./src/types.ts",
-      "default": "./src/types.ts"
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js",
+      "default": "./dist/types.js"
     },
     "./package.json": "./package.json"
   },
-  "types": "./src/types.ts",
+  "types": "./dist/index.d.ts",
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "pixi.js": "^8.15.0"
+  },
+  "devDependencies": {
     "@pixi-board/adapter-browser": "workspace:*",
     "@pixi-board/capabilities": "workspace:*",
     "@pixi-board/core": "workspace:*",
-    "@pixi-board/renderer-pixi": "workspace:*"
-  },
-  "devDependencies": {
+    "@pixi-board/renderer-pixi": "workspace:*",
+    "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   },
   "scripts": {
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "build": "tsup",
+    "api:report": "api-extractor run --local --verbose"
   },
   "publishConfig": {
     "access": "public"
