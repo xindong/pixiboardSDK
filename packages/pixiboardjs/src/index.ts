@@ -42,6 +42,7 @@ export {
 } from "@pixi-board/capabilities";
 
 type Listener = (event: never) => void;
+let focusedBoard: PixiBoardFacade | undefined;
 
 class EventHub {
   private readonly listeners = new Map<keyof PublicBoardEventMap | string, Set<Listener>>();
@@ -233,6 +234,7 @@ class PixiBoardFacade implements PixiBoard {
 
   focus(): void {
     this.assertAlive();
+    focusedBoard = this;
     const container = this.options.container as (Element & { focus?: () => void }) | null | undefined;
     container?.focus?.();
   }
@@ -310,22 +312,40 @@ class PixiBoardFacade implements PixiBoard {
   private bindRuntimePorts(): void {
     const eventPort = this.options.ports?.events;
     if (eventPort && this.options.interactions?.keyboard) {
-      const listener: EventListener = () => undefined;
+      const listener: EventListener = (event) => {
+        if (focusedBoard === this) this.options.ports?.onKeyboardEvent?.(event);
+      };
       eventPort.addEventListener("keydown", listener);
       this.cleanup.add(() => eventPort.removeEventListener("keydown", listener));
     }
     if (eventPort && this.options.interactions?.clipboard) {
       for (const type of ["copy", "cut", "paste"]) {
-        const listener: EventListener = () => undefined;
+        const listener: EventListener = (event) => {
+          if (focusedBoard === this) this.options.ports?.onClipboardEvent?.(event);
+        };
         eventPort.addEventListener(type, listener);
         this.cleanup.add(() => eventPort.removeEventListener(type, listener));
       }
     }
     const pointerTarget = this.options.container;
     if (pointerTarget && this.options.interactions?.pointer) {
-      const listener: EventListener = () => undefined;
+      const listener: EventListener = () => { focusedBoard = this; };
       pointerTarget.addEventListener("pointerdown", listener);
       this.cleanup.add(() => pointerTarget.removeEventListener("pointerdown", listener));
+    }
+    const focusTarget = this.options.container;
+    if (focusTarget &&
+      typeof focusTarget.addEventListener === "function" &&
+      (this.options.interactions?.keyboard || this.options.interactions?.clipboard)) {
+      const listener: EventListener = () => { focusedBoard = this; };
+      focusTarget.addEventListener("focusin", listener);
+      this.cleanup.add(() => focusTarget.removeEventListener("focusin", listener));
+      if (typeof HTMLElement !== "undefined" &&
+        focusTarget instanceof HTMLElement &&
+        !focusTarget.hasAttribute("tabindex")) {
+        focusTarget.tabIndex = -1;
+        this.cleanup.add(() => focusTarget.removeAttribute("tabindex"));
+      }
     }
     const container = this.options.container;
     const createObserver = this.options.ports?.createResizeObserver;
@@ -382,6 +402,7 @@ class PixiBoardFacade implements PixiBoard {
   private async performDestroy(): Promise<void> {
     if (this.lifecycle === "destroyed") return;
     this.lifecycle = "destroying";
+    if (focusedBoard === this) focusedBoard = undefined;
     this.abortController.abort(new BoardDestroyedError());
     for (const dispose of this.cleanup) dispose();
     this.cleanup.clear();

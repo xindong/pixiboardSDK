@@ -1,6 +1,11 @@
 import {
   BrowserPersistenceAdapter,
+  NativeDownloadPort,
   NativeIndexedDbPort,
+  NativeObjectUrlPort,
+  NativeOpfsPort,
+  createPixiBoard,
+  runBrowserAdapterContract,
 } from "pixiboardjs/browser";
 import { PixiBoardRenderer } from "@pixi-board/renderer-pixi";
 
@@ -51,6 +56,80 @@ async function readReloadContract(databaseName) {
   await adapter.destroy();
   await deleteDatabase(databaseName);
   return restored?.snapshot.nodes[0]?.props.marker;
+}
+
+async function deleteOpfsDirectory(name) {
+  const storage = navigator.storage;
+  if (typeof storage.getDirectory !== "function") return;
+  const root = await storage.getDirectory();
+  await root.removeEntry(name, { recursive: true }).catch(() => undefined);
+}
+
+async function runNativeAdapterContract() {
+  const token = crypto.randomUUID();
+  const databaseName = `pixiboard-browser-full-${token}`;
+  const directoryName = `pixiboard-browser-full-${token}`;
+  let generation = 0;
+  try {
+    return await runBrowserAdapterContract({
+      createAdapter: () => new BrowserPersistenceAdapter({
+        indexedDb: new NativeIndexedDbPort({ databaseName }),
+        opfs: new NativeOpfsPort({ directoryName }),
+        objectUrls: new NativeObjectUrlPort(),
+        download: new NativeDownloadPort(),
+        storageKeyFactory: (id, variant) => `${id}-${variant}-${++generation}-${crypto.randomUUID()}`,
+      }),
+      inspectObjectUrl: async (url) => {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        return { type: blob.type, text: await blob.text() };
+      },
+    });
+  } finally {
+    await deleteDatabase(databaseName);
+    await deleteOpfsDirectory(directoryName);
+  }
+}
+
+async function runFocusClipboardContract() {
+  const firstHost = document.createElement("div");
+  const secondHost = document.createElement("div");
+  document.body.append(firstHost, secondHost);
+  const calls = { first: [], second: [], recreated: [] };
+  const create = async (host, target) => createPixiBoard({
+    headless: true,
+    container: host,
+    interactions: { keyboard: true, clipboard: true },
+    ports: {
+      events: window,
+      onKeyboardEvent: (event) => target.push(`key:${event.type}`),
+      onClipboardEvent: (event) => target.push(`clipboard:${event.type}`),
+    },
+  });
+  const first = await create(firstHost, calls.first);
+  const second = await create(secondHost, calls.second);
+  await Promise.all([first.ready, second.ready]);
+
+  first.focus();
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+  for (const type of ["copy", "cut", "paste"]) window.dispatchEvent(new Event(type));
+  second.focus();
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "b" }));
+  window.dispatchEvent(new Event("paste"));
+  await second.destroy();
+  window.dispatchEvent(new Event("copy"));
+
+  const recreatedHost = document.createElement("div");
+  document.body.append(recreatedHost);
+  const recreated = await create(recreatedHost, calls.recreated);
+  await recreated.ready;
+  recreated.focus();
+  window.dispatchEvent(new Event("copy"));
+  await Promise.all([first.destroy(), recreated.destroy()]);
+  firstHost.remove();
+  secondHost.remove();
+  recreatedHost.remove();
+  return calls;
 }
 
 async function runPersistenceContract() {
@@ -234,6 +313,8 @@ async function runWebGlRecoveryContract() {
 export const browserContracts = {
   seedReloadContract,
   readReloadContract,
+  runNativeAdapterContract,
+  runFocusClipboardContract,
   runPersistenceContract,
   runWebGlRecoveryContract,
 };

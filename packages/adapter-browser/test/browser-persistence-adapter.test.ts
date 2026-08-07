@@ -130,6 +130,37 @@ class MemoryIndexedDbPort implements IndexedDbPort {
     for (const [id, value] of nextBlobs) this.blobs.set(id, value);
   }
 
+  async commitAssetAndDocument(
+    record: BrowserDocumentRecord,
+    entry: StoredAssetEntry,
+    binaryWrite: { variant: AssetBinaryVariant; blob: Blob } | undefined,
+    signal: AbortSignal,
+    options: SaveBrowserDocumentOptions = {},
+  ): Promise<void> {
+    signal.throwIfAborted();
+    const actualRevision = this.document?.snapshot.revision ?? null;
+    if (options.expectedRevision !== undefined && options.expectedRevision !== actualRevision) {
+      throw new BrowserDocumentConflictError(options.expectedRevision, actualRevision);
+    }
+    const nextEntries = new Map(this.entries);
+    const nextBlobs = new Map(this.blobs);
+    const current = nextEntries.get(entry.id);
+    nextEntries.set(entry.id, clone(current === undefined
+      ? entry
+      : { ...entry, binaries: { ...current.binaries, ...entry.binaries } }));
+    if (binaryWrite !== undefined) {
+      const key = `${entry.id}::${binaryWrite.variant}`;
+      const binary = entry.binaries[binaryWrite.variant];
+      if (binary.storage.kind === "opfs") nextBlobs.delete(key);
+      else nextBlobs.set(key, binaryWrite.blob);
+    }
+    this.document = clone(record);
+    this.entries.clear();
+    this.blobs.clear();
+    for (const [id, value] of nextEntries) this.entries.set(id, value);
+    for (const [id, value] of nextBlobs) this.blobs.set(id, value);
+  }
+
   async deleteAssetEntry(entry: StoredAssetEntry, signal: AbortSignal): Promise<void> {
     signal.throwIfAborted();
     this.entries.delete(entry.id);

@@ -150,6 +150,60 @@ export class NativeIndexedDbPort implements IndexedDbPort {
     });
   }
 
+  async commitAssetAndDocument(
+    document: BrowserDocumentRecord,
+    entry: StoredAssetEntry,
+    binaryWrite: { variant: AssetBinaryVariant; blob: Blob } | undefined,
+    signal: AbortSignal,
+    options: SaveBrowserDocumentOptions = {},
+  ): Promise<void> {
+    const database = await this.#open(signal);
+    if (signal.aborted) throw abortError(signal);
+    const transaction = database.transaction(
+      [DOCUMENT_STORE, ASSET_STORE, BLOB_STORE],
+      "readwrite",
+    );
+    const done = transactionDone(transaction, signal);
+    try {
+      const documents = transaction.objectStore(DOCUMENT_STORE);
+      if (options.expectedRevision !== undefined) {
+        const current = await requestResult(documents.get(DOCUMENT_KEY)) as
+          | BrowserDocumentRecord
+          | undefined;
+        const actualRevision = current?.snapshot.revision ?? null;
+        if (actualRevision !== options.expectedRevision) {
+          transaction.abort();
+          await done.catch(() => undefined);
+          throw new BrowserDocumentConflictError(options.expectedRevision, actualRevision);
+        }
+      }
+
+      const assets = transaction.objectStore(ASSET_STORE);
+      const currentEntry = await requestResult(assets.get(entry.id)) as StoredAssetEntry | undefined;
+      const committedEntry: StoredAssetEntry = currentEntry === undefined
+        ? entry
+        : { ...entry, binaries: { ...currentEntry.binaries, ...entry.binaries } };
+      documents.put(document, DOCUMENT_KEY);
+      assets.put(committedEntry, committedEntry.id);
+      if (binaryWrite !== undefined) {
+        const blobs = transaction.objectStore(BLOB_STORE);
+        const binary = committedEntry.binaries[binaryWrite.variant];
+        const key = blobKey(committedEntry.id, binaryWrite.variant);
+        if (binary?.storage.kind === "opfs") blobs.delete(key);
+        else blobs.put(binaryWrite.blob, key);
+      }
+      await done;
+    } catch (error) {
+      try {
+        transaction.abort();
+      } catch {
+        // The transaction may already be committed or aborted.
+      }
+      await done.catch(() => undefined);
+      throw error;
+    }
+  }
+
   async deleteAssetEntry(entry: StoredAssetEntry, signal: AbortSignal): Promise<void> {
     await this.#write([ASSET_STORE, BLOB_STORE], signal, (transaction) => {
       transaction.objectStore(ASSET_STORE).delete(entry.id);
@@ -203,7 +257,10 @@ export class NativeIndexedDbPort implements IndexedDbPort {
           if (!database.objectStoreNames.contains(ASSET_STORE)) database.createObjectStore(ASSET_STORE);
           if (!database.objectStoreNames.contains(BLOB_STORE)) database.createObjectStore(BLOB_STORE);
         });
-        request.addEventListener("success", () => resolve(request.result), { once: true });
+        request.addEventListener("success", () => {
+          request.result.addEventListener("versionchange", () => request.result.close());
+          resolve(request.result);
+        }, { once: true });
         request.addEventListener("error", () => reject(request.error), { once: true });
         request.addEventListener("blocked", () => reject(new Error(`IndexedDB open blocked: ${this.#databaseName}`)), { once: true });
       });

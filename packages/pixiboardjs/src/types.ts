@@ -80,6 +80,8 @@ export type BoardRuntimePorts = {
   events?: BrowserEventPort;
   createResizeObserver?: (callback: ResizeObserverCallback) => ResizeObserverPort;
   ticker?: TickerPort;
+  onKeyboardEvent?: (event: Event) => void;
+  onClipboardEvent?: (event: Event) => void;
 };
 
 export type PixiBoardOptions = {

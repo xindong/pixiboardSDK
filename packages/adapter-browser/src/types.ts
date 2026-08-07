@@ -1,4 +1,4 @@
-import type { AssetRecord, BoardDocument, JsonValue } from "@pixi-board/core";
+import type { AssetRecord, BoardDocument, BoardNode, JsonValue } from "@pixi-board/core";
 
 export type BrowserDocumentMetadata = Record<string, JsonValue>;
 
@@ -86,6 +86,14 @@ export interface IndexedDbPort extends PortLifecycle {
     binaryWrite: { variant: AssetBinaryVariant; blob: Blob } | undefined,
     signal: AbortSignal,
   ): Promise<void>;
+  /** Atomically commits the document plus asset metadata and optional Blob fallback. */
+  commitAssetAndDocument(
+    document: BrowserDocumentRecord,
+    entry: StoredAssetEntry,
+    binaryWrite: { variant: AssetBinaryVariant; blob: Blob } | undefined,
+    signal: AbortSignal,
+    options?: SaveBrowserDocumentOptions,
+  ): Promise<void>;
   /** Atomically removes asset metadata and any IndexedDB Blob fallback. */
   deleteAssetEntry(entry: StoredAssetEntry, signal: AbortSignal): Promise<void>;
 }
@@ -100,6 +108,16 @@ export interface OpfsPort extends PortLifecycle {
 export interface ObjectUrlPort extends PortLifecycle {
   create(blob: Blob): string;
   revoke(url: string): void;
+}
+
+export type BrowserDownloadRequest = {
+  url: string;
+  fileName: string;
+  mimeType: string;
+};
+
+export interface DownloadPort extends PortLifecycle {
+  download(request: BrowserDownloadRequest): void | Promise<void>;
 }
 
 export interface ObjectUrlLease {
@@ -133,6 +151,7 @@ export type AssetGcResult = {
 
 export type BrowserCleanupOperation =
   | "metadata-compensation"
+  | "import-compensation"
   | "replace-old-opfs"
   | "delete-opfs"
   | "gc-opfs"
@@ -146,14 +165,83 @@ export type BrowserCleanupError = {
   assetId?: string;
   variant?: AssetBinaryVariant;
   key?: string;
-  port?: "indexeddb" | "opfs" | "object-urls";
+  port?: "indexeddb" | "opfs" | "object-urls" | "download";
+};
+
+export type BrowserImportSourceType = "file" | "blob" | "text" | "url";
+
+export type BrowserPrepareImportOptions = AdapterOperationOptions & {
+  assetId?: string;
+  kind?: string;
+  name?: string;
+  mimeType?: string;
+  assetMetadata?: Record<string, JsonValue>;
+  request?: RequestInit;
+};
+
+export type BrowserPreparedImport = {
+  sourceType: BrowserImportSourceType;
+  asset: AssetRecord;
+  blob: Blob;
+  fileName: string;
+};
+
+export type BrowserCommitImportOptions = AdapterOperationOptions & {
+  document: BoardDocument;
+  documentMetadata?: BrowserDocumentMetadata;
+  expectedRevision?: number | null;
+  nodeId?: string;
+  nodeType?: string;
+  nodeProps?: JsonValue;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  zIndex?: number;
+  preferOpfs?: boolean;
+};
+
+export type BrowserImportOptions = BrowserPrepareImportOptions & BrowserCommitImportOptions;
+
+export type BrowserImportResult = {
+  sourceType: BrowserImportSourceType;
+  document: BoardDocument;
+  asset: AssetRecord;
+  node: BoardNode;
+  entry: StoredAssetEntry;
+};
+
+export type BrowserAssetExport = {
+  assetId: string;
+  variant: AssetBinaryVariant;
+  blob: Blob;
+  fileName: string;
+  mimeType: string;
+};
+
+export type BrowserExportOptions = GetAssetOptions & {
+  fileName?: string;
+};
+
+export type BrowserAdapterCapabilities = {
+  persistence: true;
+  indexedDb: true;
+  opfs: boolean;
+  blobFallback: true;
+  import: readonly BrowserImportSourceType[];
+  objectUrl: true;
+  download: boolean;
+  desktopFileSystem: false;
 };
 
 export type BrowserPersistenceAdapterOptions = {
   indexedDb: IndexedDbPort;
   opfs?: OpfsPort;
   objectUrls?: ObjectUrlPort;
+  download?: DownloadPort;
+  fetch?: typeof globalThis.fetch;
   now?: () => number;
+  idFactory?: () => string;
   storageKeyFactory?: (assetId: string, variant: AssetBinaryVariant) => string;
   opfsThresholdBytes?: number;
   defaultGcQuarantineMs?: number;

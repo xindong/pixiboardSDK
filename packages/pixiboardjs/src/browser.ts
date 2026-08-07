@@ -3,6 +3,7 @@ export * from "@pixi-board/adapter-browser";
 
 import {
   BrowserPersistenceAdapter,
+  NativeDownloadPort,
   NativeIndexedDbPort,
   NativeObjectUrlPort,
   NativeOpfsPort,
@@ -13,6 +14,6 @@ export function indexedDbPersistence(options: { database?: string } = {}): Brows
     indexedDb: new NativeIndexedDbPort({ databaseName: options.database }),
     opfs: new NativeOpfsPort(),
     objectUrls: new NativeObjectUrlPort(),
+    download: new NativeDownloadPort(),
   });
 }
-
