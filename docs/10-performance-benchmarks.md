@@ -175,17 +175,23 @@ pnpm benchmark:run
 pnpm benchmark:test
 ```
 
-## 2026-08-07 Chromium / Konva 对照
+## 2026-08-07 Chromium / Konva 对照（evidence-only）
 
-后续 canonical browser matrix 已补齐上节当时尚未观察的浏览器指标。命令为：
+浏览器 runner 提供 candidate-bound canonical matrix。正式 nightly/RC 命令为：
 
 ```text
-PIXIBOARD_BROWSER_OUTPUT=/tmp/pixi-vs-konva-final.json pnpm --filter pixiboardjs-benchmark benchmark:browser
+node scripts/run-browser-benchmark-gate.mjs nightly
 ```
+
+该命令固定并强制 10k/50k/100k × matched-visible/full-retained × PixiBoardJS/Konva、30 帧预热和 120 帧采样；输出写入 `.artifacts/performance/nightly-browser.json`，不提交到仓库。结构完整性、候选 SHA、Pixi WebGL、两端 mutation/visible/active plan 和人口公平性 fail closed。数值性能没有稳定机器基线或可辩护的跨环境绝对预算，因此明确标为 `evidence-only` / `blockingPerformanceCriteria: false`，不得称为“性能 gate 通过”。
+
+PixiBoardJS 一侧从当前 checkout 的 `packages/core/src` 与 `packages/renderer-pixi/src` 加载 `BoardDocument`、`GridSpatialIndex` 和 `PixiBoardRenderer`，并记录 candidate SHA/package version。`matched-visible` 会把全部 N 个节点交给 renderer rebuild 和空间索引，只为当前 viewport reconcile 可见 view；报告分别记录 `datasetCount`、candidate document count、spatial-index population 与 active population。Konva 仍是锁定版本的第三方 Canvas2D comparator。Pixi 8.19.0、Konva 9.3.22、Playwright 1.62.1 与 TypeScript 5.9.3 均由 benchmark package 直接锁定并从本地安装内容提供，不使用 jsDelivr Pixi。
+
+下面表格是 2026-08-07 一次本地 canonical 运行的历史摘录，不是当前 commit 的基线，也不绑定后续 release candidate；候选发布证据必须重新运行上述命令并以 artifact 内的 SHA 为准。
 
 固定条件为 Chromium `151.0.7922.34`、1920×1080、DPR 1、seed 42；每组 30 帧预热、120 帧采样。PixiBoardJS 使用 workspace `PixiBoardRenderer` 并逐组验证 WebGL 2 context；该 headless 环境实际 renderer 为 ANGLE SwiftShader。Konva 9.3.22 逐组验证为 Canvas2D。
 
-公平性检查全部通过：`matched-visible` 两端 visible ID、create/update/delete payload 和活动对象范围相同；`full-retained` 两端均保留完整 renderer object population，逐帧 mutation 后活动数均为 `document nodes + 1`。
+该次运行的公平性检查全部通过：`matched-visible` 两端 visible ID、create/update/delete payload 和活动对象范围相同；`full-retained` 两端均保留完整 renderer object population，逐帧 mutation 后活动数均为 `document nodes + 1`。
 
 以下是 frame-work/render-completion latency（ms，`p50 / p95 / p99`），不是 RAF-to-RAF presentation interval：
 

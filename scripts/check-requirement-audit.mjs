@@ -323,7 +323,7 @@ rows.push(
   benchmarkHasHarness && await exists("docs/benchmarks/2026-08-07-node-instrumented-summary.json")
     ? partial(
         "deterministic-performance-and-soak",
-        "Deterministic Node/instrumented harness and report cover synthetic 1k/10k/50k/100k Core/spatial/renderer/facade operations plus 100-cycle lifecycle soak; the separate canonical Chromium runner and docs/10 record matched-visible/full-retained Pixi/Konva p50/p95/p99 results.",
+        "Deterministic Node/instrumented harness and report cover synthetic 1k/10k/50k/100k Core/spatial/renderer/facade operations plus 100-cycle lifecycle soak; the separate candidate-bound canonical Chromium runner records evidence-only matched-visible/full-retained PixiBoardRenderer/Konva results.",
         has(benchmarkReport, /browser\/WebGL frame/) ? "Node report still records failed original Core latency targets; hardware GPU memory/draw calls/idle CPU-GPU and controlled heap remain notObserved." : "Add browser/WebGL and regression evidence before claiming stable performance.",
       )
     : missing(
@@ -352,10 +352,10 @@ rows.push(
     has(performanceDoc, /matched-visible/) &&
     has(performanceDoc, /full-retained/) &&
     has(performanceDoc, /p50 \/ p95 \/ p99/)
-    ? achieved(
+    ? partial(
         "konva-comparison",
-        "The canonical Chromium benchmark records fixed 10k/50k/100k matched-visible and full-retained PixiBoardJS-versus-Konva p50/p95/p99, first-interactive and capture results with fairness checks and explicit SwiftShader limitations.",
-        "This is a scoped sparse-card comparison, not a universal superiority claim; hardware GPU metrics and broader media workloads remain open.",
+        "The candidate-bound canonical Chromium benchmark records fixed 10k/50k/100k matched-visible and full-retained PixiBoardRenderer-versus-Konva evidence with SHA/document/index/active-population checks and explicit SwiftShader limitations.",
+        "Numerical browser performance is evidence-only until a stable machine baseline delta or approved absolute budget exists; this scoped sparse-card comparison is not a universal superiority claim.",
       )
     : missing(
         "konva-comparison",
