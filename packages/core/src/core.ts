@@ -221,10 +221,10 @@ export class BoardCore {
       label: `${direction === "undo" ? "Undo" : "Redo"}${entry.label ? `: ${entry.label}` : ""}`,
       origin: "history",
       draft: this.store.clone(),
-      forward: [],
-      inverse: [],
+      forward: direction === "undo" ? entry.inverse : entry.forward,
+      inverse: direction === "undo" ? entry.forward : entry.inverse,
     };
-    applyDataPatches(transaction.draft, direction === "undo" ? entry.inverse : entry.forward);
+    applyDataPatches(transaction.draft, transaction.forward);
     return this.commitTransaction(transaction, false)!;
   }
 
@@ -274,7 +274,7 @@ export class BoardCore {
       );
     }
     const nextDocument = this.validateLoadedDocument(input, options);
-    const before = this.store.mutableSnapshot();
+    const before = this.store;
     const previousViewport = this.viewportState.get();
     const hadSelection = this.selection.get().length > 0;
     this.store = new RuntimeDocumentStore(nextDocument);
@@ -284,7 +284,7 @@ export class BoardCore {
 
     const viewportChanged = !jsonEqual(previousViewport, this.viewportState.get());
     const changeSet = createChangeSet({
-      before,
+      before: before.mutableSnapshot(),
       after: nextDocument,
       transactionId: this.idFactory(),
       origin: "load",
@@ -307,8 +307,8 @@ export class BoardCore {
   }
 
   private recordPatch(transaction: ActiveTransaction, forward: DataPatch, inverse: DataPatch): void {
-    transaction.forward.push(cloneValue(forward));
-    transaction.inverse.unshift(cloneValue(inverse));
+    transaction.forward.push(forward);
+    transaction.inverse.unshift(inverse);
   }
 
   private commitTransaction(
@@ -316,23 +316,23 @@ export class BoardCore {
     recordHistory: boolean,
   ): BoardChangeSet | undefined {
     if (transaction.forward.length === 0 && recordHistory) return undefined;
-    const before = this.store.mutableSnapshot();
-    const after = transaction.draft.mutableSnapshot();
-    if (jsonEqual(before.nodes, after.nodes) && jsonEqual(before.assets, after.assets)) {
+    const before = this.store;
+    const after = transaction.draft;
+    if (!hasEffectivePatchChanges(before, after, transaction.forward)) {
       return undefined;
     }
 
     transaction.draft.revision = before.revision + 1;
-    this.store.replaceWith(transaction.draft);
+    this.store = after;
     const selectionChanged = this.selection.prune();
-    const committed = this.store.mutableSnapshot();
-    const changeSet = createChangeSet({
+    const changeSet = createTransactionChangeSet({
       before,
-      after: committed,
+      after,
+      patches: transaction.forward,
       transactionId: transaction.id,
       label: transaction.label,
       origin: transaction.origin,
-      revision: committed.revision,
+      revision: after.revision,
       timestamp: this.now(),
       selectionChanged,
       viewportChanged: false,
@@ -403,7 +403,7 @@ export class BoardNodesController {
         ...(input.assetRefs === undefined ? {} : { assetRefs: cloneValue(input.assetRefs) }),
       }) as BoardNode<Props>;
       const validated = this.core.nodeTypes.validateNode(node);
-      const index = transaction.draft.listNodes().length;
+      const index = transaction.draft.nodeCount();
       transaction.draft.insertNode(index, validated);
       internals.recordPatch(
         transaction,
@@ -498,7 +498,7 @@ export class BoardAssetsController {
           { op: "asset:replace", asset: previous },
         );
       } else {
-        const index = transaction.draft.listAssets().length;
+        const index = transaction.draft.assetCount();
         transaction.draft.insertAsset(index, asset);
         internals.recordPatch(
           transaction,
@@ -696,6 +696,114 @@ function createChangeSet(input: {
     updatedNodeIds,
     removedNodeIds,
     assetChangedNodeIds,
+    selectionChanged: input.selectionChanged,
+    viewportChanged: input.viewportChanged,
+    timestamp: input.timestamp,
+  };
+}
+
+function hasEffectivePatchChanges(
+  before: RuntimeDocumentStore,
+  after: RuntimeDocumentStore,
+  patches: DataPatch[],
+): boolean {
+  if (patches.some((patch) => patch.op.endsWith(":insert") || patch.op.endsWith(":remove"))) {
+    const beforeSnapshot = before.mutableSnapshot();
+    const afterSnapshot = after.mutableSnapshot();
+    return !jsonEqual(beforeSnapshot.nodes, afterSnapshot.nodes) ||
+      !jsonEqual(beforeSnapshot.assets, afterSnapshot.assets);
+  }
+
+  for (const patch of patches) {
+    if (patch.op === "node:replace") {
+      if (!jsonEqual(before.getNodeReference(patch.node.id), after.getNodeReference(patch.node.id))) {
+        return true;
+      }
+    } else if (patch.op === "asset:replace") {
+      if (!jsonEqual(before.getAssetReference(patch.asset.id), after.getAssetReference(patch.asset.id))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function createTransactionChangeSet(input: {
+  before: RuntimeDocumentStore;
+  after: RuntimeDocumentStore;
+  patches: DataPatch[];
+  transactionId: string;
+  label?: string;
+  origin: ChangeOrigin;
+  revision: number;
+  timestamp: number;
+  selectionChanged: boolean;
+  viewportChanged: boolean;
+}): BoardChangeSet {
+  const structural = input.patches.some(
+    (patch) => patch.op.endsWith(":insert") || patch.op.endsWith(":remove"),
+  );
+  if (structural) {
+    return createChangeSet({
+      before: input.before.mutableSnapshot(),
+      after: input.after.mutableSnapshot(),
+      transactionId: input.transactionId,
+      label: input.label,
+      origin: input.origin,
+      revision: input.revision,
+      timestamp: input.timestamp,
+      selectionChanged: input.selectionChanged,
+      viewportChanged: input.viewportChanged,
+    });
+  }
+
+  const updatedIds = new Set<string>();
+  const changedAssetIds = new Set<string>();
+  for (const patch of input.patches) {
+    if (patch.op === "node:replace") updatedIds.add(patch.node.id);
+    if (patch.op === "asset:replace") changedAssetIds.add(patch.asset.id);
+  }
+
+  const updatedNodeIds = [...updatedIds]
+    .filter((id) => {
+      const before = input.before.getNodeReference(id);
+      const after = input.after.getNodeReference(id);
+      return before !== undefined && after !== undefined && !jsonEqual(before, after);
+    })
+    .sort((left, right) =>
+      (input.after.getNodeIndex(left) ?? Number.POSITIVE_INFINITY) -
+      (input.after.getNodeIndex(right) ?? Number.POSITIVE_INFINITY),
+    );
+
+  const assetChangedNodeIds = new Set<string>();
+  for (const id of updatedIds) {
+    const before = input.before.getNodeReference(id);
+    const after = input.after.getNodeReference(id);
+    if (before && after && !jsonEqual(before.assetRefs, after.assetRefs)) {
+      assetChangedNodeIds.add(id);
+    }
+  }
+  if (changedAssetIds.size > 0) {
+    input.after.forEachNodeReference((node) => {
+      if (Object.values(node.assetRefs ?? {}).some((ref) => changedAssetIds.has(ref.assetId))) {
+        assetChangedNodeIds.add(node.id);
+      }
+    });
+  }
+
+  return {
+    transactionId: input.transactionId,
+    revision: input.revision,
+    ...(input.label ? { label: input.label } : {}),
+    origin: input.origin,
+    addedNodeIds: [],
+    updatedNodeIds,
+    removedNodeIds: [],
+    assetChangedNodeIds: [...assetChangedNodeIds].sort(
+      (left, right) =>
+        (input.after.getNodeIndex(left) ?? Number.POSITIVE_INFINITY) -
+        (input.after.getNodeIndex(right) ?? Number.POSITIVE_INFINITY),
+    ),
     selectionChanged: input.selectionChanged,
     viewportChanged: input.viewportChanged,
     timestamp: input.timestamp,

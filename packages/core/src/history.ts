@@ -1,4 +1,3 @@
-import { cloneValue } from "./json";
 import type { DataPatch } from "./patches";
 import type { BoardChangeSet, ChangeOrigin } from "./types";
 
@@ -68,7 +67,7 @@ export class HistoryController {
   }
 
   [recordHistory](entry: HistoryEntry): void {
-    this.undoStack.push(cloneValue(entry));
+    this.undoStack.push(entry);
     this.redoStack = [];
     this.emit();
   }
