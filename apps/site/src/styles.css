@@ -58,6 +58,115 @@ body {
   z-index: 5;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Media badges sit under the selection outlines so a selected media node still
+   shows its accent frame on top. */
+.media-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  overflow: hidden;
+}
+
+.media-badge {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(10, 13, 18, 0.82);
+  border: 1px solid var(--border-strong);
+  color: var(--text-1);
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  backdrop-filter: blur(4px);
+}
+
+.media-badge .media-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-badge.pending {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.drop-hint {
+  position: absolute;
+  inset: 16px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--accent-strong);
+  border-radius: 16px;
+  background: rgba(124, 140, 248, 0.1);
+  color: var(--accent-strong);
+  font-size: 16px;
+  font-weight: 600;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+}
+
+/* `display: flex` above outranks the UA stylesheet's rule for [hidden], so the
+   attribute has to be honoured explicitly or the hint never goes away. */
+.drop-hint[hidden] {
+  display: none;
+}
+
+.toast-host {
+  position: absolute;
+  bottom: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: rgba(16, 21, 28, 0.95);
+  color: var(--text-0);
+  font-size: 13px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
+  max-width: min(560px, calc(100vw - 40px));
+}
+
+.toast.error {
+  border-color: #f16c8c;
+  color: #ffc7d3;
+}
+
+.toast.success {
+  border-color: var(--good);
+  color: #c9f7de;
+}
+
 /* Selection outlines live in a DOM overlay rather than the Pixi scene so the
    demo does not need renderer-private APIs to draw them. */
 .selection-overlay {

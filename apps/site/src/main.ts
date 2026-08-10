@@ -6,8 +6,16 @@ import {
   type PixiBoard,
   type RuntimeRenderer,
 } from "pixiboardjs";
-import { NodeTypeRegistry } from "@pixi-board/core";
-import { createPixiApplicationFactory, PixiBoardRenderer } from "@pixi-board/renderer-pixi";
+import { NodeTypeRegistry, type AssetRef } from "@pixi-board/core";
+import { createPixiApplicationFactory, loadPixiRuntime, PixiBoardRenderer } from "@pixi-board/renderer-pixi";
+import {
+  classifyMedia,
+  MediaLibrary,
+  UnsupportedMediaError,
+  type AssetVariant,
+  type MediaImport,
+  type MediaKind,
+} from "./media";
 
 const host = document.querySelector<HTMLDivElement>("#board-host")!;
 const hudNodes = document.querySelector<HTMLSpanElement>("#hud-nodes")!;
@@ -20,8 +28,13 @@ const selectionOverlay = document.querySelector<HTMLDivElement>("#selection-over
 const infoPanel = document.querySelector<HTMLDivElement>("#info-panel")!;
 const infoToggle = document.querySelector<HTMLButtonElement>("#info-toggle")!;
 const infoClose = document.querySelector<HTMLButtonElement>("#info-close")!;
+const mediaInput = document.querySelector<HTMLInputElement>("#media-input")!;
+const mediaOverlay = document.querySelector<HTMLDivElement>("#media-overlay")!;
+const dropHint = document.querySelector<HTMLDivElement>("#drop-hint")!;
+const toastHost = document.querySelector<HTMLDivElement>("#toast-host")!;
 
 let activeBoard: PixiBoard | undefined;
+const mediaLibrary = new MediaLibrary();
 
 type StageLike = {
   scale: { set(x: number, y: number): void };
@@ -59,6 +72,32 @@ const textTypeDefinition: CustomNodeDefinition<TextProps> = {
     return { minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height };
   },
 };
+
+type MediaProps = { name: string; mimeType: string; size: number };
+
+/**
+ * The Pixi renderer already ships image/video/audio renderers that resolve
+ * `assetRefs`; core ships no node types at all, so the host declares the data
+ * side of those three types here.
+ */
+function mediaTypeDefinition(type: MediaKind): CustomNodeDefinition<MediaProps> {
+  return {
+    type,
+    version: 1,
+    defaults: { name: "", mimeType: "", size: 0 },
+    validate(value): MediaProps {
+      const candidate = (value ?? {}) as Partial<MediaProps>;
+      return {
+        name: typeof candidate.name === "string" ? candidate.name : "",
+        mimeType: typeof candidate.mimeType === "string" ? candidate.mimeType : "",
+        size: typeof candidate.size === "number" ? candidate.size : 0,
+      };
+    },
+    getBounds(node) {
+      return { minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height };
+    },
+  };
+}
 
 type TaskCardProps = { title: string; status: "todo" | "doing" | "done" };
 
@@ -164,10 +203,22 @@ async function main(): Promise<void> {
   const nodeTypes = new NodeTypeRegistry();
   nodeTypes.register(rectTypeDefinition);
   nodeTypes.register(textTypeDefinition);
+  nodeTypes.register(mediaTypeDefinition("image"));
+  nodeTypes.register(mediaTypeDefinition("video"));
+  nodeTypes.register(mediaTypeDefinition("audio"));
+
+  // A previously persisted board wins over the seeded scene so uploads survive
+  // a reload; a corrupt record must not brick the demo.
+  let restored: Awaited<ReturnType<MediaLibrary["loadDocument"]>>;
+  try {
+    restored = await mediaLibrary.loadDocument();
+  } catch (error) {
+    console.warn("Failed to restore the persisted document", error);
+  }
 
   const board = await createPixiBoard({
     container: host,
-    document: seededDocument(),
+    document: restored ?? seededDocument(),
     core: { nodeTypes },
     interactions: { pointer: true, keyboard: true },
     ports: {
@@ -183,6 +234,7 @@ async function main(): Promise<void> {
           application = app as never;
           return app;
         },
+        acquireTexture: (ref: AssetRef) => acquireMediaTexture(ref),
       } as ConstructorParameters<typeof PixiBoardRenderer>[0]) as unknown as RuntimeRenderer,
   });
   await board.ready;
@@ -196,12 +248,67 @@ async function main(): Promise<void> {
   wirePointerInteractions(board);
   wireInfoPanel();
   wireHud(board);
+  wireMediaUpload(board);
+  wireMediaBadges(board);
+  wirePersistence(board);
 
   window.addEventListener("resize", () => {
     board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
   });
 
   board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
+}
+
+/**
+ * Turns a document asset reference into a live Pixi texture. The renderer's
+ * builtin media renderers call this; without it an image node resolves to an
+ * empty sprite.
+ */
+async function acquireMediaTexture(ref: AssetRef): Promise<{ texture?: unknown; release?: () => void }> {
+  // The reference carries its own variant, so no node lookup is needed. That
+  // matters on restore: the first render pass runs before the board handle is
+  // published, and guessing the variant there would hand a video's raw bytes
+  // to the image decoder.
+  const variant = (ref.variant ?? "original") as AssetVariant;
+  const cacheKey = `${ref.assetId}:${variant}`;
+  const cached = textureCache.get(cacheKey);
+  if (cached) return { texture: cached };
+
+  const url = await mediaLibrary.objectUrl(ref.assetId, variant);
+  if (!url) return {};
+
+  try {
+    // Decode to a bitmap first: Texture.from on a bare URL returns before the
+    // pixels have loaded, which yields an empty sprite on first paint.
+    const pixi = await loadPixiRuntime();
+    const source = await decodeToBitmap(url);
+    const texture = pixi.Texture?.from(source);
+    if (texture === undefined) return {};
+    textureCache.set(cacheKey, texture);
+    return { texture };
+  } catch (error) {
+    // One unreadable asset must degrade to a placeholder node, never reject the
+    // render pass and take the whole board down with it.
+    console.warn(`Failed to decode asset ${ref.assetId} (${variant})`, error);
+    return {};
+  }
+}
+
+/** One GPU texture per asset variant; released wholesale when storage clears. */
+const textureCache = new Map<string, unknown>();
+
+async function decodeToBitmap(url: string): Promise<ImageBitmap | HTMLImageElement> {
+  const image = new Image();
+  image.src = url;
+  await image.decode();
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await createImageBitmap(image);
+    } catch {
+      // Fall back to the decoded element itself.
+    }
+  }
+  return image;
 }
 
 // The renderer keeps node positions in raw world/document units on an
@@ -367,10 +474,215 @@ function wireToolbar(board: PixiBoard): void {
       case "export":
         exportDocument(board);
         break;
+      case "upload":
+        mediaInput.click();
+        break;
+      case "clear-storage":
+        void clearStorage(board);
+        break;
       default:
         break;
     }
   });
+}
+
+function wireMediaUpload(board: PixiBoard): void {
+  mediaInput.addEventListener("change", () => {
+    const files = [...(mediaInput.files ?? [])];
+    // Reset first so re-picking the same file still fires a change event.
+    mediaInput.value = "";
+    if (files.length) void importFiles(board, files, freeSpaceAnchor(board));
+  });
+
+  // Only a drag that actually carries files should arm the drop affordance;
+  // dragging a node inside the canvas must not flash the hint.
+  let dragDepth = 0;
+  const carriesFiles = (event: DragEvent) => [...(event.dataTransfer?.types ?? [])].includes("Files");
+
+  host.addEventListener("dragenter", (event) => {
+    if (!carriesFiles(event)) return;
+    event.preventDefault();
+    dragDepth += 1;
+    dropHint.hidden = false;
+  });
+  host.addEventListener("dragover", (event) => {
+    if (!carriesFiles(event)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+  });
+  host.addEventListener("dragleave", (event) => {
+    if (!carriesFiles(event)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) dropHint.hidden = true;
+  });
+  host.addEventListener("drop", (event) => {
+    if (!carriesFiles(event)) return;
+    event.preventDefault();
+    dragDepth = 0;
+    dropHint.hidden = true;
+    const files = [...(event.dataTransfer?.files ?? [])];
+    if (!files.length) return;
+    // Drop at the pointer, so files land where the user aimed them.
+    void importFiles(board, files, board.viewport.toWorld(toHostPoint(event)));
+  });
+}
+
+/**
+ * Imports each file, laying the resulting nodes out in a row that grows into a
+ * grid, anchored on the requested world point. Nodes are created one at a time
+ * so a single bad file cannot abort the whole batch.
+ */
+async function importFiles(board: PixiBoard, files: File[], anchor: { x: number; y: number }): Promise<void> {
+  const supported = files.filter((file) => classifyMedia(file) !== undefined);
+  const rejected = files.filter((file) => classifyMedia(file) === undefined);
+  for (const file of rejected) {
+    showToast(`不支持的文件类型：${file.name || file.type || "未知文件"}`, "error");
+  }
+  if (!supported.length) return;
+
+  showToast(`正在处理 ${supported.length} 个文件…`);
+  const created: MediaImport[] = [];
+  let cursor = { x: anchor.x, y: anchor.y };
+  let rowHeight = 0;
+  let rowWidth = 0;
+
+  for (const file of supported) {
+    try {
+      const media = await mediaLibrary.importFile(file);
+      // Wrap the row once it grows past a comfortable width so a large batch
+      // does not stretch off into empty space.
+      if (rowWidth > 0 && rowWidth + media.width > 720) {
+        cursor = { x: anchor.x, y: cursor.y + rowHeight + 16 };
+        rowWidth = 0;
+        rowHeight = 0;
+      }
+      await board.nodes.create<MediaProps>({
+        type: media.kind,
+        x: cursor.x + rowWidth,
+        y: cursor.y,
+        width: media.width,
+        height: media.height,
+        assetRefs: mediaAssetRefs(media),
+        props: { name: media.name, mimeType: media.mimeType, size: media.size },
+      });
+      rowWidth += media.width + 16;
+      rowHeight = Math.max(rowHeight, media.height);
+      created.push(media);
+    } catch (error) {
+      const message = error instanceof UnsupportedMediaError
+        ? error.message
+        : `${file.name} 处理失败：${error instanceof Error ? error.message : String(error)}`;
+      showToast(message, "error");
+    }
+  }
+
+  if (created.length) {
+    showToast(`已添加 ${created.length} 个媒体节点`, "success");
+    renderMediaBadges(board);
+    // New media may land outside the current view; bring it into frame so the
+    // upload visibly did something.
+    board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
+    void persist(board);
+  }
+}
+
+/**
+ * Points the reference at the variant each builtin renderer looks for: video
+ * resolves a poster, audio a waveform, image its original bytes.
+ */
+function mediaAssetRefs(media: MediaImport): Record<string, AssetRef> {
+  if (media.kind === "video") return { poster: { assetId: media.assetId, variant: "preview" } };
+  if (media.kind === "audio") return { waveform: { assetId: media.assetId, variant: "waveform" } };
+  return { primary: { assetId: media.assetId, variant: "original" } };
+}
+
+/**
+ * Where a toolbar upload should land. Dropping aims at the pointer, but the
+ * button has no pointer to aim with, so new media is stacked under the existing
+ * content instead of on top of it.
+ */
+function freeSpaceAnchor(board: PixiBoard): { x: number; y: number } {
+  const bounds = computeContentBounds(board);
+  return { x: bounds.minX, y: bounds.maxY + 48 };
+}
+
+/** Labels each media node with its kind and file name. */
+function wireMediaBadges(board: PixiBoard): void {
+  const redraw = () => renderMediaBadges(board);
+  board.on("change", redraw);
+  board.on("viewport:change", redraw);
+  redraw();
+}
+
+const KIND_ICON: Record<MediaKind, string> = { image: "🖼", video: "🎬", audio: "🎵" };
+
+function isMediaKind(type: string): type is MediaKind {
+  return type === "image" || type === "video" || type === "audio";
+}
+
+function renderMediaBadges(board: PixiBoard): void {
+  mediaOverlay.replaceChildren();
+  for (const node of board.find()) {
+    if (!isMediaKind(node.type)) continue;
+    const props = node.props as Partial<MediaProps>;
+    const bottomLeft = board.viewport.toScreen({ x: node.x, y: node.y + node.height });
+    const badge = document.createElement("div");
+    badge.className = "media-badge";
+    badge.style.left = `${bottomLeft.x}px`;
+    badge.style.top = `${bottomLeft.y + 6}px`;
+    const icon = document.createElement("span");
+    icon.textContent = KIND_ICON[node.type];
+    const name = document.createElement("span");
+    name.className = "media-name";
+    name.textContent = typeof props.name === "string" && props.name ? props.name : node.type;
+    badge.append(icon, name);
+    mediaOverlay.appendChild(badge);
+  }
+}
+
+/**
+ * Persists the document after changes settle. Writes are debounced and
+ * serialized so a drag does not queue one IndexedDB write per frame.
+ */
+function wirePersistence(board: PixiBoard): void {
+  let timer: number | undefined;
+  board.on("change", () => {
+    if (timer !== undefined) window.clearTimeout(timer);
+    timer = window.setTimeout(() => void persist(board), 400);
+  });
+  window.addEventListener("pagehide", () => void persist(board));
+}
+
+let persistQueue = Promise.resolve();
+
+function persist(board: PixiBoard): Promise<void> {
+  persistQueue = persistQueue
+    .then(() => mediaLibrary.saveDocument(board.document.toJSON()))
+    .catch((error) => {
+      console.warn("Failed to persist the document", error);
+    });
+  return persistQueue;
+}
+
+async function clearStorage(board: PixiBoard): Promise<void> {
+  try {
+    await mediaLibrary.clear();
+    textureCache.clear();
+    await board.document.load(seededDocument());
+    board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
+    renderMediaBadges(board);
+    showToast("已清空浏览器中保存的媒体与文档", "success");
+  } catch (error) {
+    showToast(`清空失败：${error instanceof Error ? error.message : String(error)}`, "error");
+  }
+}
+
+function showToast(message: string, tone: "info" | "error" | "success" = "info"): void {
+  const toast = document.createElement("div");
+  toast.className = tone === "info" ? "toast" : `toast ${tone}`;
+  toast.textContent = message;
+  toastHost.appendChild(toast);
+  window.setTimeout(() => toast.remove(), tone === "error" ? 6000 : 2600);
 }
 
 function exportDocument(board: PixiBoard): void {

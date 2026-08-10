@@ -19,7 +19,7 @@ importers:
         version: 1.62.1
       tsup:
         specifier: ^8.5.0
-        version: 8.5.1(@microsoft/api-extractor@7.58.12)(postcss@8.5.26)(typescript@5.9.3)
+        version: 8.5.1(@microsoft/api-extractor@7.58.12(@types/node@12.20.55))(postcss@8.5.26)(typescript@5.9.3)
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
@@ -109,6 +109,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/pixiboardjs
     devDependencies:
+      '@pixi-board/adapter-browser':
+        specifier: workspace:*
+        version: link:../../packages/adapter-browser
       '@pixi-board/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -188,7 +191,7 @@ importers:
     devDependencies:
       tsup:
         specifier: ^8.5.0
-        version: 8.5.1(@microsoft/api-extractor@7.58.12)(postcss@8.5.26)(typescript@5.9.3)
+        version: 8.5.1(@microsoft/api-extractor@7.58.12(@types/node@12.20.55))(postcss@8.5.26)(typescript@5.9.3)
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
@@ -263,7 +266,7 @@ importers:
     devDependencies:
       tsup:
         specifier: ^8.5.0
-        version: 8.5.1(@microsoft/api-extractor@7.58.12)(postcss@8.5.26)(typescript@5.9.3)
+        version: 8.5.1(@microsoft/api-extractor@7.58.12(@types/node@12.20.55))(postcss@8.5.26)(typescript@5.9.3)
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
@@ -2929,7 +2932,7 @@ snapshots:
 
   ts-interface-checker@0.1.13: {}
 
-  tsup@8.5.1(@microsoft/api-extractor@7.58.12)(postcss@8.5.26)(typescript@5.9.3):
+  tsup@8.5.1(@microsoft/api-extractor@7.58.12(@types/node@12.20.55))(postcss@8.5.26)(typescript@5.9.3):
     dependencies:
       bundle-require: 5.1.0(esbuild@0.27.7)
       cac: 6.7.14
