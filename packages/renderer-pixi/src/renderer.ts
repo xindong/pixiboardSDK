@@ -40,6 +40,7 @@ export class PixiBoardRenderer {
   private destroyed = false;
   private desynchronized = false;
   private viewFactory?: PixiViewFactory;
+  private frameScheduled = false;
 
   constructor(options: PixiBoardRendererOptions) {
     this.options = options;
@@ -52,7 +53,10 @@ export class PixiBoardRenderer {
     if (this.destroyed) throw new Error("Renderer has been destroyed");
     const applicationFactory = this.options.applicationFactory ?? createPixiApplicationFactory();
     this.app = await applicationFactory();
-    await this.app.init?.({ preference: "webgl", antialias: false, powerPreference: "high-performance", ...this.app.initOptions });
+    // autoStart: false is the on-demand-rendering default (see requestFrame);
+    // a custom applicationFactory that bypasses pixi-adapter.ts still gets it
+    // unless its own initOptions explicitly overrides it.
+    await this.app.init?.({ preference: "webgl", antialias: false, powerPreference: "high-performance", autoStart: false, sharedTicker: false, ...this.app.initOptions });
     const pixi = this.options.viewFactory ? undefined : await loadPixiRuntime();
     this.viewFactory = this.options.viewFactory ?? createPixiViewFactory(pixi!);
     this.world = this.viewFactory.createContainer();
@@ -70,6 +74,7 @@ export class PixiBoardRenderer {
       for (const id of new Set([...this.entries.keys(), ...this.operations.keys()])) await this.destroyView(id);
       await this.reconcileActiveSet(++this.viewportEpoch);
       this.desynchronized = false;
+      this.requestFrame();
     } catch (error) {
       this.desynchronized = true;
       throw error;
@@ -123,6 +128,7 @@ export class PixiBoardRenderer {
         await this.ensureView(node, assetChangedIds.has(id));
       }
       this.revision = update.revision;
+      this.requestFrame();
       return "applied";
     } catch (error) {
       this.desynchronized = true;
@@ -136,6 +142,7 @@ export class PixiBoardRenderer {
     this.refreshDesiredIds();
     const epoch = ++this.viewportEpoch;
     await this.reconcileActiveSet(epoch);
+    this.requestFrame();
   }
 
   setCullingQuery(query: CullingQuery | undefined): void { this.options.cullingQuery = query; }
@@ -146,6 +153,7 @@ export class PixiBoardRenderer {
     this.refreshDesiredIds();
     for (const id of new Set([...this.entries.keys(), ...this.operations.keys()])) await this.destroyView(id);
     await this.reconcileActiveSet(++this.viewportEpoch);
+    this.requestFrame();
   }
 
   getBounds(node: Readonly<BoardNode>): WorldBounds {
@@ -378,11 +386,47 @@ export class PixiBoardRenderer {
       signal,
       assets: { acquireTexture: (ref, options) => this.acquireTexture(scope, signal, ref, options) },
       resources: scope.api,
-      invalidate: () => this.options.onInvalidate?.(),
+      invalidate: () => {
+        this.options.onInvalidate?.();
+        this.requestFrame();
+      },
       lod: {},
       diagnostics: this.diagnostics,
       display: this.viewFactory,
     };
+  }
+
+  /**
+   * Renders exactly once per idle scene change instead of relying on Pixi's
+   * default continuous ticker (which redraws every display frame forever,
+   * regardless of whether anything changed). Calls within the same
+   * microtask are coalesced into a single render. Skipped while a custom
+   * node renderer's own ticker subscription is active — see
+   * syncTickerState — because in that case Pixi's own ticker is already
+   * driving continuous frames for that animation.
+   */
+  private requestFrame(): void {
+    if (this.destroyed || !this.app || this.diagnostics.tickers > 0 || this.frameScheduled) return;
+    this.frameScheduled = true;
+    void Promise.resolve().then(() => {
+      this.frameScheduled = false;
+      if (this.destroyed || !this.app || this.diagnostics.tickers > 0) return;
+      this.app.render?.();
+    });
+  }
+
+  /**
+   * A custom node renderer that subscribes via context.resources.addTicker
+   * wants continuous per-frame callbacks (e.g. an animated node) — that is
+   * the "registered animation active" case the on-demand-rendering
+   * invariant carves out, so Pixi's own ticker must run continuously for as
+   * long as at least one such subscription is active, and fall back to
+   * on-demand rendering once the last one is removed.
+   */
+  private syncTickerState(): void {
+    if (this.destroyed || !this.app) return;
+    if (this.diagnostics.tickers > 0) this.app.ticker?.start?.();
+    else this.app.ticker?.stop?.();
   }
 
   private async acquireTexture(scope: ResourceScope, signal: AbortSignal, ref: AssetRef, options?: Record<string, unknown>): Promise<TextureLease> {
@@ -434,9 +478,11 @@ class ResourceScope {
         const ticker = (this.owner as any).app?.ticker;
         ticker?.add?.(listener);
         this.owner.diagnostics.tickers++;
+        (this.owner as any).syncTickerState();
         return this.add(() => {
           ticker?.remove?.(listener);
           this.owner.diagnostics.tickers--;
+          (this.owner as any).syncTickerState();
         });
       },
     };

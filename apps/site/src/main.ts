@@ -191,7 +191,7 @@ function node(
 }
 
 async function main(): Promise<void> {
-  let application: { canvas: HTMLCanvasElement; stage: StageLike } | undefined;
+  let application: { canvas: HTMLCanvasElement; stage: StageLike; render?(): void } | undefined;
   const applicationFactory = createPixiApplicationFactory({
     resizeTo: host,
     antialias: true,
@@ -320,12 +320,21 @@ async function decodeToBitmap(url: string): Promise<ImageBitmap | HTMLImageEleme
 // The renderer keeps node positions in raw world/document units on an
 // untransformed Pixi container; the SDK's viewport (scale/offset) is state
 // the host application is responsible for projecting onto the real stage.
-function wireStageTransform(board: PixiBoard, application: { stage: StageLike } | undefined): void {
+function wireStageTransform(
+  board: PixiBoard,
+  application: { stage: StageLike; render?(): void } | undefined,
+): void {
   if (!application) return;
   const apply = () => {
     const viewport = board.viewport.get();
     application.stage.scale.set(viewport.scale, viewport.scale);
     application.stage.position.set(viewport.offset.x, viewport.offset.y);
+    // The renderer only renders on demand when it drives a document change
+    // (see PixiBoardRenderer.requestFrame); this stage transform is applied
+    // directly by the host and bypasses that path entirely, so pan/zoom must
+    // request its own frame or the canvas would freeze on the last document
+    // render until something else invalidates it.
+    application.render?.();
   };
   board.on("viewport:change", apply);
   apply();

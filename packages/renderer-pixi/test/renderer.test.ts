@@ -8,7 +8,7 @@ const doc = (nodes: BoardNode[], revision = 0): BoardDocument => ({ schemaVersio
 const update = (changedNodes: BoardNode[], revision: number) => ({ revision, changedNodes });
 function fake() {
   const stage: any = { children: [], addChild(child: any) { this.children.push(child); }, removeChild(child: any) { this.children = this.children.filter((x: any) => x !== child); } };
-  const app: any = { stage, init: vi.fn(async () => {}), destroy: vi.fn() };
+  const app: any = { stage, init: vi.fn(async () => {}), destroy: vi.fn(), render: vi.fn(), ticker: { add: vi.fn(), remove: vi.fn(), start: vi.fn(), stop: vi.fn() } };
   const factory: any = { createContainer: () => ({ children: [], addChild(child: any) { this.children.push(child); }, removeChild(child: any) { this.children = this.children.filter((x: any) => x !== child); }, destroy: vi.fn() }), createRect: () => ({ destroy: vi.fn() }), createText: (text: string) => ({ text, destroy: vi.fn() }) };
   return { app, factory };
 }
@@ -52,7 +52,9 @@ describe("renderer-pixi vertical slice", () => {
     expect(typeof factory).toBe("function");
     return factory().then((created) => {
       expect(created).toBeInstanceOf(FakeApplication);
-      expect(created.initOptions).toEqual(initOptions);
+      // autoStart/sharedTicker default to false (on-demand rendering); the
+      // caller's own initOptions still win if it sets them explicitly.
+      expect(created.initOptions).toEqual({ ...initOptions, autoStart: false, sharedTicker: false });
       expect(typeof created.init).toBe("function");
       created.init?.({ probe: true });
       expect((created.init as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith({ probe: true });
@@ -259,7 +261,7 @@ describe("renderer-pixi vertical slice", () => {
     expect(releases).toContain("new");
   });
   it("returns managed listener, ticker, view, and texture counts to baseline", async () => {
-    const { app, factory } = fake(); const listeners = new Set<EventListenerOrEventListenerObject>(); const target = { addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => listeners.add(listener), removeEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => listeners.delete(listener) }; const tickers = new Set<(...args: unknown[]) => void>(); app.ticker = { add: (listener: (...args: unknown[]) => void) => tickers.add(listener), remove: (listener: (...args: unknown[]) => void) => tickers.delete(listener) };
+    const { app, factory } = fake(); const listeners = new Set<EventListenerOrEventListenerObject>(); const target = { addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => listeners.add(listener), removeEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => listeners.delete(listener) }; const tickers = new Set<(...args: unknown[]) => void>(); app.ticker = { add: (listener: (...args: unknown[]) => void) => tickers.add(listener), remove: (listener: (...args: unknown[]) => void) => tickers.delete(listener), start: vi.fn(), stop: vi.fn() };
     const registry = new NodeRendererRegistry(); registry.register("managed", { create: (_item, context) => { context.resources.listen(target, "change", () => {}); context.resources.addTicker(() => {}); return { displayObject: factory.createContainer(), state: {} }; }, update: () => {}, destroy: () => {} });
     const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, registry, acquireTexture: async () => ({ texture: {}, release: vi.fn() }) }); await renderer.init();
     await renderer.rebuild(doc([node("managed", "managed"), { ...node("image", "image"), assetRefs: { primary: { assetId: "image" } } }], 1));
@@ -267,5 +269,91 @@ describe("renderer-pixi vertical slice", () => {
     await renderer.destroy();
     expect(renderer.diagnostics).toMatchObject({ activeViews: 0, pendingOperations: 0, listeners: 0, tickers: 0, textureLeases: 0 });
     expect(listeners.size).toBe(0); expect(tickers.size).toBe(0);
+  });
+  describe("on-demand rendering", () => {
+    it("does not render during init, and starts the Pixi ticker stopped by default", async () => {
+      const { app, factory } = fake();
+      const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory });
+      await renderer.init();
+      expect(app.render).not.toHaveBeenCalled();
+      expect(app.init).toHaveBeenCalledWith(expect.objectContaining({ autoStart: false, sharedTicker: false }));
+      await renderer.destroy();
+    });
+    it("renders exactly once per rebuild, apply, and setVisibleBounds call", async () => {
+      const { app, factory } = fake();
+      const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory });
+      await renderer.init();
+
+      await renderer.rebuild(doc([node("a"), node("b", "rect", 100)], 1));
+      await vi.waitFor(() => expect(app.render).toHaveBeenCalledTimes(1));
+
+      await renderer.apply(update([{ ...node("a", "rect", 5) }], 2), { revision: 2, transactionId: "t", origin: "api", addedNodeIds: [], updatedNodeIds: ["a"], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 });
+      await vi.waitFor(() => expect(app.render).toHaveBeenCalledTimes(2));
+
+      await renderer.setVisibleBounds({ minX: 0, minY: 0, maxX: 20, maxY: 20 });
+      await vi.waitFor(() => expect(app.render).toHaveBeenCalledTimes(3));
+
+      await renderer.destroy();
+    });
+    it("coalesces multiple invalidations within the same microtask into one render", async () => {
+      const { app, factory } = fake();
+      const registry = new NodeRendererRegistry();
+      let invalidate: (() => void) | undefined;
+      registry.register("manual", { create: (_item, context) => { invalidate = context.invalidate; return { displayObject: factory.createContainer(), state: {} }; }, update: () => {}, destroy: () => {} });
+      const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, registry });
+      await renderer.init();
+      await renderer.rebuild(doc([node("a", "manual")], 1));
+      await vi.waitFor(() => expect(app.render).toHaveBeenCalledTimes(1));
+      app.render.mockClear();
+
+      // Two synchronous invalidations in the same tick, before the
+      // microtask-scheduled render has a chance to flush, must still only
+      // paint once.
+      invalidate?.();
+      invalidate?.();
+      await vi.waitFor(() => expect(app.render).toHaveBeenCalledTimes(1));
+      await renderer.destroy();
+    });
+    it("keeps the Pixi ticker running while a custom node renderer holds a ticker subscription, and stops it once released", async () => {
+      const { app, factory } = fake();
+      const registry = new NodeRendererRegistry();
+      let release: (() => void) | undefined;
+      registry.register("animated", { create: (_item, context) => { release = context.resources.addTicker(() => {}); return { displayObject: factory.createContainer(), state: {} }; }, update: () => {}, destroy: () => {} });
+      const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, registry });
+      await renderer.init();
+
+      await renderer.rebuild(doc([node("a", "animated")], 1));
+      expect(app.ticker.start).toHaveBeenCalledTimes(1);
+      expect(app.ticker.stop).not.toHaveBeenCalled();
+
+      // While a ticker subscription is active, apply/rebuild must not fall
+      // back to a single on-demand app.render() call — Pixi's own ticker is
+      // already driving continuous frames for the animation.
+      app.render.mockClear();
+      await renderer.apply(update([{ ...node("a", "animated", 5) }], 2), { revision: 2, transactionId: "t", origin: "api", addedNodeIds: [], updatedNodeIds: ["a"], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(app.render).not.toHaveBeenCalled();
+
+      release?.();
+      expect(app.ticker.stop).toHaveBeenCalledTimes(1);
+      await renderer.destroy();
+    });
+    it("requests a frame when a custom node renderer calls context.invalidate()", async () => {
+      const { app, factory } = fake();
+      const registry = new NodeRendererRegistry();
+      let invalidate: (() => void) | undefined;
+      registry.register("manual", { create: (_item, context) => { invalidate = context.invalidate; return { displayObject: factory.createContainer(), state: {} }; }, update: () => {}, destroy: () => {} });
+      const onInvalidate = vi.fn();
+      const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, registry, onInvalidate });
+      await renderer.init();
+      await renderer.rebuild(doc([node("a", "manual")], 1));
+      await vi.waitFor(() => expect(app.render).toHaveBeenCalledTimes(1));
+      app.render.mockClear();
+
+      invalidate?.();
+      expect(onInvalidate).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(app.render).toHaveBeenCalledTimes(1));
+      await renderer.destroy();
+    });
   });
 });

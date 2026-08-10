@@ -12,7 +12,12 @@ export function createPixiApplicationFactory(options: Record<string, unknown> = 
     const pixi = await runtimeLoader();
     const app = new pixi.Application() as any;
     Object.defineProperty(app, "initOptions", {
-      value: { ...options },
+      // Pixi's TickerPlugin defaults to autoStart: true, which renders every
+      // display frame forever regardless of whether the scene changed. The
+      // renderer drives its own on-demand render loop (see
+      // PixiBoardRenderer.requestFrame), so the ticker must start stopped;
+      // callers can still opt back into continuous rendering explicitly.
+      value: { autoStart: false, sharedTicker: false, ...options },
       configurable: true,
     });
     return app;
