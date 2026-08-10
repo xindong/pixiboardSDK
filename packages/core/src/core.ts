@@ -11,7 +11,7 @@ import {
   HistoryController,
   type HistoryEntry,
 } from "./history";
-import { cloneValue, immutableClone, jsonEqual } from "./json";
+import { cloneValue, deepFreeze, immutableClone, jsonEqual } from "./json";
 import { NodeTypeRegistry } from "./node-type-registry";
 import { applyDataPatches, type DataPatch } from "./patches";
 import { SelectionController, type SelectionChangeEvent } from "./selection";
@@ -485,6 +485,10 @@ export class BoardNodesController {
     }
     if (limit < 0) throw new RangeError("Node list limit must not be negative");
 
+    // listNodes() already returns a fresh deep clone per node, so freezing it
+    // in place is sufficient — cloning again here would double the per-call
+    // cost, which matters because list()/find() runs on hot paths like every
+    // drag-frame "change" event.
     const result = getCoreInternals(this.core).currentStore().listNodes().filter((node) => {
       if (idFilter && !idFilter.has(node.id)) return false;
       if (typeFilter && !typeFilter.has(node.type)) return false;
@@ -494,7 +498,7 @@ export class BoardNodesController {
       if (filter.selected !== undefined && selected.has(node.id) !== filter.selected) return false;
       return true;
     });
-    return immutableClone(result.slice(0, limit));
+    return deepFreeze(result.slice(0, limit));
   }
 }
 

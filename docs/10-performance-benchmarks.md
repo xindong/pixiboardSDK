@@ -164,7 +164,7 @@ revision: number
 | core single-node update | 65.8196 | 1040.1944 | 3410.7470 | 7852.4993 |
 | core batch update 1000 | 188.6862 | 889.2466 | 8750.7738 | 10467.9096 |
 
-这些结果显示当前 core 的单节点和 batch 目标（分别 `<2ms`、`<50ms`）均未达标；报告保留了真实失败值，没有调整目标或伪造 browser 结果。culling 的 active views 均等于选出的 visible set，且未创建全量 100k views。
+> **这份表格已过期**：其数据实际是在 `20377da`（"perf(core): share document state across transactions"）落地之前采集的——该 benchmark JSON 由 commit `7062142` 在 17:03:54 写入，perf 修复在同一天 17:12:43 才提交。下方「2026-08-10 重新验收」小节是修复后加上本次 core/site 改动之后的重跑结果，请以其为准。
 
 以下指标明确为 `not-observed`：browser/WebGL frame p50/p95/p99 与 long-frame ratio、GPU memory、draw calls/batches、idle CPU/GPU、1080p capture、受控 JS heap 回归和 Konva 对照。它们必须在固定 Chromium/WebGL 设备上由后续 nightly/release-candidate job 测量。
 
@@ -174,6 +174,24 @@ revision: number
 pnpm benchmark:run
 pnpm benchmark:test
 ```
+
+## 2026-08-10 重新验收
+
+`pnpm benchmark:run` 重跑（同一 Node harness、seed `42`，环境同上）。完整摘要见 [`docs/benchmarks/2026-08-10-node-instrumented-summary.json`](benchmarks/2026-08-10-node-instrumented-summary.json)：
+
+| 场景 | 1k | 10k | 50k | 100k |
+|---|---:|---:|---:|---:|
+| document load | 13.3114 | 140.1270 | 699.7779 | 1300.5174 |
+| spatial rebuild | 0.4849 | 4.2438 | 23.6183 | 56.3699 |
+| spatial query | 0.3302 | 0.2072 | 0.1360 | 0.1434 |
+| renderer culling/first interactive（instrumented） | 3.6363 | 16.5348 | 80.6363 | 202.4414 |
+| renderer single-node apply | 0.0256 | 0.1188 | 0.0704 | 0.0473 |
+| core single-node update | 0.1058 | 0.0272 | 0.0299 | 0.0214 |
+| core batch update 1000 | 22.9394 | 19.3112 | 19.8805 | 20.2671 |
+
+`core single-node update`（目标 `<2ms`）与 `core batch update 1000`（目标 `<50ms`）在全部数据规模下均达标，且 batch update 不再随文档总节点数增长——`20377da` 让 transaction draft 共享底层 `Map` 而非整份 clone 后，per-node 的 store 写入不再退化为整份文档结构复制。
+
+此外本轮还修了 `BoardNodesController.list()`（`packages/core/src/core.ts`，对外即 `board.find()`）里的一处遗留问题：结果在 `RuntimeDocumentStore.listNodes()` 内部已经 `structuredClone` 过一次，返回后又被 `immutableClone()` 整体 clone 了第二次；改为仅对已 clone 的结果做 `deepFreeze`。demo 站点（`apps/site/src/main.ts`）的 `wireHud`/`wireMediaBadges` 之前会在每一次 `"change"` 事件（包括拖拽时每帧触发一次的 transaction）上无条件调用 `board.find()`，对整份文档做两次深拷贝；已改为从 `changeSet` 的 added/updated/removed id 增量维护本地状态，不再随文档规模重新拷贝全部节点。本地 micro-benchmark（100k 节点，`node dist/index.js`）显示 `nodes.list()` 单次调用耗时从约 262ms 降到约 109ms。
 
 ## 2026-08-07 Chromium / Konva 对照（evidence-only）
 

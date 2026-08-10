@@ -244,18 +244,24 @@ async function main(): Promise<void> {
   activeBoard = board;
   wireStageTransform(board, application);
   wireSelectionOverlay(board);
-  wireToolbar(board);
   wirePointerInteractions(board);
   wireInfoPanel();
   wireHud(board);
-  wireMediaUpload(board);
-  wireMediaBadges(board);
+  const resyncMediaBadges = wireMediaBadges(board);
+  wireToolbar(board, resyncMediaBadges);
+  wireMediaUpload(board, resyncMediaBadges);
   wirePersistence(board);
 
-  window.addEventListener("resize", () => {
-    board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
-  });
-
+  // Fit once up front so the initial scene is centered. Later resizes must
+  // NOT re-fit: the SDK already tracks `host`'s size via its own
+  // ResizeObserver (packages/pixiboardjs) and Pixi's `resizeTo: host` keeps
+  // the canvas pixel size in sync on its own — re-fitting here on every
+  // resize would (a) race that ResizeObserver, since the native `window`
+  // "resize" event fires synchronously while ResizeObserver callbacks are
+  // always batched to a later frame, so fitBounds could read a stale screen
+  // size, and (b) throw away whatever pan/zoom the user had set, snapping
+  // back to "fit all" on every resize instead of just growing/shrinking the
+  // visible area like an infinite canvas is expected to.
   board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
 }
 
@@ -417,7 +423,7 @@ function wireInfoPanel(): void {
   infoClose.addEventListener("click", () => setOpen(false));
 }
 
-function wireToolbar(board: PixiBoard): void {
+function wireToolbar(board: PixiBoard, resyncMediaBadges: () => void): void {
   toolbar.addEventListener("click", (event) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-action]");
     if (!button) return;
@@ -478,7 +484,7 @@ function wireToolbar(board: PixiBoard): void {
         mediaInput.click();
         break;
       case "clear-storage":
-        void clearStorage(board);
+        void clearStorage(board, resyncMediaBadges);
         break;
       default:
         break;
@@ -486,12 +492,12 @@ function wireToolbar(board: PixiBoard): void {
   });
 }
 
-function wireMediaUpload(board: PixiBoard): void {
+function wireMediaUpload(board: PixiBoard, resyncMediaBadges: () => void): void {
   mediaInput.addEventListener("change", () => {
     const files = [...(mediaInput.files ?? [])];
     // Reset first so re-picking the same file still fires a change event.
     mediaInput.value = "";
-    if (files.length) void importFiles(board, files, freeSpaceAnchor(board));
+    if (files.length) void importFiles(board, files, freeSpaceAnchor(board), resyncMediaBadges);
   });
 
   // Only a drag that actually carries files should arm the drop affordance;
@@ -523,7 +529,7 @@ function wireMediaUpload(board: PixiBoard): void {
     const files = [...(event.dataTransfer?.files ?? [])];
     if (!files.length) return;
     // Drop at the pointer, so files land where the user aimed them.
-    void importFiles(board, files, board.viewport.toWorld(toHostPoint(event)));
+    void importFiles(board, files, board.viewport.toWorld(toHostPoint(event)), resyncMediaBadges);
   });
 }
 
@@ -532,7 +538,12 @@ function wireMediaUpload(board: PixiBoard): void {
  * grid, anchored on the requested world point. Nodes are created one at a time
  * so a single bad file cannot abort the whole batch.
  */
-async function importFiles(board: PixiBoard, files: File[], anchor: { x: number; y: number }): Promise<void> {
+async function importFiles(
+  board: PixiBoard,
+  files: File[],
+  anchor: { x: number; y: number },
+  resyncMediaBadges: () => void,
+): Promise<void> {
   const supported = files.filter((file) => classifyMedia(file) !== undefined);
   const rejected = files.filter((file) => classifyMedia(file) === undefined);
   for (const file of rejected) {
@@ -578,7 +589,7 @@ async function importFiles(board: PixiBoard, files: File[], anchor: { x: number;
 
   if (created.length) {
     showToast(`已添加 ${created.length} 个媒体节点`, "success");
-    renderMediaBadges(board);
+    resyncMediaBadges();
     // New media may land outside the current view; bring it into frame so the
     // upload visibly did something.
     board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
@@ -606,12 +617,47 @@ function freeSpaceAnchor(board: PixiBoard): { x: number; y: number } {
   return { x: bounds.minX, y: bounds.maxY + 48 };
 }
 
-/** Labels each media node with its kind and file name. */
-function wireMediaBadges(board: PixiBoard): void {
-  const redraw = () => renderMediaBadges(board);
-  board.on("change", redraw);
+type MediaBadgeInfo = { type: MediaKind; x: number; y: number; height: number; name: string };
+
+/**
+ * Labels each media node with its kind and file name. Media node state is
+ * tracked incrementally from each changeSet's touched ids instead of calling
+ * board.find() (a full-document deep clone) on every "change" event — a drag
+ * on a large document would otherwise re-clone every node once per frame even
+ * though only a handful of ids ever change.
+ */
+function wireMediaBadges(board: PixiBoard): () => void {
+  const mediaNodes = new Map<string, MediaBadgeInfo>();
+  const collect = () => {
+    mediaNodes.clear();
+    for (const node of board.find({ types: ["image", "video", "audio"] })) {
+      mediaNodes.set(node.id, mediaBadgeInfo(node));
+    }
+  };
+  collect();
+
+  const redraw = () => renderMediaBadges(board, mediaNodes);
+
+  board.on("change", (event) => {
+    for (const id of event.changeSet.removedNodeIds) mediaNodes.delete(id);
+    for (const id of [...event.changeSet.addedNodeIds, ...event.changeSet.updatedNodeIds]) {
+      const node = board.nodes.get(id);
+      if (node && isMediaKind(node.type)) mediaNodes.set(id, mediaBadgeInfo(node));
+      else mediaNodes.delete(id);
+    }
+    redraw();
+  });
   board.on("viewport:change", redraw);
   redraw();
+
+  // The SDK applies "change" asynchronously (queued behind the renderer
+  // apply pass), so a caller that just made a synchronous edit and wants the
+  // badges to reflect it immediately — rather than a tick later — can force
+  // a resync from the document instead of waiting for that event.
+  return () => {
+    collect();
+    redraw();
+  };
 }
 
 const KIND_ICON: Record<MediaKind, string> = { image: "🖼", video: "🎬", audio: "🎵" };
@@ -620,21 +666,30 @@ function isMediaKind(type: string): type is MediaKind {
   return type === "image" || type === "video" || type === "audio";
 }
 
-function renderMediaBadges(board: PixiBoard): void {
+function mediaBadgeInfo(node: { type: string; x: number; y: number; height: number; props: unknown }): MediaBadgeInfo {
+  const props = node.props as Partial<MediaProps>;
+  return {
+    type: node.type as MediaKind,
+    x: node.x,
+    y: node.y + node.height,
+    height: node.height,
+    name: typeof props.name === "string" && props.name ? props.name : node.type,
+  };
+}
+
+function renderMediaBadges(board: PixiBoard, mediaNodes: ReadonlyMap<string, MediaBadgeInfo>): void {
   mediaOverlay.replaceChildren();
-  for (const node of board.find()) {
-    if (!isMediaKind(node.type)) continue;
-    const props = node.props as Partial<MediaProps>;
-    const bottomLeft = board.viewport.toScreen({ x: node.x, y: node.y + node.height });
+  for (const info of mediaNodes.values()) {
+    const bottomLeft = board.viewport.toScreen({ x: info.x, y: info.y });
     const badge = document.createElement("div");
     badge.className = "media-badge";
     badge.style.left = `${bottomLeft.x}px`;
     badge.style.top = `${bottomLeft.y + 6}px`;
     const icon = document.createElement("span");
-    icon.textContent = KIND_ICON[node.type];
+    icon.textContent = KIND_ICON[info.type];
     const name = document.createElement("span");
     name.className = "media-name";
-    name.textContent = typeof props.name === "string" && props.name ? props.name : node.type;
+    name.textContent = info.name;
     badge.append(icon, name);
     mediaOverlay.appendChild(badge);
   }
@@ -664,13 +719,13 @@ function persist(board: PixiBoard): Promise<void> {
   return persistQueue;
 }
 
-async function clearStorage(board: PixiBoard): Promise<void> {
+async function clearStorage(board: PixiBoard, resyncMediaBadges: () => void): Promise<void> {
   try {
     await mediaLibrary.clear();
     textureCache.clear();
     await board.document.load(seededDocument());
     board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
-    renderMediaBadges(board);
+    resyncMediaBadges();
     showToast("已清空浏览器中保存的媒体与文档", "success");
   } catch (error) {
     showToast(`清空失败：${error instanceof Error ? error.message : String(error)}`, "error");
@@ -882,15 +937,29 @@ function toHostPoint(event: PointerEvent | WheelEvent): { x: number; y: number }
 }
 
 function wireHud(board: PixiBoard): void {
-  const refresh = () => {
-    hudNodes.textContent = String(board.find().length);
+  // board.find() deep-clones every node in the document; calling it on every
+  // "change" event would mean re-cloning the whole document once per drag
+  // frame. The node count only needs to move by the delta a changeSet
+  // reports, so it is tracked incrementally instead.
+  let nodeCount = board.find().length;
+  const refreshCount = () => {
+    hudNodes.textContent = String(nodeCount);
+  };
+  const refreshSelection = () => {
     hudSelection.textContent = String(board.selection.get().length);
+  };
+  const refreshScale = () => {
     hudScale.textContent = `${Math.round(board.viewport.get().scale * 100)}%`;
   };
-  board.on("change", refresh);
-  board.on("selection:change", refresh);
-  board.on("viewport:change", refresh);
-  refresh();
+  board.on("change", (event) => {
+    nodeCount += event.changeSet.addedNodeIds.length - event.changeSet.removedNodeIds.length;
+    refreshCount();
+  });
+  board.on("selection:change", refreshSelection);
+  board.on("viewport:change", refreshScale);
+  refreshCount();
+  refreshSelection();
+  refreshScale();
 
   let frames = 0;
   let lastSample = performance.now();

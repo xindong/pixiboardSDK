@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-10T09:00:00.000Z",
+  "environment": "darwin|arm64|22.22.0|Apple M4|10|instrumented-pixi-adapter|1920x1080@1",
+  "seed": 42,
+  "p95Ms": {
+    "documentLoad": {
+      "1000": 13.3114,
+      "10000": 140.127,
+      "50000": 699.7779,
+      "100000": 1300.5174
+    },
+    "spatialRebuild": {
+      "1000": 0.4849,
+      "10000": 4.2438,
+      "50000": 23.6183,
+      "100000": 56.3699
+    },
+    "spatialQuery": {
+      "1000": 0.3302,
+      "10000": 0.2072,
+      "50000": 0.136,
+      "100000": 0.1434
+    },
+    "rendererCullingFirstInteractive": {
+      "1000": 3.6363,
+      "10000": 16.5348,
+      "50000": 80.6363,
+      "100000": 202.4414
+    },
+    "rendererSingleNodeApply": {
+      "1000": 0.0256,
+      "10000": 0.1188,
+      "50000": 0.0704,
+      "100000": 0.0473
+    },
+    "coreSingleNodeUpdate": {
+      "1000": 0.1058,
+      "10000": 0.0272,
+      "50000": 0.0299,
+      "100000": 0.0214
+    },
+    "coreBatchUpdate1000": {
+      "1000": 22.9394,
+      "10000": 19.3112,
+      "50000": 19.8805,
+      "100000": 20.2671
+    },
+    "facadeBatchUpdate1000": {
+      "10000": 42.4573
+    },
+    "createDestroySoak": {
+      "cycles": 100,
+      "p95DurationMs": 0.4353,
+      "listenerBaseline": 0,
+      "tickerBaseline": 0,
+      "viewBaseline": 0,
+      "textureLeaseBaseline": 0
+    }
+  },
+  "invariants": {
+    "oneRevisionAndChangeSetPerBatch": true,
+    "onePersistenceSavePerFacadeBatch": true,
+    "activeViewsBoundedAndDestroyed": true,
+    "listenerTickerViewTextureReturnToBaselineEveryCycle": true
+  },
+  "notObserved": [
+    "browser/WebGL frame time and long-frame ratio",
+    "GPU memory and draw calls/batches",
+    "idle CPU/GPU render activity",
+    "1080p capture latency",
+    "controlled JS heap regression",
+    "Konva comparison"
+  ]
+}

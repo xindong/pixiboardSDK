@@ -190,6 +190,12 @@ body {
 .selection-outline > i {
   content: "";
   position: absolute;
+  /* The global `*` box-sizing reset above does not reach ::before/::after
+     (the universal selector only matches real elements), so the two corner
+     handles built from pseudo-elements would render border-box larger than
+     the two built from real <i> elements — set it explicitly here so all
+     four resize handles come out the same size. */
+  box-sizing: border-box;
   width: 7px;
   height: 7px;
   background: var(--bg-0);
