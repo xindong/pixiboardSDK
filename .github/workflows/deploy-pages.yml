@@ -30,6 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-sdk
+      - run: pnpm --filter @pixi-board/core build
       - run: pnpm --filter pixiboardjs build
       - run: pnpm --filter pixiboardjs-site build
       - uses: actions/configure-pages@v5
