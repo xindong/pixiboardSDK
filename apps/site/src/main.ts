@@ -3,7 +3,6 @@ import {
   createPixiBoard,
   type CustomDisplayObject,
   type CustomNodeDefinition,
-  type NodeHandle,
   type PixiBoard,
   type RuntimeRenderer,
 } from "pixiboardjs";
@@ -17,6 +16,7 @@ const hudScale = document.querySelector<HTMLSpanElement>("#hud-scale")!;
 const hudFps = document.querySelector<HTMLSpanElement>("#hud-fps")!;
 const toolbar = document.querySelector<HTMLDivElement>("#toolbar")!;
 const selectionBox = document.querySelector<HTMLDivElement>("#selection-box")!;
+const selectionOverlay = document.querySelector<HTMLDivElement>("#selection-overlay")!;
 const infoPanel = document.querySelector<HTMLDivElement>("#info-panel")!;
 const infoToggle = document.querySelector<HTMLButtonElement>("#info-toggle")!;
 const infoClose = document.querySelector<HTMLButtonElement>("#info-close")!;
@@ -191,6 +191,7 @@ async function main(): Promise<void> {
 
   activeBoard = board;
   wireStageTransform(board, application);
+  wireSelectionOverlay(board);
   wireToolbar(board);
   wirePointerInteractions(board);
   wireInfoPanel();
@@ -215,6 +216,64 @@ function wireStageTransform(board: PixiBoard, application: { stage: StageLike } 
   };
   board.on("viewport:change", apply);
   apply();
+}
+
+// Selection outlines are host-drawn DOM, so they must be re-projected on every
+// selection change, document change, and viewport change — a node can move
+// under a static viewport and the viewport can move under a static selection.
+function wireSelectionOverlay(board: PixiBoard): void {
+  const redraw = () => renderSelectionOverlay(board);
+  board.on("selection:change", redraw);
+  board.on("change", redraw);
+  board.on("viewport:change", redraw);
+  redraw();
+}
+
+function renderSelectionOverlay(board: PixiBoard): void {
+  const selected = board.selection
+    .get()
+    .map((id) => board.nodes.get(id))
+    .filter((item): item is NonNullable<typeof item> => item !== undefined);
+
+  selectionOverlay.replaceChildren();
+  if (selected.length === 0) return;
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const item of selected) {
+    const topLeft = board.viewport.toScreen({ x: item.x, y: item.y });
+    const bottomRight = board.viewport.toScreen({ x: item.x + item.width, y: item.y + item.height });
+    minX = Math.min(minX, topLeft.x);
+    minY = Math.min(minY, topLeft.y);
+    maxX = Math.max(maxX, bottomRight.x);
+    maxY = Math.max(maxY, bottomRight.y);
+
+    const outline = document.createElement("div");
+    outline.className = "selection-outline";
+    outline.style.left = `${topLeft.x}px`;
+    outline.style.top = `${topLeft.y}px`;
+    outline.style.width = `${bottomRight.x - topLeft.x}px`;
+    outline.style.height = `${bottomRight.y - topLeft.y}px`;
+    const bottomLeftHandle = document.createElement("i");
+    bottomLeftHandle.className = "handle-bl";
+    const bottomRightHandle = document.createElement("i");
+    bottomRightHandle.className = "handle-br";
+    outline.append(bottomLeftHandle, bottomRightHandle);
+    selectionOverlay.appendChild(outline);
+  }
+
+  if (selected.length > 1) {
+    const groupBox = document.createElement("div");
+    groupBox.className = "selection-bbox";
+    groupBox.style.left = `${minX - 6}px`;
+    groupBox.style.top = `${minY - 6}px`;
+    groupBox.style.width = `${maxX - minX + 12}px`;
+    groupBox.style.height = `${maxY - minY + 12}px`;
+    selectionOverlay.appendChild(groupBox);
+  }
 }
 
 function computeContentBounds(board: PixiBoard) {
@@ -327,12 +386,28 @@ function exportDocument(board: PixiBoard): void {
 
 function wirePointerInteractions(board: PixiBoard): void {
   let mode: "idle" | "select" | "drag-node" = "idle";
-  let dragHandle: NodeHandle | undefined;
+  // Every selected node moves, so the drag carries one origin per node instead
+  // of a single handle. Origins are accumulated in world units to keep the drag
+  // exact under fractional zoom.
+  let dragOrigins: Array<{ id: string; x: number; y: number }> = [];
   let lastScreen = { x: 0, y: 0 };
-  let dragOrigin = { x: 0, y: 0 };
   let selectStart = { x: 0, y: 0 };
   let lastTapNodeId: string | undefined;
   let lastTapTime = 0;
+  // Pressing an already-selected node must keep the group intact so the whole
+  // group can be dragged; the collapse to a single node happens on release only
+  // if the pointer never actually moved.
+  let collapseToOnRelease: string | undefined;
+  let movedDuringDrag = false;
+
+  const beginNodeDrag = () => {
+    dragOrigins = board.selection
+      .get()
+      .map((id) => board.nodes.get(id))
+      .filter((item): item is NonNullable<typeof item> => item !== undefined)
+      .map((item) => ({ id: item.id, x: item.x, y: item.y }));
+    mode = dragOrigins.length > 0 ? "drag-node" : "idle";
+  };
 
   host.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
@@ -341,11 +416,14 @@ function wirePointerInteractions(board: PixiBoard): void {
     const screenPoint = toHostPoint(event);
     const worldPoint = board.viewport.toWorld(screenPoint);
     const hitId = hitTestTopmost(board, worldPoint);
+    const additive = event.shiftKey || event.metaKey || event.ctrlKey;
     lastScreen = screenPoint;
+    collapseToOnRelease = undefined;
+    movedDuringDrag = false;
 
     if (hitId) {
       const now = performance.now();
-      if (hitId === lastTapNodeId && now - lastTapTime < 320) {
+      if (!additive && hitId === lastTapNodeId && now - lastTapTime < 320) {
         toggleTaskCardStatus(board, hitId);
         lastTapNodeId = undefined;
         return;
@@ -353,14 +431,17 @@ function wirePointerInteractions(board: PixiBoard): void {
       lastTapNodeId = hitId;
       lastTapTime = now;
 
-      if (!board.selection.get().includes(hitId)) board.selection.set([hitId]);
-      mode = "drag-node";
-      dragHandle = board.node(hitId);
-      const currentNode = board.nodes.get(hitId)!;
-      dragOrigin = { x: currentNode.x, y: currentNode.y };
+      if (additive) {
+        board.selection.toggle(hitId);
+      } else if (!board.selection.get().includes(hitId)) {
+        board.selection.set([hitId]);
+      } else if (board.selection.get().length > 1) {
+        collapseToOnRelease = hitId;
+      }
+      beginNodeDrag();
     } else {
       lastTapNodeId = undefined;
-      board.selection.clear();
+      if (!additive) board.selection.clear();
       mode = "select";
       selectStart = screenPoint;
       showSelectionBox(selectStart, selectStart);
@@ -375,22 +456,39 @@ function wirePointerInteractions(board: PixiBoard): void {
 
     if (mode === "select") {
       showSelectionBox(selectStart, screenPoint);
-    } else if (mode === "drag-node" && dragHandle) {
+    } else if (mode === "drag-node" && dragOrigins.length > 0) {
+      if (deltaScreen.x !== 0 || deltaScreen.y !== 0) movedDuringDrag = true;
       const scale = board.viewport.get().scale;
-      dragOrigin = { x: dragOrigin.x + deltaScreen.x / scale, y: dragOrigin.y + deltaScreen.y / scale };
-      dragHandle.setAttrs({ x: dragOrigin.x, y: dragOrigin.y });
+      const deltaWorld = { x: deltaScreen.x / scale, y: deltaScreen.y / scale };
+      for (const origin of dragOrigins) {
+        origin.x += deltaWorld.x;
+        origin.y += deltaWorld.y;
+      }
+      // One transaction per frame keeps the whole group on a single undo step
+      // and a single render pass.
+      board.transaction("Move selection", () => {
+        for (const origin of dragOrigins) {
+          board.nodes.update(origin.id, { x: origin.x, y: origin.y });
+        }
+      });
     }
   });
 
   const endDrag = (event: PointerEvent) => {
     if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
     if (mode === "select") {
-      const ids = nodesInScreenRect(board, selectStart, lastScreen);
+      const marqueeIds = nodesInScreenRect(board, selectStart, lastScreen);
+      const additive = event.shiftKey || event.metaKey || event.ctrlKey;
+      const ids = additive ? [...new Set([...board.selection.get(), ...marqueeIds])] : marqueeIds;
       board.selection.set(ids);
       hideSelectionBox();
+    } else if (mode === "drag-node" && collapseToOnRelease && !movedDuringDrag) {
+      board.selection.set([collapseToOnRelease]);
     }
     mode = "idle";
-    dragHandle = undefined;
+    dragOrigins = [];
+    collapseToOnRelease = undefined;
+    movedDuringDrag = false;
   };
   host.addEventListener("pointerup", endDrag);
   host.addEventListener("pointercancel", endDrag);

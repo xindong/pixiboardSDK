@@ -58,6 +58,65 @@ body {
   z-index: 5;
 }
 
+/* Selection outlines live in a DOM overlay rather than the Pixi scene so the
+   demo does not need renderer-private APIs to draw them. */
+.selection-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  overflow: hidden;
+}
+
+.selection-outline {
+  position: absolute;
+  border: 1.5px solid var(--accent-strong);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(10, 13, 18, 0.55), 0 0 12px rgba(124, 140, 248, 0.35);
+  pointer-events: none;
+}
+
+.selection-outline::before,
+.selection-outline::after,
+.selection-outline > i {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: var(--bg-0);
+  border: 1.5px solid var(--accent-strong);
+  border-radius: 2px;
+}
+
+.selection-outline::before {
+  top: -4.5px;
+  left: -4.5px;
+}
+
+.selection-outline::after {
+  top: -4.5px;
+  right: -4.5px;
+}
+
+.selection-outline > i.handle-bl {
+  bottom: -4.5px;
+  left: -4.5px;
+}
+
+.selection-outline > i.handle-br {
+  bottom: -4.5px;
+  right: -4.5px;
+}
+
+/* Shown only when more than one node is selected, so the group reads as one
+   movable unit. */
+.selection-bbox {
+  position: absolute;
+  border: 1px dashed rgba(154, 166, 255, 0.7);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
 .topbar {
   position: absolute;
   top: 0;

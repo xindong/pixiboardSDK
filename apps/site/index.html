@@ -13,6 +13,7 @@
   <body>
     <div id="app">
       <div class="canvas-host" id="board-host" tabindex="0" aria-label="PixiBoardJS 画布"></div>
+      <div class="selection-overlay" id="selection-overlay" aria-hidden="true"></div>
       <div class="selection-box" id="selection-box" hidden></div>
 
       <header class="topbar">
@@ -52,7 +53,7 @@
         <div class="hud-row"><span class="hud-label">渲染帧</span><span id="hud-fps">0</span></div>
       </div>
 
-      <div class="hint">拖拽节点移动 · 空白处拖拽框选 · 触控板双指平移 · ⌘/Ctrl + 滚轮或捏合缩放 · 双击任务卡切换状态 · Delete 删除选中</div>
+      <div class="hint">拖拽节点移动 · 空白处拖拽框选 · Shift/⌘ 点击多选 · 触控板双指平移 · ⌘/Ctrl + 滚轮或捏合缩放 · 双击任务卡切换状态 · Delete 删除选中</div>
 
       <aside class="panel" id="info-panel">
         <button class="panel-close" id="info-close" aria-label="关闭">✕</button>
