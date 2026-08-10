@@ -16,8 +16,17 @@ const hudSelection = document.querySelector<HTMLSpanElement>("#hud-selection")!;
 const hudScale = document.querySelector<HTMLSpanElement>("#hud-scale")!;
 const hudFps = document.querySelector<HTMLSpanElement>("#hud-fps")!;
 const toolbar = document.querySelector<HTMLDivElement>("#toolbar")!;
+const selectionBox = document.querySelector<HTMLDivElement>("#selection-box")!;
+const infoPanel = document.querySelector<HTMLDivElement>("#info-panel")!;
+const infoToggle = document.querySelector<HTMLButtonElement>("#info-toggle")!;
+const infoClose = document.querySelector<HTMLButtonElement>("#info-close")!;
 
 let activeBoard: PixiBoard | undefined;
+
+type StageLike = {
+  scale: { set(x: number, y: number): void };
+  position: { set(x: number, y: number): void };
+};
 
 type RectProps = { fill: number };
 type TextProps = { text: string; style?: Record<string, string | number | boolean | null> };
@@ -143,7 +152,7 @@ function node(
 }
 
 async function main(): Promise<void> {
-  let application: { canvas: HTMLCanvasElement; ticker?: { stop?: () => void } } | undefined;
+  let application: { canvas: HTMLCanvasElement; stage: StageLike } | undefined;
   const applicationFactory = createPixiApplicationFactory({
     resizeTo: host,
     antialias: true,
@@ -181,8 +190,10 @@ async function main(): Promise<void> {
   await board.nodeTypes.register(taskCardDefinition);
 
   activeBoard = board;
+  wireStageTransform(board, application);
   wireToolbar(board);
   wirePointerInteractions(board);
+  wireInfoPanel();
   wireHud(board);
 
   window.addEventListener("resize", () => {
@@ -190,6 +201,20 @@ async function main(): Promise<void> {
   });
 
   board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
+}
+
+// The renderer keeps node positions in raw world/document units on an
+// untransformed Pixi container; the SDK's viewport (scale/offset) is state
+// the host application is responsible for projecting onto the real stage.
+function wireStageTransform(board: PixiBoard, application: { stage: StageLike } | undefined): void {
+  if (!application) return;
+  const apply = () => {
+    const viewport = board.viewport.get();
+    application.stage.scale.set(viewport.scale, viewport.scale);
+    application.stage.position.set(viewport.offset.x, viewport.offset.y);
+  };
+  board.on("viewport:change", apply);
+  apply();
 }
 
 function computeContentBounds(board: PixiBoard) {
@@ -215,6 +240,15 @@ function padBounds(bounds: { minX: number; minY: number; maxX: number; maxY: num
     maxX: bounds.maxX + padding,
     maxY: bounds.maxY + padding,
   };
+}
+
+function wireInfoPanel(): void {
+  const setOpen = (open: boolean) => {
+    infoPanel.classList.toggle("open", open);
+    infoToggle.setAttribute("aria-expanded", String(open));
+  };
+  infoToggle.addEventListener("click", () => setOpen(!infoPanel.classList.contains("open")));
+  infoClose.addEventListener("click", () => setOpen(false));
 }
 
 function wireToolbar(board: PixiBoard): void {
@@ -292,14 +326,16 @@ function exportDocument(board: PixiBoard): void {
 }
 
 function wirePointerInteractions(board: PixiBoard): void {
-  let mode: "idle" | "pan" | "drag-node" = "idle";
+  let mode: "idle" | "select" | "drag-node" = "idle";
   let dragHandle: NodeHandle | undefined;
   let lastScreen = { x: 0, y: 0 };
   let dragOrigin = { x: 0, y: 0 };
+  let selectStart = { x: 0, y: 0 };
   let lastTapNodeId: string | undefined;
   let lastTapTime = 0;
 
   host.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
     board.focus();
     host.setPointerCapture(event.pointerId);
     const screenPoint = toHostPoint(event);
@@ -317,14 +353,17 @@ function wirePointerInteractions(board: PixiBoard): void {
       lastTapNodeId = hitId;
       lastTapTime = now;
 
-      board.selection.set([hitId]);
+      if (!board.selection.get().includes(hitId)) board.selection.set([hitId]);
       mode = "drag-node";
       dragHandle = board.node(hitId);
-      const node = board.nodes.get(hitId)!;
-      dragOrigin = { x: node.x, y: node.y };
+      const currentNode = board.nodes.get(hitId)!;
+      dragOrigin = { x: currentNode.x, y: currentNode.y };
     } else {
+      lastTapNodeId = undefined;
       board.selection.clear();
-      mode = "pan";
+      mode = "select";
+      selectStart = screenPoint;
+      showSelectionBox(selectStart, selectStart);
     }
   });
 
@@ -334,8 +373,8 @@ function wirePointerInteractions(board: PixiBoard): void {
     const deltaScreen = { x: screenPoint.x - lastScreen.x, y: screenPoint.y - lastScreen.y };
     lastScreen = screenPoint;
 
-    if (mode === "pan") {
-      board.viewport.panBy(deltaScreen.x, deltaScreen.y);
+    if (mode === "select") {
+      showSelectionBox(selectStart, screenPoint);
     } else if (mode === "drag-node" && dragHandle) {
       const scale = board.viewport.get().scale;
       dragOrigin = { x: dragOrigin.x + deltaScreen.x / scale, y: dragOrigin.y + deltaScreen.y / scale };
@@ -345,6 +384,11 @@ function wirePointerInteractions(board: PixiBoard): void {
 
   const endDrag = (event: PointerEvent) => {
     if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
+    if (mode === "select") {
+      const ids = nodesInScreenRect(board, selectStart, lastScreen);
+      board.selection.set(ids);
+      hideSelectionBox();
+    }
     mode = "idle";
     dragHandle = undefined;
   };
@@ -356,11 +400,47 @@ function wirePointerInteractions(board: PixiBoard): void {
     (event) => {
       event.preventDefault();
       const screenPoint = toHostPoint(event);
-      const factor = Math.exp(-event.deltaY * 0.0018);
-      board.viewport.zoomAt(screenPoint, factor);
+      if (event.ctrlKey || event.metaKey) {
+        // Trackpad pinch synthesizes a wheel event with ctrlKey=true; explicit
+        // Ctrl/Cmd + wheel follows the same zoom-at-pointer convention.
+        const factor = Math.exp(-event.deltaY * 0.01);
+        board.viewport.zoomAt(screenPoint, factor);
+      } else {
+        // Plain wheel scroll and two-finger trackpad pan both land here.
+        board.viewport.panBy(-event.deltaX, -event.deltaY);
+      }
     },
     { passive: false },
   );
+}
+
+function showSelectionBox(start: { x: number; y: number }, end: { x: number; y: number }): void {
+  const left = Math.min(start.x, end.x);
+  const top = Math.min(start.y, end.y);
+  const width = Math.abs(end.x - start.x);
+  const height = Math.abs(end.y - start.y);
+  selectionBox.style.left = `${left}px`;
+  selectionBox.style.top = `${top}px`;
+  selectionBox.style.width = `${width}px`;
+  selectionBox.style.height = `${height}px`;
+  selectionBox.hidden = false;
+}
+
+function hideSelectionBox(): void {
+  selectionBox.hidden = true;
+}
+
+function nodesInScreenRect(board: PixiBoard, start: { x: number; y: number }, end: { x: number; y: number }): string[] {
+  const worldStart = board.viewport.toWorld(start);
+  const worldEnd = board.viewport.toWorld(end);
+  const minX = Math.min(worldStart.x, worldEnd.x);
+  const minY = Math.min(worldStart.y, worldEnd.y);
+  const maxX = Math.max(worldStart.x, worldEnd.x);
+  const maxY = Math.max(worldStart.y, worldEnd.y);
+  return board
+    .find()
+    .filter((item) => item.x < maxX && item.x + item.width > minX && item.y < maxY && item.y + item.height > minY)
+    .map((item) => item.id);
 }
 
 function handleKeyboard(event: KeyboardEvent): void {

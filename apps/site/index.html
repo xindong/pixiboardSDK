@@ -12,6 +12,9 @@
   </head>
   <body>
     <div id="app">
+      <div class="canvas-host" id="board-host" tabindex="0" aria-label="PixiBoardJS 画布"></div>
+      <div class="selection-box" id="selection-box" hidden></div>
+
       <header class="topbar">
         <div class="brand">
           <span class="brand-mark">◆</span>
@@ -21,57 +24,54 @@
         <nav class="topbar-links">
           <a href="https://github.com/maoxinxin-xd/pixiboardSDK" target="_blank" rel="noopener">GitHub</a>
           <a href="https://github.com/maoxinxin-xd/pixiboardSDK/tree/main/docs" target="_blank" rel="noopener">文档</a>
+          <button id="info-toggle" class="icon-button" title="关于这个 Demo" aria-expanded="false">ⓘ 关于</button>
         </nav>
       </header>
 
-      <main class="layout">
-        <section class="stage-wrap">
-          <div class="toolbar" id="toolbar">
-            <div class="toolbar-group">
-              <button data-action="add-rect" title="添加矩形节点">▭ 矩形</button>
-              <button data-action="add-text" title="添加文本节点">T 文本</button>
-              <button data-action="add-card" title="添加自定义任务卡节点">◆ 任务卡</button>
-            </div>
-            <div class="toolbar-group">
-              <button data-action="undo" title="撤销">↶ 撤销</button>
-              <button data-action="redo" title="重做">↷ 重做</button>
-              <button data-action="fit" title="适配全部节点">⤢ 适配</button>
-              <button data-action="reset" title="重置场景">⟲ 重置</button>
-            </div>
-            <div class="toolbar-group">
-              <button data-action="export" title="导出当前文档为 JSON">⇩ 导出 JSON</button>
-            </div>
-          </div>
+      <div class="toolbar" id="toolbar">
+        <div class="toolbar-group">
+          <button data-action="add-rect" title="添加矩形节点">▭ 矩形</button>
+          <button data-action="add-text" title="添加文本节点">T 文本</button>
+          <button data-action="add-card" title="添加自定义任务卡节点">◆ 任务卡</button>
+        </div>
+        <div class="toolbar-group">
+          <button data-action="undo" title="撤销">↶ 撤销</button>
+          <button data-action="redo" title="重做">↷ 重做</button>
+          <button data-action="fit" title="适配全部节点">⤢ 适配</button>
+          <button data-action="reset" title="重置场景">⟲ 重置</button>
+        </div>
+        <div class="toolbar-group">
+          <button data-action="export" title="导出当前文档为 JSON">⇩ 导出 JSON</button>
+        </div>
+      </div>
 
-          <div class="canvas-host" id="board-host" tabindex="0" aria-label="PixiBoardJS 画布"></div>
+      <div class="hud" id="hud">
+        <div class="hud-row"><span class="hud-label">节点数</span><span id="hud-nodes">0</span></div>
+        <div class="hud-row"><span class="hud-label">选中</span><span id="hud-selection">0</span></div>
+        <div class="hud-row"><span class="hud-label">缩放</span><span id="hud-scale">100%</span></div>
+        <div class="hud-row"><span class="hud-label">渲染帧</span><span id="hud-fps">0</span></div>
+      </div>
 
-          <div class="hud" id="hud">
-            <div class="hud-row"><span class="hud-label">节点数</span><span id="hud-nodes">0</span></div>
-            <div class="hud-row"><span class="hud-label">选中</span><span id="hud-selection">0</span></div>
-            <div class="hud-row"><span class="hud-label">缩放</span><span id="hud-scale">100%</span></div>
-            <div class="hud-row"><span class="hud-label">渲染帧</span><span id="hud-fps">0</span></div>
-          </div>
+      <div class="hint">拖拽节点移动 · 空白处拖拽框选 · 触控板双指平移 · ⌘/Ctrl + 滚轮或捏合缩放 · 双击任务卡切换状态 · Delete 删除选中</div>
 
-          <div class="hint">拖拽移动节点 · 空白处拖拽平移 · 滚轮缩放 · 点击选中，双击任务卡切换状态 · Delete 删除选中</div>
-        </section>
-
-        <aside class="panel">
-          <h2>关于这个 Demo</h2>
-          <p>
-            这个画布由真实的
-            <code>pixiboardjs</code> 包 + <code>@pixi-board/renderer-pixi</code> 渲染器驱动，
-            不是截图或视频。你现在看到的每一次拖拽、缩放和撤销，都是在调用 SDK 的公共 API。
-          </p>
-          <h3>核心特性</h3>
-          <ul class="feature-list">
-            <li><strong>扁平数据模型</strong> — 文档是纯 JSON，节点没有父子嵌套，渲染对象随时可销毁重建。</li>
-            <li><strong>Node Type Registry</strong> — 内置矩形、文本、图片、视频等类型与自定义类型统一注册，见右侧「任务卡」示例。</li>
-            <li><strong>Transaction / History</strong> — 所有写入都进入同一条 transaction 管线，撤销重做开箱即用。</li>
-            <li><strong>Viewport 控制</strong> — pan / zoom / fitBounds 是 SDK 的一等能力，非画布库私有实现。</li>
-            <li><strong>Web + Tauri</strong> — 同一套 core 与 capabilities 可以在浏览器与 Tauri WebView 中运行。</li>
-          </ul>
-          <h3>代码片段</h3>
-          <pre class="code-block"><code>import { createPixiBoard } from "pixiboardjs";
+      <aside class="panel" id="info-panel">
+        <button class="panel-close" id="info-close" aria-label="关闭">✕</button>
+        <h2>关于这个 Demo</h2>
+        <p>
+          这个画布由真实的
+          <code>pixiboardjs</code> 包 + <code>@pixi-board/renderer-pixi</code> 渲染器驱动，
+          不是截图或视频。你现在看到的每一次拖拽、缩放和撤销，都是在调用 SDK 的公共 API。
+        </p>
+        <h3>核心特性</h3>
+        <ul class="feature-list">
+          <li><strong>扁平数据模型</strong> — 文档是纯 JSON，节点没有父子嵌套，渲染对象随时可销毁重建。</li>
+          <li><strong>Node Type Registry</strong> — 内置矩形、文本、图片、视频等类型与自定义类型统一注册，见「任务卡」示例。</li>
+          <li><strong>Transaction / History</strong> — 所有写入都进入同一条 transaction 管线，撤销重做开箱即用。</li>
+          <li><strong>Viewport 控制</strong> — pan / zoom / fitBounds 是 SDK 的一等能力，非画布库私有实现。</li>
+          <li><strong>Web + Tauri</strong> — 同一套 core 与 capabilities 可以在浏览器与 Tauri WebView 中运行。</li>
+        </ul>
+        <h3>代码片段</h3>
+        <pre class="code-block"><code>import { createPixiBoard } from "pixiboardjs";
 import { PixiBoardRenderer } from "@pixi-board/renderer-pixi";
 
 const board = await createPixiBoard({
@@ -85,16 +85,11 @@ await board.nodes.create({
   x: 40, y: 40, width: 120, height: 80,
   props: { fill: 0x7c8cf8 },
 });</code></pre>
-          <a class="cta" href="https://github.com/maoxinxin-xd/pixiboardSDK" target="_blank" rel="noopener">
-            在 GitHub 上查看源码 →
-          </a>
-        </aside>
-      </main>
-
-      <footer class="footer">
-        PixiBoardJS SDK · MIT License · 由
-        <a href="https://github.com/maoxinxin-xd" target="_blank" rel="noopener">maoxinxin-xd</a> 维护
-      </footer>
+        <a class="cta" href="https://github.com/maoxinxin-xd/pixiboardSDK" target="_blank" rel="noopener">
+          在 GitHub 上查看源码 →
+        </a>
+        <p class="footer-line">PixiBoardJS SDK · MIT License · 由 <a href="https://github.com/maoxinxin-xd" target="_blank" rel="noopener">maoxinxin-xd</a> 维护</p>
+      </aside>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
