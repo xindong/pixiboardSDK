@@ -134,6 +134,32 @@ function assertDefinition<Props extends JsonValue>(definition: NodeTypeDefinitio
   if (definition.defaults !== undefined) {
     assertJsonValue(definition.defaults, `${definition.type}.defaults`);
   }
+  assertResizePolicy(definition);
+}
+
+function assertResizePolicy<Props extends JsonValue>(definition: NodeTypeDefinition<Props>): void {
+  const policy = definition.resize;
+  if (policy === undefined) return;
+  const modes = ["free", "aspect-ratio", "fixed", "custom"];
+  if (!modes.includes(policy.mode)) {
+    throw new NodeValidationError(
+      `Node type ${definition.type} has an unknown resize mode: ${String(policy.mode)}`,
+    );
+  }
+  if (policy.mode === "custom" && typeof policy.resize !== "function") {
+    throw new NodeValidationError(
+      `Node type ${definition.type} declares resize mode "custom" without a resize() function`,
+    );
+  }
+  if (
+    policy.mode === "aspect-ratio" &&
+    policy.ratio !== undefined &&
+    (!Number.isFinite(policy.ratio) || policy.ratio <= 0)
+  ) {
+    throw new NodeValidationError(
+      `Node type ${definition.type} declares a non-positive aspect ratio`,
+    );
+  }
 }
 
 function freezeDefinition<Props extends JsonValue>(

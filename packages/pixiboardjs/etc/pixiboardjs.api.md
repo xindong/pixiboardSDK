@@ -358,6 +358,15 @@ export type JsonValue = JsonPrimitive | JsonValue[] | {
     [key: string]: JsonValue;
 };
 
+// @public
+export type NodeGeometry = {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    rotation: number;
+};
+
 // @public (undocumented)
 export interface NodeHandle<Props extends JsonValue = JsonValue> {
     // (undocumented)
@@ -425,6 +434,15 @@ export type NodePatch<Props extends JsonValue = JsonValue> = BoardNodePatch<Prop
 
 // @public (undocumented)
 export type NodeQuery = NodeListFilter;
+
+// @public (undocumented)
+export type NodeResizeRequest = {
+    handle: ResizeHandle;
+    deltaWorld: Point;
+    origin?: NodeGeometry;
+    minWidth?: number;
+    minHeight?: number;
+};
 
 // @public (undocumented)
 export type NodeTypeDefinition<Props extends JsonValue = JsonValue> = CustomNodeDataDefinition<Props>;
@@ -497,6 +515,7 @@ export interface PixiBoard {
     readonly nodes: {
         create<Props extends JsonValue>(input: BoardNodeCreateInput<Props>): Promise<NodeHandle<Props>>;
         update<Props extends JsonValue>(nodeId: string, patch: BoardNodePatch<Props>): NodeHandle<Props>;
+        resize<Props extends JsonValue>(nodeId: string, request: NodeResizeRequest): NodeHandle<Props>;
         remove(nodeId: string): void;
         get<Props extends JsonValue = JsonValue>(nodeId: string): Readonly<BoardNode<Props>> | undefined;
         list(filter?: NodeListFilter): ReadonlyArray<Readonly<BoardNode>>;
@@ -526,6 +545,12 @@ export interface PixiBoard {
     readonly state: BoardLifecycleState;
     // (undocumented)
     transaction<Result>(label: string, operation: () => Result, options?: TransactionOptions): Result;
+    readonly transform: {
+        handles(): ReadonlyArray<TransformHandlePlacement>;
+        bounds(): TransformBounds | undefined;
+        begin(handle: ResizeHandle): TransformSession | undefined;
+        active(): boolean;
+    };
     // (undocumented)
     readonly viewport: {
         get(): ViewportSnapshot;
@@ -549,6 +574,10 @@ export type PixiBoardOptions = {
         pointer?: boolean;
         keyboard?: boolean;
         clipboard?: boolean;
+    };
+    transform?: {
+        minWidth?: number;
+        minHeight?: number;
     };
     ports?: BoardRuntimePorts;
     core?: Omit<BoardCoreOptions, "document">;
@@ -600,6 +629,21 @@ export type RenderCompleteEvent = {
 export type RendererApplyResult = "applied" | "rebuild-required";
 
 // @public (undocumented)
+export const RESIZE_HANDLES: readonly ResizeHandle[];
+
+// @public
+export type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+
+// @public
+export function resizeHandleAxes(handle: ResizeHandle): {
+    horizontal: -1 | 0 | 1;
+    vertical: -1 | 0 | 1;
+};
+
+// @public
+export function resizeHandleCursor(handle: ResizeHandle, rotation?: number): string;
+
+// @public (undocumented)
 export type ResizeObserverPort = {
     observe(target: Element): void;
     disconnect(): void;
@@ -633,10 +677,36 @@ export class TransactionConflictError extends PixiBoardCoreError {
 // @public (undocumented)
 export type TransactionOptions = {
     origin?: ChangeOrigin;
+    coalesceKey?: string;
 };
 
 // @public (undocumented)
 export type TransactionOrigin = ChangeOrigin;
+
+// @public
+export type TransformBounds = {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    rotation: number;
+    nodeIds: string[];
+};
+
+// @public
+export type TransformHandlePlacement = {
+    handle: ResizeHandle;
+    world: Point;
+    cursor: string;
+};
+
+// @public (undocumented)
+export type TransformSession = {
+    readonly handle: ResizeHandle;
+    update(deltaWorld: Point): void;
+    commit(): void;
+    cancel(): void;
+};
 
 // @public (undocumented)
 export type ViewportChangeEvent = {
@@ -660,22 +730,22 @@ export type WorldBounds = {
 
 // Warnings were encountered during analysis:
 //
-// dist/types-BoSF-a_E.d.ts:45:5 - (ae-forgotten-export) The symbol "AssetRef" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:241:9 - (ae-forgotten-export) The symbol "RequestOptions" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:242:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:242:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:245:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:251:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:251:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:252:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:253:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:256:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:263:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:270:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:298:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:449:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:452:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point index.d.ts
-// dist/types-BoSF-a_E.d.ts:453:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:45:5 - (ae-forgotten-export) The symbol "AssetRef" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:271:9 - (ae-forgotten-export) The symbol "RequestOptions" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:272:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:272:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:275:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:281:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:281:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:282:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:283:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:286:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:293:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:300:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:328:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:484:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:487:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point index.d.ts
+// dist/types-CU7N-IlQ.d.ts:488:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

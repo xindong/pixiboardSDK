@@ -14,6 +14,7 @@ import {
 import { cloneValue, deepFreeze, immutableClone, jsonEqual } from "./json";
 import { NodeTypeRegistry } from "./node-type-registry";
 import { applyDataPatches, type DataPatch } from "./patches";
+import { resolveResize } from "./resize";
 import { SelectionController, type SelectionChangeEvent } from "./selection";
 import { RuntimeDocumentStore } from "./store";
 import type {
@@ -28,6 +29,7 @@ import type {
   DocumentLoadOptions,
   JsonValue,
   NodeListFilter,
+  NodeResizeRequest,
   Point,
   Size,
   TransactionOptions,
@@ -72,6 +74,7 @@ type ActiveTransaction = {
   id: string;
   label?: string;
   origin: ChangeOrigin;
+  coalesceKey?: string;
   draft: RuntimeDocumentStore;
   forward: DataPatch[];
   inverse: DataPatch[];
@@ -186,6 +189,7 @@ export class BoardCore {
       id: this.idFactory(),
       label: label || undefined,
       origin: options.origin ?? "api",
+      ...(options.coalesceKey === undefined ? {} : { coalesceKey: options.coalesceKey }),
       draft: this.store.clone(),
       forward: [],
       inverse: [],
@@ -344,6 +348,7 @@ export class BoardCore {
       this.recordHistory({
         label: transaction.label,
         origin: transaction.origin,
+        ...(transaction.coalesceKey === undefined ? {} : { coalesceKey: transaction.coalesceKey }),
         forward: transaction.forward,
         inverse: transaction.inverse,
       });
@@ -453,6 +458,26 @@ export class BoardNodesController {
       );
       return immutableClone(validated);
     });
+  }
+
+  /**
+   * Applies one resize gesture step through the node type's `ResizePolicy`.
+   * The policy decides what the requested handle drag is allowed to become —
+   * `fixed` refuses it outright, `aspect-ratio` locks the two axes together
+   * and `custom` gets the last word on the resulting size — so hosts never
+   * need to reimplement those rules on top of `update()`.
+   */
+  resize<Props extends JsonValue>(
+    nodeId: string,
+    request: NodeResizeRequest,
+  ): Readonly<BoardNode<Props>> {
+    const node = getCoreInternals(this.core).currentStore().requireNode(nodeId) as BoardNode<Props>;
+    const policy = this.core.nodeTypes.get<Props>(node.type)?.resize;
+    const patch = resolveResize(node, policy, request);
+    // A refused or no-op resize must not open a transaction: a drag on a
+    // fixed node would otherwise emit one empty revision per frame.
+    if (Object.keys(patch).length === 0) return immutableClone(node);
+    return this.update<Props>(nodeId, patch);
   }
 
   remove(nodeId: string): Readonly<BoardNode> {

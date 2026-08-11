@@ -50,6 +50,13 @@ board.nodes.update(node.id, {
 board.nodes.remove(node.id);
 board.nodes.get(node.id);
 board.nodes.list({ type: "media.image", visible: true });
+
+// 走节点类型自己的 ResizePolicy，而不是直接改 width/height
+board.nodes.resize(node.id, {
+  handle: "se",
+  deltaWorld: { x: 40, y: 20 },
+  origin: gestureStartGeometry,
+});
 ```
 
 ### NodeHandle
@@ -83,6 +90,8 @@ board.transaction("Arrange generated assets", () => {
 
 transaction callback 必须同步执行；传入 async callback 会以 `TransactionConflictError` 拒绝，避免 callback 在回滚后继续写入。返回值就是 callback 的同步返回值。
 
+`options.coalesceKey` 让连续 transaction 合并进同一条 history entry：一次 pointer 手势按帧提交、共用一个 key，撤销时作为整体回退；每次新手势必须换新 key。revision 与 ChangeSet 不受影响，仍是每帧一份。
+
 语义：
 
 - 一个 revision。
@@ -106,6 +115,22 @@ board.selection.onChange((event) => {
 ```
 
 Selection 默认是运行时状态，可由 persistence policy 决定是否保存，不进入 node 数据。
+
+## Transform（选区缩放）
+
+```ts
+board.transform.bounds();    // 选区世界矩形，单选时带节点自身 rotation
+board.transform.handles();   // 八个控制点的世界坐标与 CSS cursor
+board.transform.active();
+
+const session = board.transform.begin("se");
+session?.update({ x: dx, y: dy });  // pointerdown 以来的累计世界位移
+session?.commit();                   // 或 cancel() 还原到 begin() 时的几何
+```
+
+一次手势每帧提交一个 transaction，但整体只占一个 undo step。每个选中节点的尺寸各自经过其 `ResizePolicy`，详见「自定义节点系统」。
+
+浏览器宿主可用 `pixiboardjs/browser` 的 `attachDomTransformer(board, { overlay })` 直接得到可拖拽的 DOM 控制点，样式由宿主通过 `.pixiboard-handle` 类控制。
 
 ## Viewport
 

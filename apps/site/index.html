@@ -15,6 +15,10 @@
       <div class="canvas-host" id="board-host" tabindex="0" aria-label="PixiBoardJS 画布"></div>
       <div class="media-overlay" id="media-overlay" aria-hidden="true"></div>
       <div class="selection-overlay" id="selection-overlay" aria-hidden="true"></div>
+      <!-- The SDK's DOM transformer appends its eight interactive resize
+           handles here. It sits above the outline overlay so a handle stays
+           grabbable where the two would otherwise overlap. -->
+      <div class="handle-overlay" id="handle-overlay" aria-hidden="true"></div>
       <div class="selection-box" id="selection-box" hidden></div>
       <div class="drop-hint" id="drop-hint" hidden>松开即可上传图片 / 视频 / 音频</div>
       <div class="toast-host" id="toast-host" role="status" aria-live="polite"></div>
@@ -65,7 +69,7 @@
         <div class="hud-row"><span class="hud-label">渲染帧</span><span id="hud-fps">0</span></div>
       </div>
 
-      <div class="hint">拖拽节点移动 · 空白处拖拽框选 · Shift/⌘ 点击多选 · 拖入或上传图片/视频/音频 · ⌘/Ctrl + 滚轮缩放 · 双击任务卡切换状态 · Delete 删除选中</div>
+      <div class="hint">拖拽节点移动 · 拖拽控制点缩放（Esc 取消） · 空白处拖拽框选 · Shift/⌘ 点击多选 · 拖入或上传图片/视频/音频 · ⌘/Ctrl + 滚轮缩放 · 双击任务卡切换状态 · Delete 删除选中</div>
 
       <aside class="panel" id="info-panel">
         <button class="panel-close" id="info-close" aria-label="关闭">✕</button>

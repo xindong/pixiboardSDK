@@ -166,6 +166,7 @@ export class BoardNodesController {
     list(filter?: NodeListFilter): ReadonlyArray<Readonly<BoardNode>>;
     // (undocumented)
     remove(nodeId: string): Readonly<BoardNode>;
+    resize<Props extends JsonValue>(nodeId: string, request: NodeResizeRequest): Readonly<BoardNode<Props>>;
     // (undocumented)
     update<Props extends JsonValue>(nodeId: string, patch: BoardNodePatch<Props>): Readonly<BoardNode<Props>>;
 }
@@ -223,6 +224,9 @@ export type FitBoundsOptions = {
 };
 
 // @public (undocumented)
+export function isResizeHandle(value: unknown): value is ResizeHandle;
+
+// @public (undocumented)
 export type JsonPrimitive = null | boolean | number | string;
 
 // @public (undocumented)
@@ -239,6 +243,18 @@ export type MissingNodeTypeEvent = {
     nodeIds: string[];
 };
 
+// @public
+export type NodeGeometry = {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    rotation: number;
+};
+
+// @public (undocumented)
+export function nodeGeometry(node: Readonly<BoardNode<JsonValue>>): NodeGeometry;
+
 // @public (undocumented)
 export type NodeListFilter = {
     ids?: string[];
@@ -254,6 +270,15 @@ export type NodeListFilter = {
 export class NodeNotFoundError extends PixiBoardCoreError {
     constructor(nodeId: string);
 }
+
+// @public (undocumented)
+export type NodeResizeRequest = {
+    handle: ResizeHandle;
+    deltaWorld: Point;
+    origin?: NodeGeometry;
+    minWidth?: number;
+    minHeight?: number;
+};
 
 // @public (undocumented)
 export type NodeTypeDefinition<Props extends JsonValue = JsonValue> = {
@@ -331,6 +356,21 @@ export type RegisterNodeTypeOptions = {
 };
 
 // @public (undocumented)
+export const RESIZE_HANDLES: readonly ResizeHandle[];
+
+// @public
+export type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+
+// @public
+export function resizeHandleAxes(handle: ResizeHandle): {
+    horizontal: -1 | 0 | 1;
+    vertical: -1 | 0 | 1;
+};
+
+// @public
+export function resizeHandleCursor(handle: ResizeHandle, rotation?: number): string;
+
+// @public (undocumented)
 export type ResizeInput<Props extends JsonValue> = {
     node: Readonly<BoardNode<Props>>;
     width: number;
@@ -349,6 +389,29 @@ export type ResizePolicy<Props extends JsonValue> = {
     mode: "custom";
     resize(input: ResizeInput<Props>): BoardNodePatch<Props>;
 };
+
+// @public (undocumented)
+export type ResizeSizeRequest = {
+    handle: ResizeHandle;
+    width: number;
+    height: number;
+    origin?: NodeGeometry;
+    minWidth?: number;
+    minHeight?: number;
+};
+
+// @public (undocumented)
+export type ResolvedResizeSize<Props extends JsonValue> = {
+    width: number;
+    height: number;
+    patch: BoardNodePatch<Props>;
+};
+
+// @public
+export function resolveResize<Props extends JsonValue>(node: Readonly<BoardNode<Props>>, policy: ResizePolicy<Props> | undefined, request: NodeResizeRequest): BoardNodePatch<Props>;
+
+// @public
+export function resolveResizeSize<Props extends JsonValue>(node: Readonly<BoardNode<Props>>, policy: ResizePolicy<Props> | undefined, request: ResizeSizeRequest): ResolvedResizeSize<Props> | undefined;
 
 // @public (undocumented)
 export function rotatedRectBounds(node: BoardNode): WorldBounds;
@@ -389,6 +452,7 @@ export class TransactionConflictError extends PixiBoardCoreError {
 // @public (undocumented)
 export type TransactionOptions = {
     origin?: ChangeOrigin;
+    coalesceKey?: string;
 };
 
 // @public (undocumented)

@@ -185,42 +185,29 @@ body {
   pointer-events: none;
 }
 
-.selection-outline::before,
-.selection-outline::after,
-.selection-outline > i {
-  content: "";
+/* The eight resize handles are created and positioned by the SDK's DOM
+   transformer (attachDomTransformer), which sets only position, size, cursor
+   and pointer-events inline — everything visual is ours. They must be real
+   elements, not ::before/::after: a pseudo-element is never an event.target,
+   so it can be styled but never grabbed. */
+.handle-overlay {
   position: absolute;
-  /* The global `*` box-sizing reset above does not reach ::before/::after
-     (the universal selector only matches real elements), so the two corner
-     handles built from pseudo-elements would render border-box larger than
-     the two built from real <i> elements — set it explicitly here so all
-     four resize handles come out the same size. */
-  box-sizing: border-box;
-  width: 7px;
-  height: 7px;
+  inset: 0;
+  /* Transparent to the pointer itself; each handle re-enables pointer events
+     for its own 9px box so the rest of the canvas stays interactive. */
+  pointer-events: none;
+  z-index: 6;
+}
+
+.pixiboard-handle {
   background: var(--bg-0);
   border: 1.5px solid var(--accent-strong);
   border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(10, 13, 18, 0.55);
 }
 
-.selection-outline::before {
-  top: -4.5px;
-  left: -4.5px;
-}
-
-.selection-outline::after {
-  top: -4.5px;
-  right: -4.5px;
-}
-
-.selection-outline > i.handle-bl {
-  bottom: -4.5px;
-  left: -4.5px;
-}
-
-.selection-outline > i.handle-br {
-  bottom: -4.5px;
-  right: -4.5px;
+.pixiboard-handle:hover {
+  background: var(--accent-strong);
 }
 
 /* Shown only when more than one node is selected, so the group reads as one
