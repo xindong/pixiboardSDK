@@ -60,11 +60,9 @@ pnpm add pixiboardjs
 
 ```ts
 import { createPixiBoard } from "pixiboardjs";
-import { PixiBoardRenderer } from "@pixi-board/renderer-pixi";
 
 const board = await createPixiBoard({
   container: document.querySelector("#board"),
-  rendererFactory: (options) => new PixiBoardRenderer(options),
 });
 await board.ready;
 
