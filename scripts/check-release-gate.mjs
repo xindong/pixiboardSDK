@@ -11,8 +11,10 @@ const publicPackages = [
   { name: "pixiboardjs", dir: resolve(root, "packages/pixiboardjs"), artifacts: ["dist/index.js", "dist/browser.js", "dist/node.js", "dist/types.js", "dist/index.d.ts", "dist/browser.d.ts", "dist/node.d.ts", "dist/types.d.ts"] },
   { name: "@pixi-board/core", dir: resolve(root, "packages/core"), artifacts: ["dist/index.js", "dist/index.d.ts"] },
   { name: "@pixi-board/plugin-sdk", dir: resolve(root, "packages/plugin-sdk"), artifacts: ["dist/index.js", "dist/index.d.ts"] },
+  { name: "@pixi-board/capabilities", dir: resolve(root, "packages/capabilities"), artifacts: ["dist/index.js", "dist/index.d.ts"] },
+  { name: "@pixi-board/agent-tools", dir: resolve(root, "packages/agent-tools"), artifacts: ["dist/index.js", "dist/index.d.ts", "dist/schemas.js", "dist/schemas.d.ts"] },
 ];
-const internalDependencies = new Set(["@pixi-board/adapter-browser", "@pixi-board/capabilities", "@pixi-board/renderer-pixi", "@pixi-board/plugin-api-v3"]);
+const internalDependencies = new Set(["@pixi-board/adapter-browser", "@pixi-board/renderer-pixi", "@pixi-board/plugin-api-v3"]);
 // One report per published entry point, not per package: API Extractor only
 // walks the single entry it is pointed at, so `pixiboardjs`'s subpath exports
 // need their own configs and reports to be covered at all.
@@ -23,6 +25,9 @@ const apiReports = [
   ["pixiboardjs-types", resolve(root, "packages/pixiboardjs/etc/pixiboardjs-types.api.md")],
   ["pixi-board-core", resolve(root, "packages/core/etc/pixi-board-core.api.md")],
   ["pixi-board-plugin-sdk", resolve(root, "packages/plugin-sdk/etc/pixi-board-plugin-sdk.api.md")],
+  ["pixi-board-capabilities", resolve(root, "packages/capabilities/etc/pixi-board-capabilities.api.md")],
+  ["pixi-board-agent-tools", resolve(root, "packages/agent-tools/etc/pixi-board-agent-tools.api.md")],
+  ["pixi-board-agent-tools-schemas", resolve(root, "packages/agent-tools/etc/pixi-board-agent-tools-schemas.api.md")],
 ];
 const apiExtractorRuns = [
   ["@pixi-board/core", []],
@@ -31,6 +36,9 @@ const apiExtractorRuns = [
   ["pixiboardjs", ["--config", "api-extractor.node.json"]],
   ["pixiboardjs", ["--config", "api-extractor.types.json"]],
   ["@pixi-board/plugin-sdk", []],
+  ["@pixi-board/capabilities", []],
+  ["@pixi-board/agent-tools", []],
+  ["@pixi-board/agent-tools", ["--config", "api-extractor.schemas.json"]],
 ];
 const gateDir = await mkdtemp(join(tmpdir(), "pixiboardjs-release-gate-"));
 const releaseArtifactDir = process.env.PIXIBOARD_RELEASE_ARTIFACT_DIR ? resolve(root, process.env.PIXIBOARD_RELEASE_ARTIFACT_DIR) : undefined;
@@ -194,7 +202,7 @@ async function verifyExternalConsumers(publicTarballs) {
     const declarationFiles = packageName === "pixiboardjs" ? ["dist/index.d.ts", "dist/browser.d.ts", "dist/node.d.ts", "dist/types.d.ts"] : ["dist/index.d.ts"];
     for (const declarationFile of declarationFiles) {
       const declaration = await readFile(join(fixture, "node_modules", packageName, declarationFile), "utf8");
-      if (/from ["']@pixi-board\/(adapter-browser|capabilities|renderer-pixi|plugin-api-v3)/.test(declaration)) throw new Error(`consumer declaration leaks a private workspace package: ${packageName}/${declarationFile} (${basename(tarball)})`);
+      if (/from ["']@pixi-board\/(adapter-browser|adapter-tauri|renderer-pixi|plugin-api-v3)/.test(declaration)) throw new Error(`consumer declaration leaks a private workspace package: ${packageName}/${declarationFile} (${basename(tarball)})`);
     }
   }
   await runAndPrint("npm", ["run", "check"], { cwd: fixture });

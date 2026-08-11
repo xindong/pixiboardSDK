@@ -92,6 +92,10 @@ A fuller, copy-pasteable external-consumer example lives in [`apps/examples-vani
 
 An agent doesn't get a side door into the canvas. `canvas.write` lands in the same transaction pipeline a pointer drag does:
 
+```bash
+pnpm add @pixi-board/agent-tools
+```
+
 ```ts
 import { createPixiBoardAgentTools } from "@pixi-board/agent-tools";
 
@@ -114,7 +118,24 @@ What that buys you:
 
 Read paths are agent-shaped too: `canvas.read` returns compact node DTOs with field projection and pagination, so a large board doesn't have to arrive as one enormous blob of JSON.
 
-**On MCP:** [`@pixi-board/mcp-host`](packages/mcp-host) adapts these tools to JSON-RPC over stdio, HTTP, or in-process, and all three are tested for identical semantics against a real spawned child process and a loopback socket. It is currently an **internal package implementing only `tools/call`** — there is no `initialize` or `tools/list` handshake yet, so it cannot be pointed at Claude Code or Cursor as-is. Treat it as an agent-tool contract plus a handler you can wrap, not a ready-made MCP server.
+### Transport is yours
+
+`agent-tools` is a contract, not a server. It hands you two tool definitions with JSON Schemas (`import { canvasReadSchema, canvasWriteSchema } from "@pixi-board/agent-tools/schemas"`) and an async `call(name, input)`. Wiring that to MCP, HTTP, a WebSocket, or a direct function call in your own agent loop is a few lines against whatever harness you already run — so the SDK doesn't ship a server and doesn't chase a moving protocol.
+
+### Or skip the tools entirely
+
+`board.capabilities` is public on its own. If you have your own tool schema, your own DTO shape, or your own agent framework's conventions, build directly against it:
+
+```ts
+import { createBoardCapabilities, isCapabilityError } from "@pixi-board/capabilities";
+
+const result = await board.capabilities.nodes.create(
+  { nodes: [{ type: "rect", x: 0, y: 0, width: 100, height: 100, rotation: 0, zIndex: 0 }] },
+  { origin: "agent:my-agent" },
+);
+```
+
+Same transaction pipeline, same ChangeSet, same undo — you just own the translation layer. `agent-tools` is the convenience layer over this, not a privileged path around it.
 
 ## Architecture
 
@@ -127,10 +148,12 @@ Read paths are agent-shaped too: `canvas.read` returns compact node DTOs with fi
            │            │         │         │            │
     ┌──────▼─────┐┌─────▼──────┐┌─▼───────┐┌▼──────────┐┌▼───────────┐
     │capabilities││renderer-pixi││ adapter- ││  adapter-  ││ agent-tools │
-    │ (UI/plugin/││  (PixiJS    ││ browser  ││   tauri    ││  / mcp-host │
-    │  agent      ││   render    ││(IndexedDB││ (WebView   ││ (agent read/│
-    │  contract)  ││    cache)   ││ /OPFS)   ││  filesystem)││ write + MCP)│
+    │ (UI/plugin/││  (PixiJS    ││ browser  ││   tauri    ││ (canvas.read│
+    │  agent      ││   render    ││(IndexedDB││ (WebView   ││ /.write +   │
+    │  contract)  ││    cache)   ││ /OPFS)   ││  filesystem)││ JSON Schema)│
     └──────┬─────┘└─────┬───────┘└─────────┘└────────────┘└─────────────┘
+           │            │                        transport (MCP/HTTP/direct)
+           │            │                            is yours to assemble
            │            │
            └─────┬──────┘
                  │
@@ -154,12 +177,11 @@ Read paths are agent-shaped too: `canvas.read` returns compact node DTOs with fi
 | [`pixiboardjs`](packages/pixiboardjs) | The single user-facing package: `createPixiBoard()`, `NodeHandle`, built-in nodes, capabilities facade | Public |
 | [`@pixi-board/core`](packages/core) | Document / store / transaction / history / selection / viewport — no DOM dependency | Public |
 | [`@pixi-board/renderer-pixi`](packages/renderer-pixi) | PixiJS renderer: scene, spatial index, viewport virtualization, texture lifecycle | Internal |
-| [`@pixi-board/capabilities`](packages/capabilities) | Unified permissioned read/write surface for UI / plugins / agents | Internal |
+| [`@pixi-board/capabilities`](packages/capabilities) | Unified permissioned read/write surface for UI / plugins / agents | Public |
+| [`@pixi-board/agent-tools`](packages/agent-tools) | `canvas.read` / `canvas.write` tool contracts and their JSON Schemas | Public |
 | [`@pixi-board/adapter-browser`](packages/adapter-browser) | IndexedDB / OPFS / ObjectURL persistence and asset adapters | Internal |
 | [`@pixi-board/adapter-tauri`](packages/adapter-tauri) | Tauri WebView filesystem adapter | Internal |
 | [`@pixi-board/plugin-sdk`](packages/plugin-sdk) / [`plugin-api-v3`](packages/plugin-api-v3) | Plugin `definePlugin()` and the v3 capability contract | Public / Internal |
-| [`@pixi-board/agent-tools`](packages/agent-tools) | `canvas.read` / `canvas.write` and other agent tool contracts | Internal |
-| [`@pixi-board/mcp-host`](packages/mcp-host) | JSON-RPC `tools/call` handler over stdio / HTTP / in-process (no MCP handshake yet) | Internal |
 
 Full dependency direction and ownership boundaries: [package boundaries](docs/03-package-boundaries.md).
 

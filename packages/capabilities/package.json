@@ -1,10 +1,40 @@
 {
   "name": "@pixi-board/capabilities",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha.0",
+  "description": "Permissioned read/write surface over a PixiBoardJS document for UI, plugins and agents",
+  "private": false,
   "type": "module",
-  "private": true,
-  "dependencies": { "@pixi-board/core": "workspace:*" },
-  "devDependencies": { "vitest": "^3.2.4" },
-  "scripts": { "test": "vitest run --config vitest.config.ts" },
-  "exports": { ".": "./src/index.ts" }
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "etc",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@pixi-board/core": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts",
+    "check": "tsc -p tsconfig.json",
+    "build": "tsup",
+    "api:report": "api-extractor run --local --verbose"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

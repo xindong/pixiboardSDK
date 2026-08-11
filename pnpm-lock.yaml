@@ -173,6 +173,12 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(@microsoft/api-extractor@7.58.12(@types/node@12.20.55))(postcss@8.5.26)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
       vitest:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@12.20.55)
@@ -183,6 +189,12 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(@microsoft/api-extractor@7.58.12(@types/node@12.20.55))(postcss@8.5.26)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
       vitest:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@12.20.55)
@@ -195,25 +207,6 @@ importers:
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
-      vitest:
-        specifier: ^3.2.4
-        version: 3.2.7(@types/node@12.20.55)
-
-  packages/mcp-host:
-    dependencies:
-      '@pixi-board/agent-tools':
-        specifier: workspace:*
-        version: link:../agent-tools
-    devDependencies:
-      '@pixi-board/capabilities':
-        specifier: workspace:*
-        version: link:../capabilities
-      '@pixi-board/core':
-        specifier: workspace:*
-        version: link:../core
-      pixiboardjs:
-        specifier: workspace:*
-        version: link:../pixiboardjs
       vitest:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@12.20.55)

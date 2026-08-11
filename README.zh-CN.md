@@ -92,6 +92,10 @@ board.history.undo();
 
 Agent 不是从侧门进入画布的。`canvas.write` 落进的是和指针拖拽同一条事务管线：
 
+```bash
+pnpm add @pixi-board/agent-tools
+```
+
 ```ts
 import { createPixiBoardAgentTools } from "@pixi-board/agent-tools";
 
@@ -114,7 +118,24 @@ board.history.undo();   // Agent 的写入和其它编辑一样可以撤销
 
 读取路径同样是为 Agent 设计的：`canvas.read` 返回紧凑的节点 DTO，支持字段投影和分页，大画布不必整块 JSON 一次性返回。
 
-**关于 MCP：**[`@pixi-board/mcp-host`](packages/mcp-host) 把这些工具适配成 stdio、HTTP 和进程内三种 JSON-RPC 形态，并用真实 spawn 子进程和 loopback socket 验证了三者语义一致。但它目前是**内部包，且只实现了 `tools/call`**——没有 `initialize` 和 `tools/list` 握手，因此还不能直接挂到 Claude Code 或 Cursor 上。请把它理解为「Agent 工具契约 + 可包装的 handler」，而不是开箱即用的 MCP server。
+### 传输层由你决定
+
+`agent-tools` 是契约，不是 server。它给你两个带 JSON Schema 的工具定义（`import { canvasReadSchema, canvasWriteSchema } from "@pixi-board/agent-tools/schemas"`）和一个异步的 `call(name, input)`。把它接到 MCP、HTTP、WebSocket，还是在自己的 agent 循环里直接函数调用，都只是针对你已有 harness 的几行代码——所以 SDK 不附带 server，也不去追一个仍在演进的协议。
+
+### 也可以完全不用工具层
+
+`board.capabilities` 本身就是公开的。如果你有自己的工具 schema、自己的 DTO 形状，或者要遵循自己 agent 框架的约定，直接基于它构建：
+
+```ts
+import { createBoardCapabilities, isCapabilityError } from "@pixi-board/capabilities";
+
+const result = await board.capabilities.nodes.create(
+  { nodes: [{ type: "rect", x: 0, y: 0, width: 100, height: 100, rotation: 0, zIndex: 0 }] },
+  { origin: "agent:my-agent" },
+);
+```
+
+同一条事务管线、同一份 ChangeSet、同样可撤销，只是翻译层归你自己维护。`agent-tools` 是它之上的便利层，而不是绕过它的特权通道。
 
 ## 架构总览
 
@@ -127,10 +148,11 @@ board.history.undo();   // Agent 的写入和其它编辑一样可以撤销
            │            │         │         │            │
     ┌──────▼─────┐┌─────▼──────┐┌─▼───────┐┌▼──────────┐┌▼───────────┐
     │capabilities││renderer-pixi││ adapter- ││  adapter-  ││ agent-tools │
-    │ (UI/Plugin/││  (PixiJS    ││ browser  ││   tauri    ││  / mcp-host │
-    │  Agent 契约)││   渲染缓存)  ││(IndexedDB││ (WebView   ││ (Agent 读写 │
-    │            ││             ││ /OPFS)   ││  文件系统) ││  与 MCP)    │
+    │ (UI/Plugin/││  (PixiJS    ││ browser  ││   tauri    ││ (canvas.read│
+    │  Agent 契约)││   渲染缓存)  ││(IndexedDB││ (WebView   ││ /.write +   │
+    │            ││             ││ /OPFS)   ││  文件系统) ││ JSON Schema)│
     └──────┬─────┘└─────┬───────┘└─────────┘└────────────┘└─────────────┘
+           │            │                     传输层（MCP/HTTP/直接调用）自行组装
            │            │
            └─────┬──────┘
                  │
@@ -154,12 +176,11 @@ board.history.undo();   // Agent 的写入和其它编辑一样可以撤销
 | [`pixiboardjs`](packages/pixiboardjs) | 唯一用户包：`createPixiBoard()`、`NodeHandle`、内置节点、capabilities 门面 | 公开 |
 | [`@pixi-board/core`](packages/core) | 文档 / store / transaction / history / selection / viewport，无 DOM 依赖 | 公开 |
 | [`@pixi-board/renderer-pixi`](packages/renderer-pixi) | PixiJS 渲染器：scene、空间索引、视口虚拟化、纹理生命周期 | 内部 |
-| [`@pixi-board/capabilities`](packages/capabilities) | 面向 UI / 插件 / Agent 的统一受控读写能力 | 内部 |
+| [`@pixi-board/capabilities`](packages/capabilities) | 面向 UI / 插件 / Agent 的统一受控读写能力 | 公开 |
+| [`@pixi-board/agent-tools`](packages/agent-tools) | `canvas.read` / `canvas.write` 工具契约及其 JSON Schema | 公开 |
 | [`@pixi-board/adapter-browser`](packages/adapter-browser) | IndexedDB / OPFS / ObjectURL 持久化与资产适配 | 内部 |
 | [`@pixi-board/adapter-tauri`](packages/adapter-tauri) | Tauri WebView 文件系统适配 | 内部 |
 | [`@pixi-board/plugin-sdk`](packages/plugin-sdk) / [`plugin-api-v3`](packages/plugin-api-v3) | 插件 `definePlugin()` 与 v3 能力契约 | 公开 / 内部 |
-| [`@pixi-board/agent-tools`](packages/agent-tools) | `canvas.read` / `canvas.write` 等 Agent 工具契约 | 内部 |
-| [`@pixi-board/mcp-host`](packages/mcp-host) | stdio / HTTP / 进程内的 JSON-RPC `tools/call` handler（尚无 MCP 握手） | 内部 |
 
 完整依赖方向和职责边界见 [包与模块边界](docs/03-package-boundaries.md)。
 

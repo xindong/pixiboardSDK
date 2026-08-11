@@ -13,8 +13,8 @@
   "scripts": {
     "docs:check": "node scripts/check-docs.mjs",
     "packages:check": "node scripts/check-packages.mjs",
-    "build:release": "pnpm --filter @pixi-board/core build && pnpm --filter pixiboardjs build && pnpm --filter @pixi-board/plugin-sdk build",
-    "api:report": "pnpm --filter @pixi-board/core api:report && pnpm --filter pixiboardjs api:report && pnpm --filter @pixi-board/plugin-sdk api:report",
+    "build:release": "pnpm --filter @pixi-board/core build && pnpm --filter @pixi-board/capabilities build && pnpm --filter @pixi-board/agent-tools build && pnpm --filter pixiboardjs build && pnpm --filter @pixi-board/plugin-sdk build",
+    "api:report": "pnpm --filter @pixi-board/core api:report && pnpm --filter @pixi-board/capabilities api:report && pnpm --filter @pixi-board/agent-tools api:report && pnpm --filter pixiboardjs api:report && pnpm --filter @pixi-board/plugin-sdk api:report",
     "api:check": "node scripts/check-api-report.mjs",
     "bundle:check": "node scripts/check-bundle-budget.mjs",
     "release:check": "node scripts/check-release-gate.mjs",

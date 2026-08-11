@@ -16,7 +16,6 @@ const commands = [
   ["--filter", "@pixi-board/capabilities", "test"],
   ["--filter", "@pixi-board/agent-tools", "test"],
   ["--filter", "@pixi-board/core", "build"],
-  ["--filter", "@pixi-board/mcp-host", "test"],
   ["--filter", "@pixi-board/plugin-api-v3", "test"],
   ["--filter", "@pixi-board/adapter-contract-tests", "test"],
   ["--filter", "@pixi-board/adapter-browser", "test"],

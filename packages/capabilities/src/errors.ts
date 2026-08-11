@@ -4,11 +4,27 @@ export type CapabilityErrorCode =
   | "ASSET_UNAVAILABLE" | "PERMISSION_DENIED" | "BOARD_DESTROYED"
   | "ABORTED" | "CAPABILITY_UNAVAILABLE" | "INVALID_INPUT" | "INTERNAL_ERROR";
 
+/**
+ * Identifies a CapabilityError across duplicate copies of this class. The
+ * published packages externalize their dependencies, but `pixiboardjs` inlines
+ * capabilities into its own bundle, so an error thrown by a board and an error
+ * class imported from `@pixi-board/capabilities` are not the same constructor.
+ * Use isCapabilityError() rather than instanceof at those boundaries.
+ */
+const CAPABILITY_ERROR_BRAND = "@pixi-board/capabilities:CapabilityError";
+
 export class CapabilityError extends Error {
   readonly name = "CapabilityError";
+  readonly brand = CAPABILITY_ERROR_BRAND;
   readonly code: CapabilityErrorCode;
   readonly details?: Readonly<Record<string, unknown>>;
   constructor(code: CapabilityErrorCode, message: string, details?: Readonly<Record<string, unknown>>) { super(message); this.code = code; this.details = details; }
+}
+
+/** instanceof, plus a brand check that survives a second copy of the class. */
+export function isCapabilityError(value: unknown): value is CapabilityError {
+  return value instanceof CapabilityError ||
+    (value instanceof Error && (value as { brand?: unknown }).brand === CAPABILITY_ERROR_BRAND);
 }
 
 export class CapabilityUnavailableError extends CapabilityError {
@@ -29,7 +45,7 @@ export class BoardDestroyedError extends CapabilityError {
 }
 
 export function mapCoreError(error: unknown): CapabilityError {
-  if (error instanceof CapabilityError) return error;
+  if (isCapabilityError(error)) return error;
   const { NodeNotFoundError, NodeTypeNotRegisteredError, NodeValidationError, DocumentValidationError, TransactionConflictError } = coreErrors;
   const message = error instanceof Error ? error.message : String(error);
   const code: CapabilityErrorCode = error instanceof NodeNotFoundError ? "NODE_NOT_FOUND"

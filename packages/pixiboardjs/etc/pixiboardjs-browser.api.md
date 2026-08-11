@@ -510,6 +510,8 @@ export class BrowserStorageQuotaError extends BrowserPersistenceError {
 // @public (undocumented)
 export class CapabilityError extends Error {
     constructor(code: CapabilityErrorCode, message: string, details?: Readonly<Record<string, unknown>>);
+    // (undocumented)
+    readonly brand = "@pixi-board/capabilities:CapabilityError";
     // Warning: (ae-forgotten-export) The symbol "CapabilityErrorCode" needs to be exported by the entry point browser.d.ts
     //
     // (undocumented)

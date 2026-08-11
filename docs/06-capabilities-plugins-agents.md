@@ -129,27 +129,29 @@ BoardCapabilities
 - asset import 和清理。
 - origin、revision 和 ChangeSet。
 
-### MCP Host
+### Transport 不属于 SDK
 
-MCP 只是一种 transport：
+SDK 到 `agent-tools` 为止；MCP、HTTP、WebSocket 只是把同一份工具契约搬运出去的方式，由接入方按自己的 harness 组装：
 
 ```text
 Claude/Codex/Other Agent
-        │ MCP HTTP or stdio
+        │ transport（接入方自行组装）
         ▼
-MCP Host
-        ▼
-Agent Tool Registry
+Agent Tools（canvas.read / canvas.write + JSON Schema）
         ▼
 BoardCapabilities
 ```
 
-不使用 MCP 时可直接调用：
+进程内直接调用：
 
 ```ts
 const tools = createPixiBoardAgentTools(board.capabilities);
 await tools.call("canvas.write", input);
 ```
+
+JSON Schema 单独从 `@pixi-board/agent-tools/schemas` 导出，供接入方注册到自己的 tool registry。
+
+不把 transport 放进 SDK 的原因：协议仍在演进（MCP 本身的握手与能力协商还在变），而画布语义不该跟着协议版本走。工具契约稳定、传输可替换，是这条边界的目的。
 
 ## Headless Agent
 
@@ -196,12 +198,10 @@ UI、Plugin、Agent、API
 3. 现有官方与内部插件不迁移，随旧应用插件体系废弃；SDK 只为未来新插件提供 v3 contract。
 4. `PluginRuntimeHost` 从依赖 `MediaWhiteboard` 改为依赖 `BoardCapabilities` 和事件 ports。
 5. `board-plugin-canvas` 改为 thin Agent adapter。
-6. MCP facade 保留 tool registry 动态更新能力。
 
 ## 验收
 
 - 同一 contract test suite 分别调用 direct capabilities、新 v3 plugin proxy 和 Agent tool。
 - 权限拒绝不会发生部分写入。
 - 取消耗时操作后不存在迟到 mutation。
-- MCP 与进程内调用返回语义一致。
 - Plugin Host 销毁后清理所有 panel、listener、job 和 tool registration。

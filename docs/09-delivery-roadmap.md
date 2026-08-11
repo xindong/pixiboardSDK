@@ -87,15 +87,14 @@ Node、Asset、ChangeSet、transaction 和 Document 拒绝边界未冻结，不�
 
 - typed BoardCapabilities。
 - 新 Plugin API v3 capability contract，不迁移旧插件。
-- Agent tools adapter。
-- MCP transport 重接。
+- Agent tools adapter（含 JSON Schema 导出；transport 不在 SDK 范围）。
 - origin/revision/transactionId 统一事件。
 
 ### 验收
 
 - UI、API、Plugin、Agent、history 产生同语义 ChangeSet。
 - Permission denied 不产生部分写入。
-- Direct Agent 和 MCP tool 输入结果等价。
+- Direct Core、Capabilities 和 Agent tool 三条路径的 document/revision/ChangeSet 等价。
 - 旧插件不进入新 SDK host，不存在 v2 host adapter；新 v3 plugin contract 有一个全新示例通过加载验证。
 
 ## P5：Browser Adapter 与 Web 示例（1–1.5 周）
@@ -161,7 +160,7 @@ Node、Asset、ChangeSet、transaction 和 Document 拒绝边界未冻结，不�
 - preview refresh、generating install、媒体播放。
 - capture/export/reveal。
 - 新 v3 plugin contract 的 panel/tool 示例；旧插件 zip 不纳入 parity。
-- canvas.read/write 和 MCP。
+- canvas.read/write。
 
 不要求 SDK 承担这些产品 UI，但 SDK 替换不能破坏其能力。
 
