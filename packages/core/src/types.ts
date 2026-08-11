@@ -98,6 +98,31 @@ export type ResizeInput<Props extends JsonValue> = {
   height: number;
 };
 
+/** The eight selection control points, named after compass directions. */
+export type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+
+/** The geometry a resize gesture started from, captured at pointer-down. */
+export type NodeGeometry = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+};
+
+export type NodeResizeRequest = {
+  handle: ResizeHandle;
+  /** Pointer movement since the gesture started, in world units. */
+  deltaWorld: Point;
+  /**
+   * Geometry at pointer-down. Accumulating against it keeps a long drag exact;
+   * omitting it resolves against the node's current geometry instead.
+   */
+  origin?: NodeGeometry;
+  minWidth?: number;
+  minHeight?: number;
+};
+
 export type ResizePolicy<Props extends JsonValue> =
   | { mode: "free" }
   | { mode: "aspect-ratio"; ratio?: number }
@@ -156,6 +181,14 @@ export type NodeListFilter = {
 
 export type TransactionOptions = {
   origin?: ChangeOrigin;
+  /**
+   * Merges this transaction into the previous history entry when that entry
+   * carries the same key. A pointer gesture that commits once per frame passes
+   * one key for the whole gesture so it undoes as a single step; each new
+   * gesture must pass a fresh key. Every frame still gets its own revision and
+   * ChangeSet — only the history entry is coalesced.
+   */
+  coalesceKey?: string;
 };
 
 export type DocumentLoadOptions = {

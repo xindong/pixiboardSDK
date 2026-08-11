@@ -189,7 +189,38 @@ type ResizePolicy<Props> =
   | { mode: "custom"; resize(input): NodePatch<Props> };
 ```
 
-selection outline 默认使用 bounds。自定义 outline、控制点和旋转中心标记为后续 experimental，不阻塞 v1。
+策略在 `nodeTypes.register()` 时校验：未知 mode、`custom` 缺少 `resize()`、`aspect-ratio` 声明非正 ratio 都直接抛 `NodeValidationError`，不接受运行期才暴露的错误定义。
+
+未声明 `resize` 的节点类型按 `free` 处理；`node.locked === true` 覆盖任何策略，一律拒绝改动几何。
+
+### 求解与提交
+
+Core 提供两层入口：
+
+- `resolveResize(node, policy, request)` — 纯函数，把一次手柄拖拽换算成 `BoardNodePatch`，包含策略求解与重新锚定。
+- `board.nodes.resize(nodeId, request)` — 走同一求解并提交 transaction。策略拒绝时返回原节点且不产生 revision，避免在 fixed 节点上拖拽每帧提交空事务。
+
+`request.deltaWorld` 是世界坐标下的累计位移，`request.origin` 是 pointerdown 时刻的几何。按 origin 累计而非按当前尺寸递推，长距离拖拽不会累积舍入误差。
+
+旋转节点在自身坐标系内求解：delta 先反向旋转到 local frame，再沿节点自己的轴增长，手柄未占用的边保持世界位置不变。
+
+### 选择框与控制点
+
+主包提供 `board.transform`：
+
+```ts
+board.transform.bounds();          // 选区世界矩形，单选时带 rotation
+board.transform.handles();         // 八个控制点的世界坐标与 CSS cursor
+const session = board.transform.begin("se");
+session.update({ x: dx, y: dy });  // 累计位移，可每帧调用
+session.commit();                  // 或 session.cancel() 还原
+```
+
+一次手势内的每帧都是独立 revision 与 ChangeSet（renderer 与观察者看到实时几何），但共享同一个 `coalesceKey`，在 history 里合并为单个 undo step（见 ADR 0006）。
+
+多选没有共享 rotation，选区框取所有节点旋转后角点的轴对齐包围盒；缩放时按同一比例映射每个节点的偏移与尺寸，但每个节点的尺寸仍各自过自己的 ResizePolicy——多选中的 fixed 节点保持原尺寸与原位置，不随组缩放漂移。
+
+浏览器宿主可直接用 `pixiboardjs/browser` 的 `attachDomTransformer()` 渲染这八个控制点。控制点必须是真实 DOM 元素而非 `::before/::after`：伪元素永远不会成为 `event.target`，只能被样式化、无法被抓取。自定义 outline 与旋转中心标记仍为后续 experimental，不阻塞 v1。
 
 ## 性能约束
 

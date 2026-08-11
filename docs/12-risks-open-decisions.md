@@ -41,7 +41,7 @@
 ### Core History
 
 - History 使用可序列化 forward/inverse patches，不保存任意闭包 command。
-- transient drag/resize 发 `interaction:preview`，最终 commit 才增加 revision/history。
+- drag/resize 手势按帧提交正式 transaction，靠 `coalesceKey` 在 history 合并为单个 undo step；不引入 `interaction:preview` 这类脱离 document 的临时几何通道（见 ADR 0006）。
 
 ### Renderer
 

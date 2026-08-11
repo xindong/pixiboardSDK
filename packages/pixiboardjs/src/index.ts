@@ -20,12 +20,14 @@ import {
   type PixiNodeRenderer as InternalNodeRenderer,
 } from "@pixi-board/renderer-pixi";
 import { BoardDestroyedError } from "./errors";
+import { TransformController } from "./transform";
 import type {
   BoardLifecycleState,
   CaptureInput,
   CustomNodeRendererRegistry,
   NodeQuery,
   NodeHandle,
+  NodeResizeRequest,
   PublicNodeTypeDefinition,
   PixiBoard,
   PixiBoardOptions,
@@ -35,6 +37,13 @@ import type {
 
 export * from "./errors";
 export type * from "./types";
+// Re-exported so a host can compute handle placement and cursors itself when
+// it draws the transformer inside its own scene instead of over the DOM.
+export {
+  RESIZE_HANDLES,
+  resizeHandleAxes,
+  resizeHandleCursor,
+} from "@pixi-board/core";
 export {
   DocumentValidationError,
   NodeNotFoundError,
@@ -133,6 +142,7 @@ class PixiBoardFacade implements PixiBoard {
   readonly capabilities: BoardCapabilities;
   readonly nodes: PixiBoard["nodes"];
   readonly nodeTypes: PixiBoard["nodeTypes"];
+  readonly transform: PixiBoard["transform"];
   readonly selection: PixiBoard["selection"];
   readonly viewport: PixiBoard["viewport"];
   readonly history: PixiBoard["history"];
@@ -146,11 +156,13 @@ class PixiBoardFacade implements PixiBoard {
   private readonly cleanup = new Set<() => void>();
   private readonly options: PixiBoardOptions;
   private readonly rendererRegistry: NodeRendererRegistry;
+  private readonly transformController: TransformController;
   private renderer?: RuntimeRenderer;
   private frameId = 0;
   private pendingRuntimeWork = Promise.resolve();
   private destroyPromise?: Promise<void>;
   private transactionDepth = 0;
+  private transformSequence = 0;
 
   constructor(options: PixiBoardOptions) {
     const rendererRegistry = (options.renderer?.registry as unknown as NodeRendererRegistry | undefined) ?? new NodeRendererRegistry();
@@ -180,6 +192,11 @@ class PixiBoardFacade implements PixiBoard {
         this.updateNode(nodeId, patch);
         return this.node<Props>(nodeId);
       },
+      resize: <Props extends JsonValue>(nodeId: string, request: NodeResizeRequest) => {
+        this.assertAlive();
+        this.core.nodes.resize<Props>(nodeId, request);
+        return this.node<Props>(nodeId);
+      },
       remove: (nodeId) => this.removeNode(nodeId),
       get: <Props extends JsonValue = JsonValue>(nodeId: string) => this.getNode<Props>(nodeId),
       list: (filter = {}) => { this.assertAlive(); return this.core.nodes.list(filter); },
@@ -192,6 +209,22 @@ class PixiBoardFacade implements PixiBoard {
       has: (type) => { this.assertAlive(); return this.core.nodeTypes.has(type); },
       get: (type) => { this.assertAlive(); return this.core.nodeTypes.get(type); },
       list: () => { this.assertAlive(); return this.core.nodeTypes.list(); },
+    };
+    this.transformController = new TransformController({
+      selection: () => this.core.selection.get(),
+      getNode: (nodeId) => this.core.nodes.get(nodeId),
+      resizePolicy: (type) => this.core.nodeTypes.get(type)?.resize,
+      resize: (nodeId, request) => { this.core.nodes.resize(nodeId, request); },
+      update: (nodeId, patch) => { this.core.nodes.update(nodeId, patch); },
+      transaction: (label, operation, transactionOptions) =>
+        this.transaction(label, operation, transactionOptions),
+      nextId: () => `${++this.transformSequence}`,
+    }, this.options.transform ?? {});
+    this.transform = {
+      handles: () => { this.assertAlive(); return this.transformController.handles(); },
+      bounds: () => { this.assertAlive(); return this.transformController.bounds(); },
+      begin: (handle) => { this.assertAlive(); return this.transformController.begin(handle); },
+      active: () => this.transformController.active(),
     };
     this.selection = {
       get: () => { this.assertAlive(); return this.core.selection.get(); },
@@ -507,6 +540,8 @@ class PixiBoardFacade implements PixiBoard {
   private async performDestroy(): Promise<void> {
     if (this.lifecycle === "destroyed") return;
     this.lifecycle = "destroying";
+    // Ends any live gesture before assertAlive() starts rejecting its writes.
+    this.transformController.dispose();
     if (focusedBoard === this) focusedBoard = undefined;
     this.abortController.abort(new BoardDestroyedError());
     for (const dispose of this.cleanup) dispose();

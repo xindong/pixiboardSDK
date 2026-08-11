@@ -1,11 +1,13 @@
 import "./styles.css";
 import {
+  attachDomTransformer,
   createPixiBoard,
   type CustomDisplayObject,
   type CustomNodeDefinition,
+  type DomTransformer,
   type PixiBoard,
   type RuntimeRenderer,
-} from "pixiboardjs";
+} from "pixiboardjs/browser";
 import { NodeTypeRegistry, type AssetRef } from "@pixi-board/core";
 import { createPixiApplicationFactory, loadPixiRuntime, PixiBoardRenderer } from "@pixi-board/renderer-pixi";
 import {
@@ -25,6 +27,7 @@ const hudFps = document.querySelector<HTMLSpanElement>("#hud-fps")!;
 const toolbar = document.querySelector<HTMLDivElement>("#toolbar")!;
 const selectionBox = document.querySelector<HTMLDivElement>("#selection-box")!;
 const selectionOverlay = document.querySelector<HTMLDivElement>("#selection-overlay")!;
+const handleOverlay = document.querySelector<HTMLDivElement>("#handle-overlay")!;
 const infoPanel = document.querySelector<HTMLDivElement>("#info-panel")!;
 const infoToggle = document.querySelector<HTMLButtonElement>("#info-toggle")!;
 const infoClose = document.querySelector<HTMLButtonElement>("#info-close")!;
@@ -79,12 +82,19 @@ type MediaProps = { name: string; mimeType: string; size: number };
  * The Pixi renderer already ships image/video/audio renderers that resolve
  * `assetRefs`; core ships no node types at all, so the host declares the data
  * side of those three types here.
+ *
+ * Images and video keep their aspect ratio when resized so media never
+ * stretches; audio is a fixed-height waveform strip that only grows sideways,
+ * which the custom policy below enforces.
  */
 function mediaTypeDefinition(type: MediaKind): CustomNodeDefinition<MediaProps> {
   return {
     type,
     version: 1,
     defaults: { name: "", mimeType: "", size: 0 },
+    resize: type === "audio"
+      ? { mode: "custom", resize: ({ node, width }) => ({ width, height: node.height }) }
+      : { mode: "aspect-ratio" },
     validate(value): MediaProps {
       const candidate = (value ?? {}) as Partial<MediaProps>;
       return {
@@ -243,8 +253,8 @@ async function main(): Promise<void> {
 
   activeBoard = board;
   wireStageTransform(board, application);
-  wireSelectionOverlay(board);
-  wirePointerInteractions(board);
+  const transformer = wireSelectionOverlay(board);
+  wirePointerInteractions(board, transformer);
   wireInfoPanel();
   wireHud(board);
   const resyncMediaBadges = wireMediaBadges(board);
@@ -343,12 +353,16 @@ function wireStageTransform(
 // Selection outlines are host-drawn DOM, so they must be re-projected on every
 // selection change, document change, and viewport change — a node can move
 // under a static viewport and the viewport can move under a static selection.
-function wireSelectionOverlay(board: PixiBoard): void {
+// The eight resize handles are not drawn here: the SDK's DOM transformer owns
+// them, because they need real elements with live pointer handlers rather than
+// the decorative markup an outline can get away with.
+function wireSelectionOverlay(board: PixiBoard): DomTransformer {
   const redraw = () => renderSelectionOverlay(board);
   board.on("selection:change", redraw);
   board.on("change", redraw);
   board.on("viewport:change", redraw);
   redraw();
+  return attachDomTransformer(board, { overlay: handleOverlay, surface: host });
 }
 
 function renderSelectionOverlay(board: PixiBoard): void {
@@ -379,11 +393,6 @@ function renderSelectionOverlay(board: PixiBoard): void {
     outline.style.top = `${topLeft.y}px`;
     outline.style.width = `${bottomRight.x - topLeft.x}px`;
     outline.style.height = `${bottomRight.y - topLeft.y}px`;
-    const bottomLeftHandle = document.createElement("i");
-    bottomLeftHandle.className = "handle-bl";
-    const bottomRightHandle = document.createElement("i");
-    bottomRightHandle.className = "handle-br";
-    outline.append(bottomLeftHandle, bottomRightHandle);
     selectionOverlay.appendChild(outline);
   }
 
@@ -765,7 +774,7 @@ function exportDocument(board: PixiBoard): void {
   URL.revokeObjectURL(url);
 }
 
-function wirePointerInteractions(board: PixiBoard): void {
+function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer): void {
   let mode: "idle" | "select" | "drag-node" = "idle";
   // Every selected node moves, so the drag carries one origin per node instead
   // of a single handle. Origins are accumulated in world units to keep the drag
@@ -780,6 +789,10 @@ function wirePointerInteractions(board: PixiBoard): void {
   // if the pointer never actually moved.
   let collapseToOnRelease: string | undefined;
   let movedDuringDrag = false;
+  // One key per gesture, shared by every frame of that drag, so the whole
+  // move collapses into a single undo step instead of one per frame.
+  let dragCoalesceKey: string | undefined;
+  let dragSequence = 0;
 
   const beginNodeDrag = () => {
     dragOrigins = board.selection
@@ -788,10 +801,16 @@ function wirePointerInteractions(board: PixiBoard): void {
       .filter((item): item is NonNullable<typeof item> => item !== undefined)
       .map((item) => ({ id: item.id, x: item.x, y: item.y }));
     mode = dragOrigins.length > 0 ? "drag-node" : "idle";
+    dragCoalesceKey = `move:${++dragSequence}`;
   };
 
   host.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
+    // The handles stop propagation before this fires, so a resize normally
+    // never reaches the canvas at all; this only guards a gesture already in
+    // flight (a second pointer, or a synthetic event) from also starting a
+    // marquee underneath it.
+    if (transformer.dragging()) return;
     board.focus();
     host.setPointerCapture(event.pointerId);
     const screenPoint = toHostPoint(event);
@@ -845,13 +864,14 @@ function wirePointerInteractions(board: PixiBoard): void {
         origin.x += deltaWorld.x;
         origin.y += deltaWorld.y;
       }
-      // One transaction per frame keeps the whole group on a single undo step
-      // and a single render pass.
+      // One transaction per frame keeps the whole group on a single render
+      // pass; the shared coalesceKey folds every frame of the gesture into one
+      // undo step.
       board.transaction("Move selection", () => {
         for (const origin of dragOrigins) {
           board.nodes.update(origin.id, { x: origin.x, y: origin.y });
         }
-      });
+      }, { origin: "ui", ...(dragCoalesceKey ? { coalesceKey: dragCoalesceKey } : {}) });
     }
   });
 
@@ -870,6 +890,7 @@ function wirePointerInteractions(board: PixiBoard): void {
     dragOrigins = [];
     collapseToOnRelease = undefined;
     movedDuringDrag = false;
+    dragCoalesceKey = undefined;
   };
   host.addEventListener("pointerup", endDrag);
   host.addEventListener("pointercancel", endDrag);

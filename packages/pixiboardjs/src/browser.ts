@@ -1,4 +1,5 @@
 export * from "./index";
+export * from "./dom-transformer";
 export * from "@pixi-board/adapter-browser";
 
 import {

@@ -9,8 +9,11 @@ import type {
   ChangeOrigin,
   DocumentLoadOptions,
   JsonValue,
+  NodeGeometry,
   NodeListFilter,
+  NodeResizeRequest,
   Point,
+  ResizeHandle,
   TransactionOptions,
   ViewportSnapshot,
   WorldBounds,
@@ -35,8 +38,11 @@ export type {
   ChangeOrigin,
   DocumentLoadOptions,
   JsonValue,
+  NodeGeometry,
   NodeListFilter,
+  NodeResizeRequest,
   Point,
+  ResizeHandle,
   TransactionOptions,
   ViewportSnapshot,
   WorldBounds,
@@ -171,6 +177,8 @@ export type PixiBoardOptions = {
   headless?: boolean;
   persistence?: DocumentPersistence;
   interactions?: { pointer?: boolean; keyboard?: boolean; clipboard?: boolean };
+  /** Floor sizes a resize gesture may shrink a node to, in world units. */
+  transform?: { minWidth?: number; minHeight?: number };
   ports?: BoardRuntimePorts;
   core?: Omit<BoardCoreOptions, "document">;
   renderer?: PublicRendererOptions;
@@ -194,6 +202,42 @@ export type RenderCompleteEvent = { revision: number; frameId: number };
 
 export type NodeTypeRegistrationOptions = {
   replace?: boolean;
+};
+
+/**
+ * The selection's axis-aligned world rectangle. A single selected node also
+ * reports its `rotation` so a host can draw the outline in the node's own
+ * frame; a multi-node selection has no shared rotation and reports `0`.
+ */
+export type TransformBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  nodeIds: string[];
+};
+
+/** Where one control point sits, in world units, plus its CSS cursor. */
+export type TransformHandlePlacement = {
+  handle: ResizeHandle;
+  /** World position of the handle's centre. */
+  world: Point;
+  cursor: string;
+};
+
+export type TransformSession = {
+  readonly handle: ResizeHandle;
+  /**
+   * Applies the total pointer movement since `begin()`, in world units.
+   * Deltas are absolute rather than incremental so a gesture stays exact
+   * under fractional zoom and dropped frames.
+   */
+  update(deltaWorld: Point): void;
+  /** Ends the gesture. Further `update()` calls are ignored. */
+  commit(): void;
+  /** Ends the gesture and restores the geometry captured at `begin()`. */
+  cancel(): void;
 };
 
 export type NodeTypeRegistrationDisposer = () => Promise<void>;
@@ -245,9 +289,23 @@ export interface PixiBoard {
   readonly nodes: {
     create<Props extends JsonValue>(input: BoardNodeCreateInput<Props>): Promise<NodeHandle<Props>>;
     update<Props extends JsonValue>(nodeId: string, patch: BoardNodePatch<Props>): NodeHandle<Props>;
+    resize<Props extends JsonValue>(nodeId: string, request: NodeResizeRequest): NodeHandle<Props>;
     remove(nodeId: string): void;
     get<Props extends JsonValue = JsonValue>(nodeId: string): Readonly<BoardNode<Props>> | undefined;
     list(filter?: NodeListFilter): ReadonlyArray<Readonly<BoardNode>>;
+  };
+  /**
+   * Drives resize gestures for the current selection. `transform.begin()`
+   * captures the geometry the gesture starts from; each `update()` resolves
+   * the accumulated pointer delta through every selected node's ResizePolicy
+   * and commits one coalesced transaction, so the whole gesture undoes as a
+   * single step.
+   */
+  readonly transform: {
+    handles(): ReadonlyArray<TransformHandlePlacement>;
+    bounds(): TransformBounds | undefined;
+    begin(handle: ResizeHandle): TransformSession | undefined;
+    active(): boolean;
   };
   readonly nodeTypes: {
     register<Props extends JsonValue, State = unknown>(
