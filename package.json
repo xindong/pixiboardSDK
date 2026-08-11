@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "description": "Architecture and delivery plan for PixiBoardJS SDK",
+  "homepage": "https://xindong.github.io/pixiboardSDK/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xindong/pixiboardSDK.git"
+  },
+  "license": "MIT",
   "scripts": {
     "docs:check": "node scripts/check-docs.mjs",
     "packages:check": "node scripts/check-packages.mjs",
