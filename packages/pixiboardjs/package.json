@@ -1,7 +1,28 @@
 {
   "name": "pixiboardjs",
   "version": "0.1.0-alpha.0",
-  "description": "PixiBoardJS public SDK facade",
+  "description": "High-performance infinite canvas SDK for large, media-heavy, AI-native boards — flat document model, PixiJS rendering, custom nodes.",
+  "keywords": [
+    "canvas",
+    "infinite-canvas",
+    "pixi",
+    "pixijs",
+    "whiteboard",
+    "sdk",
+    "webgl",
+    "flat-document",
+    "media-canvas",
+    "moodboard"
+  ],
+  "homepage": "https://xindong.github.io/pixiboardSDK/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xindong/pixiboardSDK.git",
+    "directory": "packages/pixiboardjs"
+  },
+  "bugs": "https://github.com/xindong/pixiboardSDK/issues",
+  "license": "MIT",
+  "author": "Xindong",
   "type": "module",
   "private": false,
   "sideEffects": false,

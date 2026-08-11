@@ -295,15 +295,27 @@ body {
   background: var(--accent-soft);
 }
 
+/* A single horizontal floating bar centered under the topbar, in the spirit
+   of Figma/Excalidraw-style toolbars — this replaces the old top-left
+   vertical stack, which piled all ten buttons into one narrow column and
+   left the rest of the canvas chrome empty. */
 .toolbar {
   position: absolute;
   top: 62px;
-  left: 20px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 10;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  /* Reserve room on both sides for the HUD pinned at top-right (and its
+     mirror image on the left) so the centered bar never grows wide enough to
+     run under them; on narrower windows it wraps to a second row (flex-wrap
+     above) instead of extending sideways. */
+  max-width: calc(100vw - 320px);
+  padding: 6px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: rgba(16, 21, 28, 0.9);
@@ -313,33 +325,53 @@ body {
 
 .toolbar-group {
   display: flex;
-  gap: 6px;
+  gap: 4px;
+  padding: 0 6px;
+  position: relative;
+}
+
+/* A vertical rule between groups reads as "these buttons belong together"
+   without the visual weight of nesting each group in its own panel. */
+.toolbar-group + .toolbar-group::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--border-strong);
 }
 
 .toolbar button {
   pointer-events: auto;
-}
-
-.toolbar button {
   appearance: none;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-1);
-  color: var(--text-0);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-1);
   padding: 7px 12px;
   border-radius: 8px;
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
 .toolbar button:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--border-strong);
+  background: var(--bg-1);
+  color: var(--text-0);
 }
 
 .toolbar button:active {
   transform: translateY(1px);
+}
+
+/* Destructive actions (clearing all locally-persisted media/documents) get a
+   quieter warning tint rather than looking identical to "export". */
+.toolbar button.danger:hover {
+  border-color: #f16c8c;
+  background: rgba(241, 108, 140, 0.12);
+  color: #ffc7d3;
 }
 
 .hud {
@@ -517,11 +549,8 @@ body {
 
 @media (max-width: 720px) {
   .toolbar {
-    left: 12px;
-    right: 12px;
     top: 56px;
-    flex-direction: row;
-    flex-wrap: wrap;
+    max-width: calc(100vw - 24px);
   }
 
   .hud {

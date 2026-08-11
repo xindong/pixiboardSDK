@@ -1,8 +1,14 @@
 # pixiboardjs
 
-The single public PixiBoardJS package. It composes Core, Pixi renderer,
-capabilities, and platform ports behind the `createPixiBoard()` facade without
-exposing the mutable store or Pixi scene.
+[![npm](https://img.shields.io/npm/v/pixiboardjs)](https://www.npmjs.com/package/pixiboardjs)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/xindong/pixiboardSDK/blob/main/LICENSE)
+
+The single public PixiBoardJS package — a high-performance infinite canvas SDK
+for large, media-heavy boards. It composes Core, Pixi renderer, capabilities,
+and platform ports behind the `createPixiBoard()` facade without exposing the
+mutable store or Pixi scene.
+
+[Live demo](https://xindong.github.io/pixiboardSDK/) · [Full documentation & source](https://github.com/xindong/pixiboardSDK)
 
 The facade performs one full renderer rebuild at mount. Later Core commits
 forward detached immutable changed-node updates directly to the renderer, so a
