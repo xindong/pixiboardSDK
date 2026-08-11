@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BoardCore, NodeTypeRegistry, type NodeTypeDefinition } from "@pixi-board/core";
-import { createBoardCapabilities } from "./index.ts";
+import { CapabilityError, createBoardCapabilities, isCapabilityError, mapCoreError } from "./index.ts";
 
 const text: NodeTypeDefinition = { type: "text", version: 1, defaults: {}, validate: (value) => value ?? {}, getBounds: (node) => ({ minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height }) };
 function core() { const registry = new NodeTypeRegistry(); registry.register(text); return new BoardCore({ nodeTypes: registry, idFactory: (() => { let n = 0; return () => `id-${++n}`; })(), now: () => 1 }); }
@@ -34,5 +34,25 @@ describe("core-backed capabilities", () => {
     expect(created.changed).toBe(true); caps.history.clear();
     const removed = await caps.assets.remove({ assetIds: ["asset-1"] }, { origin: "api" });
     expect(removed.deletedAssetIds).toEqual(["asset-1"]); expect(removed.deletedNodeIds).toBeUndefined(); expect(removed.changeSet).toMatchObject({ revision: 2 });
+  });
+  it("recognises a CapabilityError thrown by a duplicate copy of the class", () => {
+    // pixiboardjs inlines capabilities into its bundle, so a board's error is
+    // not an instance of the class a separately installed consumer imports.
+    // Reproduce that by building an error the same way a second copy would.
+    class DuplicateCapabilityError extends Error {
+      readonly name = "CapabilityError";
+      readonly brand = "@pixi-board/capabilities:CapabilityError";
+      readonly code = "NODE_NOT_FOUND";
+    }
+    const fromOtherCopy = new DuplicateCapabilityError("Node missing");
+
+    expect(fromOtherCopy instanceof CapabilityError).toBe(false);
+    expect(isCapabilityError(fromOtherCopy)).toBe(true);
+    // Preserves the original code instead of flattening it to INTERNAL_ERROR.
+    expect(mapCoreError(fromOtherCopy)).toBe(fromOtherCopy);
+
+    expect(isCapabilityError(new CapabilityError("ABORTED", "direct"))).toBe(true);
+    expect(isCapabilityError(new Error("unrelated"))).toBe(false);
+    expect(isCapabilityError({ brand: "@pixi-board/capabilities:CapabilityError" })).toBe(false);
   });
 });

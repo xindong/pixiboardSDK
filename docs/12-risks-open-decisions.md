@@ -16,6 +16,7 @@
 | 性能营销缺乏证据 | 中 | 高 | 固定 benchmark 与 Konva 对照 | 只能展示 FPS 截图 | 只宣传架构特性，不发布比较结论 |
 | TS/Rust schema 漂移 | 中 | 高 | TS canonical schema、fixture shared | 同一项目两端解释不同 | Rust 只负责 IO，schema 解析收口 TS |
 | 长任务取消后迟到写入 | 中 | 高 | AbortSignal/generation token | 切换项目后旧任务写入新实例 | runtime instance ID 校验并拒绝提交 |
+| 无障碍树"可用性"无法自动验证 | 高 | 中高 | axe-core 查静态违规；NVDA/JAWS/VoiceOver 人工过一遍并记录版本 | 静态检查全绿但真人无法完成导航任务 | 不宣称合规，只声明"提供无障碍树"，在 README 标注已验证的 AT 组合 |
 
 ## 已确定默认决策
 
@@ -48,6 +49,15 @@
 - v1 正式支持 WebGL；WebGPU 在 1.0 后作为 experimental backend。
 - 主包锁定单一 PixiJS 版本，普通用户不需要额外安装 renderer/Pixi。
 - 不公开全局 Stage/Application escape hatch，只开放 custom node renderer context 和只读 diagnostics。
+- Renderer 内不设 overlay container；selection 轮廓、标签、handle 和无障碍树全部走 DOM overlay 层。因此 `capture()` 的输出只包含内容，不包含这些 chrome。
+
+### DOM Overlay 与无障碍
+
+- Overlay 与无障碍树都是文档的派生视图，不进 `BoardDocument`，可随时销毁重建。
+- 视觉 overlay 按**视口**虚拟化；无障碍树按**焦点**虚拟化。两套窗口不合并——屏幕阅读器用户没有视口，按视口裁剪会让文档其余部分对他们不可达。
+- 无障碍树用 `aria-setsize` / `aria-posinset` 表达完整文档规模，DOM 内只保留焦点邻域的滑动窗口。
+- 节点的无障碍标签由 `NodeTypeDefinition.getAccessibleLabel()` 提供，与 `getBounds()` 同属"节点类型自己描述自己"；未实现时回退 `name ?? type`。
+- 拖拽过程中不向辅助技术播报中间状态，只在 commit 后播报一次结果。
 
 ### Browser Storage
 

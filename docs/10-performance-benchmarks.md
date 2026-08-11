@@ -8,7 +8,7 @@ PixiBoardJS 的性能承诺限定为大型、稀疏、媒体密集无限画布�
 
 1. 文档节点数不等于 Pixi DisplayObject 数。
 2. ID 查询为 O(1)。
-3. 单节点空间索引更新目标为 O(log N)。
+3. 单节点空间索引更新与文档总节点数无关。当前实现 `GridSpatialIndex` 是均匀网格：单节点 insert/update/remove 的成本为 O(该节点覆盖的格子数)，与 N 无关；查询成本为 O(视口覆盖格子数 + 命中项数)。节点尺寸远大于 cellSize 时覆盖格数上升，这是该结构的已知退化方向。
 4. pan/zoom 热路径主要与可见节点和预加载节点数相关。
 5. 单节点更新不得全量重建 Scene。
 6. 一个 transaction 只产生一次 revision、ChangeSet 和 persistence schedule。

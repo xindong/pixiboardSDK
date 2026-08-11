@@ -181,6 +181,8 @@ export class BoardViewportController {
     // (undocumented)
     get(): ViewportSnapshot;
     // (undocumented)
+    getScreenSize(): Size;
+    // (undocumented)
     onChange(listener: (event: ViewportChangeEvent) => void): () => void;
     // (undocumented)
     panBy(deltaX: number, deltaY: number): void;
@@ -192,6 +194,8 @@ export class BoardViewportController {
     toScreen(worldPoint: Point): Point;
     // (undocumented)
     toWorld(screenPoint: Point): Point;
+    // (undocumented)
+    visibleWorldBounds(padding?: number): WorldBounds | undefined;
     // (undocumented)
     zoomAt(screenPoint: Point, factor: number): void;
 }
@@ -469,6 +473,8 @@ export class ViewportController {
     // (undocumented)
     get(): ViewportSnapshot;
     // (undocumented)
+    getScreenSize(): Size;
+    // (undocumented)
     onChange(listener: (event: ViewportChangeEvent) => void): () => void;
     // (undocumented)
     panBy(deltaX: number, deltaY: number): void;
@@ -480,6 +486,7 @@ export class ViewportController {
     toScreen(worldPoint: Point): Point;
     // (undocumented)
     toWorld(screenPoint: Point): Point;
+    visibleWorldBounds(padding?: number): WorldBounds | undefined;
     // (undocumented)
     zoomAt(screenPoint: Point, factor: number): void;
 }

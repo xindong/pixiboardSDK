@@ -35,6 +35,7 @@
 - [adr/0009-plugin-api-v3.md](adr/0009-plugin-api-v3.md)
 - [adr/0010-public-package-scope.md](adr/0010-public-package-scope.md)
 - [adr/0011-new-document-format-only.md](adr/0011-new-document-format-only.md)
+- [adr/0012-public-capabilities-agent-tools.md](adr/0012-public-capabilities-agent-tools.md)
 
 ## 完成定义
 

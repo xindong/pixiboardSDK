@@ -8,7 +8,7 @@
 | 仅支持 SDK 新 Document | [ADR 0011](adr/0011-new-document-format-only.md) | 新 Core validation boundary；无 legacy adapter | current-format load/save/reload + legacy/non-current rejection tests + requirement audit |
 | 数据为真相 | [ADR 0002](adr/0002-document-source-pixi-cache.md) | Store/Scene/ViewRegistry | 离屏销毁重建测试 |
 | 自定义节点 | [自定义节点](05-custom-node-system.md) | `nodeView.ts`、domain union | custom task-card E2E |
-| 高性能稀疏画布 | [性能基准](10-performance-benchmarks.md) | RBush、View cache、TextureCache | 10k/50k/100k benchmark |
+| 高性能稀疏画布 | [性能基准](10-performance-benchmarks.md) | `GridSpatialIndex`、View cache、TextureCache | 10k/50k/100k benchmark |
 | 一个主要用户包并公开 Core | [包边界](03-package-boundaries.md) | workspace packages | Main/Core npm external consumers |
 | Desktop/Web 共用 | [平台适配](07-platform-assets-persistence.md) | runtime adapter/repositories | Browser/Tauri contract tests |
 | 插件化 | [插件与 Agent](06-capabilities-plugins-agents.md) | new plugin SDK/tool runtime/host | new Plugin API v3 fixture; legacy plugin deprecation |

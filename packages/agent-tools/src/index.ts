@@ -1,4 +1,4 @@
-import { CapabilityError, type BoardCapabilities } from "@pixi-board/capabilities";
+import { CapabilityError, isCapabilityError, type BoardCapabilities } from "@pixi-board/capabilities";
 import { canvasReadSchema, canvasWriteSchema } from "./schemas.ts";
 import type { AgentCallOptions, AgentTools, CanvasOutput, CanvasReadInput, CanvasWriteInput, CompactAsset, CompactNode } from "./types.ts";
 import type { AssetRecord, BoardNode, JsonValue } from "@pixi-board/capabilities";
@@ -12,7 +12,7 @@ export function createPixiBoardAgentTools(capabilities: BoardCapabilities): Agen
       if (name === "canvas.read") return { ok: true, data: await read(capabilities, validateRead(raw), options) };
       if (name === "canvas.write") return { ok: true, data: await write(capabilities, validateWrite(raw), options) };
       throw new CapabilityError("INVALID_INPUT", `Unknown tool: ${name}`);
-    } catch (error) { const e = error instanceof CapabilityError ? error : new CapabilityError("INTERNAL_ERROR", error instanceof Error ? error.message : String(error)); return { ok: false, error: { code: e.code, name: e.name, message: e.message, retryable: e.code === "ABORTED" || e.code === "TRANSACTION_CONFLICT", requestId, details: e.details ? { ...e.details } : undefined } }; }
+    } catch (error) { const e = isCapabilityError(error) ? error : new CapabilityError("INTERNAL_ERROR", error instanceof Error ? error.message : String(error)); return { ok: false, error: { code: e.code, name: e.name, message: e.message, retryable: e.code === "ABORTED" || e.code === "TRANSACTION_CONFLICT", requestId, details: e.details ? { ...e.details } : undefined } }; }
   } };
 }
 async function read(c: BoardCapabilities, input: CanvasReadInput, options: AgentCallOptions): Promise<CanvasOutput> {
@@ -26,10 +26,11 @@ async function write(c: BoardCapabilities, input: CanvasWriteInput, options: Age
   if (input.type === "create") {
     const nodes = input.nodes.map((node, index) => {
       const { content, path, ...rest } = node;
-      const source = content === undefined && path === undefined ? undefined : { id: `agent-asset:${node.id ?? index}`, kind: "source", source: content !== undefined ? { content } : { path } };
+      const sourceValue = sourceOf(content, path);
+      const source = sourceValue && { id: `agent-asset:${node.id ?? index}`, kind: "source", source: sourceValue };
       return { x: 0, y: 0, width: 100, height: 100, rotation: 0, zIndex: 0, ...rest, ...(source ? { asset: source } : {}) };
     });
-    const r = await c.nodes.create({ nodes }, writeOptions); return { type: "create", nodes: r.nodes.map(compact), revision: r.revision, changed: r.changed, changeSet: r.changeSet, requestId: options.requestId };
+    const r = await c.nodes.create({ nodes }, writeOptions); return { type: "create", nodes: r.nodes.map((node) => compact(node)), revision: r.revision, changed: r.changed, changeSet: r.changeSet, requestId: options.requestId };
   }
   const current = await c.nodes.read({ filter: { ids: input.nodes.map((node) => node.id) } }, options);
   const byId = new Map(current.nodes.map((node) => [node.id, node]));
@@ -38,10 +39,16 @@ async function write(c: BoardCapabilities, input: CanvasWriteInput, options: Age
     const node = byId.get(id);
     const assetId = node?.assetRefs?.primary?.assetId;
     if (!assetId) throw new CapabilityError("INVALID_INPUT", `nodes[${id}] source update requires a primary asset`);
-    const asset = { id: assetId, kind: "source", source: content !== undefined ? { content } : { path } };
+    const asset = { id: assetId, kind: "source", source: sourceOf(content, path)! };
     return { id, patch: { ...patch, assetRefs: { ...(node.assetRefs ?? {}), primary: { assetId, variant: "original" as const } }, }, asset };
   });
-  const r = await c.nodes.update({ nodes: updates }, writeOptions); return { type: "update", nodes: r.nodes.map(compact), revision: r.revision, changed: r.changed, changeSet: r.changeSet, requestId: options.requestId };
+  const r = await c.nodes.update({ nodes: updates }, writeOptions); return { type: "update", nodes: r.nodes.map((node) => compact(node)), revision: r.revision, changed: r.changed, changeSet: r.changeSet, requestId: options.requestId };
+}
+/** A node's inline source, as a JSON record rather than a union of two shapes. */
+function sourceOf(content: string | undefined, path: string | undefined): Record<string, JsonValue> | undefined {
+  if (content !== undefined) return { content };
+  if (path !== undefined) return { path };
+  return undefined;
 }
 function compact(node: BoardNode, fields?: string[]): CompactNode { const out: CompactNode = { id: node.id, type: node.type, ...(node.name === undefined ? {} : { name: node.name }) }; if (!fields?.length || fields.includes("position")) out.position = { x: node.x, y: node.y }; if (!fields?.length || fields.includes("size")) out.size = { width: node.width, height: node.height }; if (!fields?.length || fields.includes("rotation")) out.rotation = node.rotation; if (!fields?.length || fields.includes("zIndex")) out.zIndex = node.zIndex; if (!fields?.length || fields.includes("props")) out.props = node.props; return out; }
 function project(value: AssetRecord, fields?: string[]): CompactAsset { if (!fields?.length) return { ...value }; const out: CompactAsset = { id: value.id, kind: value.kind }; for (const field of fields) if (field in value) out[field] = value[field] as JsonValue | undefined; return out; }

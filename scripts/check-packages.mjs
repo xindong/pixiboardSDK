@@ -4,7 +4,8 @@ import { resolve } from "node:path";
 const root = resolve(new URL("..", import.meta.url).pathname);
 const workspace = JSON.parse(await readFile(resolve(root, "packages/pixiboardjs/package.json"), "utf8"));
 const pluginSdk = JSON.parse(await readFile(resolve(root, "packages/plugin-sdk/package.json"), "utf8"));
-const mcpHost = JSON.parse(await readFile(resolve(root, "packages/mcp-host/package.json"), "utf8"));
+const capabilities = JSON.parse(await readFile(resolve(root, "packages/capabilities/package.json"), "utf8"));
+const agentTools = JSON.parse(await readFile(resolve(root, "packages/agent-tools/package.json"), "utf8"));
 const workspaceText = await readFile(resolve(root, "pnpm-workspace.yaml"), "utf8");
 const fixture = JSON.parse(await readFile(resolve(root, "apps/examples-vanilla/package.json"), "utf8"));
 const customNodeFixture = JSON.parse(await readFile(resolve(root, "apps/examples-custom-node/package.json"), "utf8"));
@@ -47,8 +48,28 @@ if (benchmark.private !== true || !benchmark.scripts?.["generate:synthetic-card"
 for (const script of ["benchmark:run", "benchmark:matrix", "benchmark:report", "benchmark:check", "test"]) {
   if (!benchmark.scripts?.[script]) throw new Error(`benchmark must expose ${script}`);
 }
-if (mcpHost.name !== "@pixi-board/mcp-host" || mcpHost.private !== true) throw new Error("mcp-host must remain an internal package");
-if (JSON.stringify(mcpHost.dependencies) !== JSON.stringify({ "@pixi-board/agent-tools": "workspace:*" })) throw new Error("mcp-host runtime may depend only on agent-tools");
+// capabilities and agent-tools are published so a third party can drive the
+// canvas from its own agent layer without taking the renderer. Their runtime
+// dependencies must stay externalized: bundling capabilities into agent-tools
+// would ship a second CapabilityError class and break error identity.
+for (const [pkg, expectedName, expectedDependencies] of [
+  [capabilities, "@pixi-board/capabilities", { "@pixi-board/core": "workspace:*" }],
+  [agentTools, "@pixi-board/agent-tools", { "@pixi-board/capabilities": "workspace:*", "@pixi-board/core": "workspace:*" }],
+]) {
+  if (pkg.name !== expectedName || pkg.private !== false) throw new Error(`${expectedName} must be a public package`);
+  if (pkg.version === "0.0.0") throw new Error(`${expectedName} needs a publishable version`);
+  if (JSON.stringify(pkg.dependencies) !== JSON.stringify(expectedDependencies)) {
+    throw new Error(`${expectedName} runtime dependencies must stay externalized as ${JSON.stringify(expectedDependencies)}`);
+  }
+  for (const [subpath, contract] of Object.entries(pkg.exports ?? {})) {
+    if (subpath === "./package.json") continue;
+    if (!contract?.import?.startsWith("./dist/") || !contract.import.endsWith(".js") ||
+        !contract?.types?.startsWith("./dist/") || !contract.types.endsWith(".d.ts")) {
+      throw new Error(`${expectedName} public export must target release artifacts: ${subpath}`);
+    }
+  }
+}
+if (!agentTools.exports?.["./schemas"]) throw new Error("agent-tools must keep the ./schemas entry point for JSON Schema consumers");
 
 for (const file of [
   "apps/benchmark/src/index.mjs",
@@ -71,4 +92,4 @@ for (const file of [
   "apps/examples-custom-node/test/custom-node.test.ts",
 ]) await access(resolve(root, file));
 
-console.log("Package check passed: workspace, public exports, MCP boundary, fixture and executable benchmark gates are present.");
+console.log("Package check passed: workspace, public exports, fixture and executable benchmark gates are present.");

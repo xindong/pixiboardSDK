@@ -1,10 +1,46 @@
 {
   "name": "@pixi-board/agent-tools",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha.0",
+  "description": "canvas.read / canvas.write agent tool contract over PixiBoardJS capabilities, transport-agnostic",
+  "private": false,
   "type": "module",
-  "private": true,
-  "dependencies": { "@pixi-board/capabilities": "workspace:*", "@pixi-board/core": "workspace:*" },
-  "devDependencies": { "vitest": "^3.2.4" },
-  "scripts": { "test": "vitest run --config vitest.config.ts" },
-  "exports": { ".": "./src/index.ts", "./schemas": "./src/schemas.ts" }
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "etc",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./schemas": {
+      "types": "./dist/schemas.d.ts",
+      "import": "./dist/schemas.js",
+      "default": "./dist/schemas.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@pixi-board/capabilities": "workspace:*",
+    "@pixi-board/core": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts",
+    "check": "tsc -p tsconfig.json",
+    "build": "tsup",
+    "api:report": "api-extractor run --local --verbose && api-extractor run --local --verbose --config api-extractor.schemas.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

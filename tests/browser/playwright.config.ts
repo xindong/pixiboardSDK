@@ -3,7 +3,10 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   testDir: ".",
-  testMatch: "*.spec.ts",
+  // Named explicitly rather than "*.spec.ts": this config serves the vanilla
+  // consumer fixture, and a glob would also pull in specs written against the
+  // demo app's own server.
+  testMatch: "browser-contract.spec.ts",
   fullyParallel: false,
   reporter: "line",
   use: {

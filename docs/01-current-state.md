@@ -47,7 +47,7 @@ BoardEditor
 
 - Pixi Application 生命周期。
 - world/overlay 两个内部渲染层。
-- RBush 空间索引。
+- RBush 空间索引（SDK 侧不沿用；`@pixi-board/renderer-pixi` 实现为均匀网格 `GridSpatialIndex`）。
 - 视口可见节点同步。
 - NodeView 延迟销毁。
 - Texture lease 和延迟释放。

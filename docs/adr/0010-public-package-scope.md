@@ -15,7 +15,7 @@ pixiboardjs
 
 - `pixiboardjs` 与 `@pixi-board/core` 在 1.x 采用 lockstep version，减少兼容矩阵。
 - `@pixi-board/plugin-sdk` 按独立 Plugin API major 管理。
-- `renderer-pixi`、adapter-tauri、plugin-host、agent-tools 和 mcp-host 初期保持内部。
+- `renderer-pixi`、adapter-tauri、plugin-host、agent-tools 和 mcp-host 初期保持内部。（`capabilities` 与 `agent-tools` 已由 [ADR 0012](0012-public-capabilities-agent-tools.md) 改为公开；`mcp-host` 已删除。）
 - Beta 首发只提供 Vanilla 示例；React/Vue wrapper 不进入 v1 关键路径。
 - 2026-08-07 查询 npm registry 时 `pixiboardjs` 尚未被占用；P0 需要实际发布预留版本才能锁定名称。
 

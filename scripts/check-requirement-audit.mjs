@@ -56,9 +56,6 @@ const coreSource = await read("packages/core/src/core.ts");
 const coreTypes = await read("packages/core/src/types.ts");
 const capabilitiesTests = await read("packages/capabilities/src/contract.test.ts");
 const agentTests = await read("packages/agent-tools/src/contract.test.ts");
-const mcpContractTests = await read("packages/mcp-host/src/contract.test.ts");
-const mcpDeploymentTests = await read("packages/mcp-host/src/deployment.test.ts");
-const mcpChild = await read("packages/mcp-host/src/deployment-child.ts");
 const rendererSource = await read("packages/renderer-pixi/src/renderer.ts");
 const pluginSdkManifest = JSON.parse(await read("packages/plugin-sdk/package.json"));
 const pluginSdkSource = await read("packages/plugin-sdk/src/index.ts");
@@ -96,7 +93,6 @@ const publicDistPresent = await Promise.all([
 const rows = [];
 const testCount = (text) => (text.match(/^\s*(?:it|test)\(/gm) ?? []).length;
 const rendererTestCount = testCount(rendererTests);
-const mcpTestCount = testCount(mcpContractTests) + testCount(mcpDeploymentTests);
 
 rows.push(
   has(documentValidation, /older than supported schema/) &&
@@ -162,37 +158,12 @@ rows.push(
     ? achieved(
         "core-capabilities-agent-equivalence",
         "Capabilities and Agent contracts assert one Core transaction plus document/revision/ChangeSet/history equivalence, requestId and source asset+node writes.",
-        "MCP transport is audited separately; no second document write chain may be introduced.",
+        "Transports are the integrator's concern; no second document write chain may be introduced.",
       )
     : partial(
         "core-capabilities-agent-equivalence",
         "Capabilities/Agent tests exist but direct equivalence evidence is incomplete.",
         "Add exact final document, revision, ChangeSet and history assertions.",
-      ),
-);
-
-rows.push(
-  has(mcpContractTests, /stdio.*HTTP/) &&
-    has(mcpDeploymentTests, /real child stdio/) &&
-    has(mcpDeploymentTests, /loopback HTTP/) &&
-    has(mcpDeploymentTests, /stdin close/) &&
-    has(mcpDeploymentTests, /HTTP socket/) &&
-    has(mcpChild, /REQUEST_STARTED/) &&
-    has(mcpChild, /REQUEST_ABORTED/) &&
-    has(mcpDeploymentTests, /Full stderr/) &&
-    has(mcpDeploymentTests, /outputLines/) &&
-    has(mcpDeploymentTests, /afterEach/) &&
-    has(mcpDeploymentTests, /rmSync/) &&
-    mcpTestCount >= 11
-    ? achieved(
-        "mcp-real-deployment-equivalence",
-        "MCP contract and real deployment tests (" + mcpTestCount + " tests) cover direct/stdio/HTTP semantic equality, child-process framing, complete startup stderr diagnostics, observable REQUEST_ABORTED socket cancellation, stdin EOF no-late-frame output, no write/save/history, and unified child/temp cleanup.",
-        "Repeat the deployment smoke in target product hosts; MCP remains current-Document-only.",
-      )
-    : partial(
-        "mcp-real-deployment-equivalence",
-        "MCP host source/tests exist but real process/socket evidence is incomplete.",
-        "Add child stdio and loopback HTTP deployment smoke with abort/error parity.",
       ),
 );
 
@@ -275,6 +246,11 @@ const releaseEvidence =
   has(releaseDoc, /pnpm build:release/) &&
   await exists(".changeset/config.json") &&
   await exists("packages/pixiboardjs/etc/pixiboardjs.api.md") &&
+  // Subpath exports carry public API of their own; a root-entry-only report
+  // would leave `pixiboardjs/browser` unguarded.
+  await exists("packages/pixiboardjs/etc/pixiboardjs-browser.api.md") &&
+  await exists("packages/pixiboardjs/etc/pixiboardjs-node.api.md") &&
+  await exists("packages/pixiboardjs/etc/pixiboardjs-types.api.md") &&
   await exists("packages/core/etc/pixi-board-core.api.md") &&
   await exists("packages/plugin-sdk/etc/pixi-board-plugin-sdk.api.md");
 const releaseCommandEvidence =

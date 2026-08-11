@@ -21,7 +21,6 @@ packages/
 ├── adapter-tauri
 ├── plugin-host
 ├── agent-tools
-├── mcp-host
 └── pixiboardjs
 ```
 
@@ -55,7 +54,7 @@ pixiboardjs
   ├──────── capabilities
   │               ▲
   │               ├── plugin-host
-  │               └── agent-tools ── mcp-host
+  │               └── agent-tools
   │
   ├── adapter-browser
   └── adapter-tauri
@@ -67,7 +66,7 @@ pixiboardjs
 - `renderer-pixi` 不依赖 plugins、Agent、Tauri 或产品 UI。
 - `capabilities` 不直接访问 renderer 私有对象。
 - `plugin-host` 和 `agent-tools` 通过 capabilities 操作画布。
-- `mcp-host` 只负责 transport，不包含画布业务逻辑。
+- transport（MCP / HTTP / 进程内调用）不属于 SDK；`agent-tools` 只提供工具契约与 JSON Schema，由接入方按自己的 harness 组装。
 
 ## 包责任
 
@@ -148,12 +147,6 @@ PixiJS 由主包锁定并安装单一版本，普通用户不额外安装 Pixi�
 - Agent 错误格式和 compact result。
 - 默认 placement/layout service。
 - 调用 BoardCapabilities。
-
-### `@pixi-board/mcp-host`
-
-- 把 tool registry 暴露为 MCP。
-- 鉴权、timeout、serialization。
-- 不知道 Store、Scene 或 asset pipeline。
 
 ## 用户包与内部包的版本
 

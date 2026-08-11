@@ -61,6 +61,13 @@ export {
 type Listener = (event: never) => void;
 let focusedBoard: PixiBoardFacade | undefined;
 
+/**
+ * World-unit margin kept around the viewport so a node that scrolls into view
+ * already has a built view. Matches GridSpatialIndex's default cell size, so
+ * the padded query typically costs one extra ring of cells.
+ */
+const DEFAULT_VIRTUALIZATION_PADDING = 256;
+
 class EventHub {
   private readonly listeners = new Map<keyof PublicBoardEventMap | string, Set<Listener>>();
 
@@ -288,6 +295,14 @@ class PixiBoardFacade implements PixiBoard {
     return this.core.nodes.get(nodeId);
   }
 
+  visibleNodeIds(): ReadonlySet<string> | undefined {
+    this.assertAlive();
+    // A renderer that does not implement culling reports undefined, which
+    // flows straight through: "no culling information" is the honest answer,
+    // and callers turn it into "everything is visible".
+    return this.renderer?.visibleNodeIds?.();
+  }
+
   transaction<Result>(label: string, operation: () => Result, options = {}): Result {
     this.assertAlive();
     return this.core.transaction(label, () => {
@@ -416,6 +431,9 @@ class PixiBoardFacade implements PixiBoard {
       await renderer.init();
       if (this.signal.aborted) { await renderer.destroy(); return; }
       this.renderer = renderer;
+      // Before the first rebuild, so the initial scene only builds views for
+      // what is actually on screen instead of the whole document.
+      await this.syncVisibleBounds();
       await renderer.rebuild(this.core.document.snapshot());
     }
     if (!this.signal.aborted) this.lifecycle = "ready";
@@ -428,6 +446,7 @@ class PixiBoardFacade implements PixiBoard {
     }));
     this.cleanup.add(this.core.on("viewport:change", (event) => {
       if (!this.signal.aborted) this.events.emit("viewport:change", event);
+      this.queueVisibleBoundsSync();
     }));
     this.cleanup.add(this.core.on("history:change", (event) => {
       if (!this.signal.aborted) this.events.emit("history:change", event);
@@ -480,6 +499,10 @@ class PixiBoardFacade implements PixiBoard {
         const rect = entries[0]?.contentRect;
         if (rect?.width && rect?.height) {
           this.core.viewport.setScreenSize({ width: rect.width, height: rect.height });
+          // setScreenSize does not raise viewport:change (the projection is
+          // unchanged, only the surface it covers), so the culling rectangle
+          // has to be recomputed here as well.
+          this.queueVisibleBoundsSync();
         }
       });
       observer.observe(container);
@@ -491,6 +514,34 @@ class PixiBoardFacade implements PixiBoard {
       ticker.add(listener);
       this.cleanup.add(() => ticker.remove(listener));
     }
+  }
+
+  /**
+   * Pushes the current visible rectangle to the renderer. Runs inside the
+   * runtime queue so it can never interleave with an in-flight apply/rebuild,
+   * which would leave the renderer culling against one revision while
+   * reconciling another.
+   */
+  private async syncVisibleBounds(): Promise<void> {
+    const renderer = this.renderer;
+    if (!renderer?.setVisibleBounds || this.signal.aborted) return;
+    const virtualization = this.options.virtualization;
+    if (virtualization?.enabled === false) {
+      await renderer.setVisibleBounds(undefined);
+      return;
+    }
+    const padding = virtualization?.padding ?? DEFAULT_VIRTUALIZATION_PADDING;
+    const bounds = this.core.viewport.visibleWorldBounds(padding);
+    await renderer.setVisibleBounds(bounds, this.core.viewport.get().scale);
+  }
+
+  private queueVisibleBoundsSync(): void {
+    if (this.signal.aborted || !this.renderer?.setVisibleBounds) return;
+    this.pendingRuntimeWork = this.pendingRuntimeWork
+      .then(() => this.syncVisibleBounds())
+      .catch((error) => {
+        if (!this.signal.aborted) queueMicrotask(() => { throw error; });
+      });
   }
 
   private queueChange(event: BoardChangeEvent): void {

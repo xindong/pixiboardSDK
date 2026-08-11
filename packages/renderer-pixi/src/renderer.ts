@@ -19,7 +19,26 @@ export type PixiBoardRendererOptions = {
   onInvalidate?: () => void;
   registry?: NodeRendererRegistry;
   nodeTypes?: NodeTypeRegistry;
+  lod?: { thresholds?: readonly number[] };
 };
+
+/**
+ * Zoom thresholds separating level-of-detail tiers, ascending. A scale below
+ * the first entry is level 0 (most zoomed out, coarsest); at or above the last
+ * is the highest level. Culling alone cannot help a fully zoomed-out view —
+ * every node is legitimately inside the viewport — so this is the axis a node
+ * renderer uses to draw something cheaper instead.
+ */
+const DEFAULT_LOD_THRESHOLDS: readonly number[] = [0.25, 0.5, 1];
+
+function lodLevelFor(scale: number | undefined, thresholds: readonly number[]): number | undefined {
+  if (scale === undefined) return undefined;
+  let level = 0;
+  for (const threshold of thresholds) {
+    if (scale >= threshold) level++;
+  }
+  return level;
+}
 
 export class PixiBoardRenderer {
   readonly registry: NodeRendererRegistry;
@@ -41,11 +60,15 @@ export class PixiBoardRenderer {
   private desynchronized = false;
   private viewFactory?: PixiViewFactory;
   private frameScheduled = false;
+  private readonly lodThresholds: readonly number[];
+  private currentScale?: number;
+  private currentLodLevel?: number;
 
   constructor(options: PixiBoardRendererOptions) {
     this.options = options;
     this.registry = options.registry ?? new NodeRendererRegistry();
     this.spatialIndex = options.spatialIndex ?? new GridSpatialIndex();
+    this.lodThresholds = options.lod?.thresholds ?? DEFAULT_LOD_THRESHOLDS;
     registerBuiltinRenderers(this.registry);
   }
 
@@ -136,16 +159,41 @@ export class PixiBoardRenderer {
     }
   }
 
-  async setVisibleBounds(bounds: WorldBounds | undefined): Promise<void> {
+  async setVisibleBounds(bounds: WorldBounds | undefined, scale?: number): Promise<void> {
     this.assertAlive();
+    if (scale !== undefined && (!Number.isFinite(scale) || scale <= 0)) {
+      throw new RangeError("Viewport scale must be finite and greater than zero");
+    }
     this.visibleBounds = bounds;
+    this.currentScale = scale;
+    const nextLevel = lodLevelFor(scale, this.lodThresholds);
+    const levelChanged = nextLevel !== this.currentLodLevel;
+    this.currentLodLevel = nextLevel;
+    // Views created during the reconcile below already see the new level; only
+    // the ones carried over from the previous level need to be redrawn.
+    const retained = levelChanged ? new Set(this.entries.keys()) : undefined;
     this.refreshDesiredIds();
     const epoch = ++this.viewportEpoch;
     await this.reconcileActiveSet(epoch);
+    if (retained) await this.refreshLodForRetainedViews(retained, epoch);
     this.requestFrame();
   }
 
   setCullingQuery(query: CullingQuery | undefined): void { this.options.cullingQuery = query; }
+
+  /**
+   * The ids culling currently keeps, or undefined when nothing has narrowed
+   * the renderer yet. The distinction matters to callers that mirror this set
+   * in the DOM: undefined has to read as "no culling information", not as
+   * "nothing is visible", or an overlay would blank out on a renderer that
+   * retains everything.
+   *
+   * Returns a copy — the internal set is mutated during reconcile, and handing
+   * it out directly would let a caller observe a half-applied frame.
+   */
+  visibleNodeIds(): ReadonlySet<string> | undefined {
+    return this.visibleBounds ? new Set(this.desiredIds) : undefined;
+  }
 
   async refreshRegisteredTypes(): Promise<void> {
     this.assertAlive();
@@ -317,6 +365,20 @@ export class PixiBoardRenderer {
     }
   }
 
+  /**
+   * Re-runs update() on views that outlived a level-of-detail change, so a
+   * node renderer can redraw itself for the new tier. Goes through ensureView,
+   * which already carries the operation-versioning and late-update guards that
+   * keep a redraw from racing an in-flight create.
+   */
+  private async refreshLodForRetainedViews(retained: ReadonlySet<string>, epoch: number): Promise<void> {
+    for (const id of retained) {
+      if (epoch !== this.viewportEpoch || this.destroyed) return;
+      const node = this.nodesById.get(id);
+      if (node && this.entries.has(id)) await this.ensureView(node);
+    }
+  }
+
   private refreshDesiredIds(): void {
     const candidates = this.visibleBounds
       ? this.options.cullingQuery?.(this.visibleBounds) ?? this.spatialIndex.query(this.visibleBounds)
@@ -390,7 +452,7 @@ export class PixiBoardRenderer {
         this.options.onInvalidate?.();
         this.requestFrame();
       },
-      lod: {},
+      lod: { level: this.currentLodLevel, scale: this.currentScale },
       diagnostics: this.diagnostics,
       display: this.viewFactory,
     };
@@ -430,7 +492,15 @@ export class PixiBoardRenderer {
   }
 
   private async acquireTexture(scope: ResourceScope, signal: AbortSignal, ref: AssetRef, options?: Record<string, unknown>): Promise<TextureLease> {
-    const lease = await (this.options.acquireTexture ?? (async () => ({})))(ref, { ...options, signal });
+    // lodLevel/lodScale travel with the request so a host can resolve a
+    // cheaper asset variant when zoomed out. Spread first: an explicit value
+    // from the node renderer wins.
+    const lease = await (this.options.acquireTexture ?? (async () => ({})))(ref, {
+      lodLevel: this.currentLodLevel,
+      lodScale: this.currentScale,
+      ...options,
+      signal,
+    });
     if (signal.aborted) {
       lease.release?.();
       throw abortError();

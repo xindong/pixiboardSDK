@@ -80,8 +80,10 @@ body {
   overflow: hidden;
 }
 
-.media-badge {
-  position: absolute;
+/* Class names come from attachLabelOverlay's `classPrefix: "media"`. The SDK
+   sets only what positioning requires (position, transform, transform-origin);
+   everything visual is ours. */
+.media-label {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -99,14 +101,16 @@ body {
   backdrop-filter: blur(4px);
 }
 
-.media-badge .media-name {
+.media-label .media-label-text {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.media-badge.pending {
-  border-color: var(--accent);
-  color: var(--accent-strong);
+/* Zoomed far enough out that names would overlap, the overlay drops the text
+   and keeps just the icon, so a dense board stays readable. */
+.media-label-collapsed {
+  padding: 2px 4px;
+  gap: 0;
 }
 
 .drop-hint {
@@ -177,8 +181,8 @@ body {
   overflow: hidden;
 }
 
-.selection-outline {
-  position: absolute;
+/* Drawn by attachSelectionOverlay; the SDK sets position and size, we style. */
+.pixiboard-selection-outline {
   border: 1.5px solid var(--accent-strong);
   border-radius: 2px;
   box-shadow: 0 0 0 1px rgba(10, 13, 18, 0.55), 0 0 12px rgba(124, 140, 248, 0.35);
@@ -212,8 +216,7 @@ body {
 
 /* Shown only when more than one node is selected, so the group reads as one
    movable unit. */
-.selection-bbox {
-  position: absolute;
+.pixiboard-selection-bbox {
   border: 1px dashed rgba(154, 166, 255, 0.7);
   border-radius: 3px;
   pointer-events: none;

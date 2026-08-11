@@ -1,6 +1,8 @@
 import "./styles.css";
 import {
   attachDomTransformer,
+  attachLabelOverlay,
+  attachSelectionOverlay,
   createPixiBoard,
   type CustomDisplayObject,
   type CustomNodeDefinition,
@@ -350,61 +352,14 @@ function wireStageTransform(
   apply();
 }
 
-// Selection outlines are host-drawn DOM, so they must be re-projected on every
-// selection change, document change, and viewport change — a node can move
-// under a static viewport and the viewport can move under a static selection.
-// The eight resize handles are not drawn here: the SDK's DOM transformer owns
-// them, because they need real elements with live pointer handlers rather than
-// the decorative markup an outline can get away with.
+// Selection outlines and the multi-select bounding box both come from the SDK
+// (attachSelectionOverlay), which owns the projection, element pooling and
+// frame batching. The eight resize handles stay separate: they need real
+// elements with live pointer handlers rather than the decorative markup an
+// outline can get away with, so the SDK's DOM transformer owns those.
 function wireSelectionOverlay(board: PixiBoard): DomTransformer {
-  const redraw = () => renderSelectionOverlay(board);
-  board.on("selection:change", redraw);
-  board.on("change", redraw);
-  board.on("viewport:change", redraw);
-  redraw();
+  attachSelectionOverlay(board, { container: selectionOverlay });
   return attachDomTransformer(board, { overlay: handleOverlay, surface: host });
-}
-
-function renderSelectionOverlay(board: PixiBoard): void {
-  const selected = board.selection
-    .get()
-    .map((id) => board.nodes.get(id))
-    .filter((item): item is NonNullable<typeof item> => item !== undefined);
-
-  selectionOverlay.replaceChildren();
-  if (selected.length === 0) return;
-
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-
-  for (const item of selected) {
-    const topLeft = board.viewport.toScreen({ x: item.x, y: item.y });
-    const bottomRight = board.viewport.toScreen({ x: item.x + item.width, y: item.y + item.height });
-    minX = Math.min(minX, topLeft.x);
-    minY = Math.min(minY, topLeft.y);
-    maxX = Math.max(maxX, bottomRight.x);
-    maxY = Math.max(maxY, bottomRight.y);
-
-    const outline = document.createElement("div");
-    outline.className = "selection-outline";
-    outline.style.left = `${topLeft.x}px`;
-    outline.style.top = `${topLeft.y}px`;
-    outline.style.width = `${bottomRight.x - topLeft.x}px`;
-    outline.style.height = `${bottomRight.y - topLeft.y}px`;
-    selectionOverlay.appendChild(outline);
-  }
-
-  if (selected.length > 1) {
-    const groupBox = document.createElement("div");
-    groupBox.className = "selection-bbox";
-    groupBox.style.left = `${minX - 6}px`;
-    groupBox.style.top = `${minY - 6}px`;
-    groupBox.style.width = `${maxX - minX + 12}px`;
-    groupBox.style.height = `${maxY - minY + 12}px`;
-    selectionOverlay.appendChild(groupBox);
-  }
 }
 
 function computeContentBounds(board: PixiBoard) {
@@ -640,82 +595,36 @@ function freeSpaceAnchor(board: PixiBoard): { x: number; y: number } {
   return { x: bounds.minX, y: bounds.maxY + 48 };
 }
 
-type MediaBadgeInfo = { type: MediaKind; x: number; y: number; height: number; name: string };
-
-/**
- * Labels each media node with its kind and file name. Media node state is
- * tracked incrementally from each changeSet's touched ids instead of calling
- * board.find() (a full-document deep clone) on every "change" event — a drag
- * on a large document would otherwise re-clone every node once per frame even
- * though only a handful of ids ever change.
- */
-function wireMediaBadges(board: PixiBoard): () => void {
-  const mediaNodes = new Map<string, MediaBadgeInfo>();
-  const collect = () => {
-    mediaNodes.clear();
-    for (const node of board.find({ types: ["image", "video", "audio"] })) {
-      mediaNodes.set(node.id, mediaBadgeInfo(node));
-    }
-  };
-  collect();
-
-  const redraw = () => renderMediaBadges(board, mediaNodes);
-
-  board.on("change", (event) => {
-    for (const id of event.changeSet.removedNodeIds) mediaNodes.delete(id);
-    for (const id of [...event.changeSet.addedNodeIds, ...event.changeSet.updatedNodeIds]) {
-      const node = board.nodes.get(id);
-      if (node && isMediaKind(node.type)) mediaNodes.set(id, mediaBadgeInfo(node));
-      else mediaNodes.delete(id);
-    }
-    redraw();
-  });
-  board.on("viewport:change", redraw);
-  redraw();
-
-  // The SDK applies "change" asynchronously (queued behind the renderer
-  // apply pass), so a caller that just made a synchronous edit and wants the
-  // badges to reflect it immediately — rather than a tick later — can force
-  // a resync from the document instead of waiting for that event.
-  return () => {
-    collect();
-    redraw();
-  };
-}
-
 const KIND_ICON: Record<MediaKind, string> = { image: "🖼", video: "🎬", audio: "🎵" };
 
 function isMediaKind(type: string): type is MediaKind {
   return type === "image" || type === "video" || type === "audio";
 }
 
-function mediaBadgeInfo(node: { type: string; x: number; y: number; height: number; props: unknown }): MediaBadgeInfo {
-  const props = node.props as Partial<MediaProps>;
-  return {
-    type: node.type as MediaKind,
-    x: node.x,
-    y: node.y + node.height,
-    height: node.height,
-    name: typeof props.name === "string" && props.name ? props.name : node.type,
-  };
-}
+/**
+ * Labels each media node with its kind and file name.
+ *
+ * The SDK's label overlay owns the hard parts: it pools elements instead of
+ * rebuilding the subtree per frame, follows the renderer's visible set so cost
+ * tracks what is on screen rather than document size, and collapses labels to
+ * a bare icon once the board is zoomed out far enough that names would overlap.
+ */
+function wireMediaBadges(board: PixiBoard): () => void {
+  const layer = attachLabelOverlay(board, {
+    container: mediaOverlay,
+    classPrefix: "media",
+    text: (node) => {
+      if (!isMediaKind(node.type)) return undefined;
+      const props = node.props as Partial<MediaProps>;
+      return typeof props.name === "string" && props.name ? props.name : node.type;
+    },
+    icon: (node) => (isMediaKind(node.type) ? KIND_ICON[node.type] : undefined),
+  });
 
-function renderMediaBadges(board: PixiBoard, mediaNodes: ReadonlyMap<string, MediaBadgeInfo>): void {
-  mediaOverlay.replaceChildren();
-  for (const info of mediaNodes.values()) {
-    const bottomLeft = board.viewport.toScreen({ x: info.x, y: info.y });
-    const badge = document.createElement("div");
-    badge.className = "media-badge";
-    badge.style.left = `${bottomLeft.x}px`;
-    badge.style.top = `${bottomLeft.y + 6}px`;
-    const icon = document.createElement("span");
-    icon.textContent = KIND_ICON[info.type];
-    const name = document.createElement("span");
-    name.className = "media-name";
-    name.textContent = info.name;
-    badge.append(icon, name);
-    mediaOverlay.appendChild(badge);
-  }
+  // The SDK applies "change" asynchronously (queued behind the renderer apply
+  // pass), so a caller that just made a synchronous edit and wants the badges
+  // to reflect it immediately — rather than a frame later — can force a flush.
+  return () => layer.flush();
 }
 
 /**

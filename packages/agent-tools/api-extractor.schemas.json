@@ -1,0 +1,20 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/api-extractor/v7/api-extractor.schema.json",
+  "projectFolder": ".",
+  "mainEntryPointFilePath": "<projectFolder>/dist/schemas.d.ts",
+  "apiReport": {
+    "enabled": true,
+    "reportFolder": "<projectFolder>/etc",
+    "reportFileName": "pixi-board-agent-tools-schemas.api.md"
+  },
+  "docModel": { "enabled": false },
+  "dtsRollup": { "enabled": false },
+  "compiler": { "tsconfigFilePath": "<projectFolder>/tsconfig.json" },
+  "messages": {
+    "extractorMessageReporting": {
+      "default": { "logLevel": "warning" },
+      "ae-missing-release-tag": { "logLevel": "none" }
+    },
+    "tsdocMessageReporting": { "default": { "logLevel": "warning" } }
+  }
+}

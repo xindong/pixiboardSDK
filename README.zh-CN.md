@@ -28,24 +28,31 @@ PixiBoardJS 是从真实桌面媒体应用中提炼出来的无限画布 SDK：�
 
 ## 为什么选择 PixiBoardJS
 
-大多数画布库（Konva、Fabric.js、原生 PixiJS）给你的是一个通用场景图，文档建模、撤销重做、持久化、访问控制都要自己搭。PixiBoardJS 从相反的方向出发：扁平文档是事实来源，渲染、历史记录、能力边界都围绕它构建。
+有两件事是结构性的，来自数据模型本身，而不是靠调优得来的。
 
-| | PixiBoardJS | Konva / Fabric.js | 原生 PixiJS |
+**活动渲染对象跟随屏幕上的内容，而不是文档规模。** 文档是扁平 JSON，PixiJS 场景只是渲染器随时构建和丢弃的视口缓存。空间索引负责回答「什么是可见的」，只有这些节点会拿到渲染对象。在下面的基准里，文档从 1 万节点涨到 10 万节点，活动渲染对象数量保持不变。
+
+**Agent 的写入和人类编辑走同一条事务管线。** 这里没有另一套自动化 API。Agent 的 `canvas.write` 产出的 revision、ChangeSet 和历史条目，与一次拖拽完全相同——因此可撤销、可观测、带 `origin` 标记。大多数画布库根本没有「非人类写入者」这个概念；少数暴露了编辑器 API 的，也让自动化绕过了历史记录和访问控制。
+
+| | PixiBoardJS | Konva / Fabric.js | tldraw |
 |---|---|---|---|
-| 数据模型 | 扁平、可序列化的 JSON 文档 | 嵌套场景树（父子关系） | 无文档模型，场景由你自己维护 |
-| 目标场景 | 大型、稀疏、媒体密集画布 | 通用 2D 图形/交互 | 通用 WebGL 渲染 |
-| 渲染对象 | 可销毁的视口缓存，随数据重建 | 常驻场景树 | 常驻场景树 |
-| 撤销重做与历史 | 内置，基于 transaction | 不提供 | 不提供 |
+| 活动渲染对象 | 跟随可见内容 | 全量常驻 | 全量常驻 |
+| Agent 写入 | 与人类编辑同一事务管线，可撤销、可审计、带 `origin` | 不提供 | 无一等公民的 Agent 契约 |
+| 数据模型 | 扁平、可序列化的 JSON 文档 | 嵌套场景树（父子关系） | 文档模型 + 内置 sync |
+| 渲染方式 | PixiJS / WebGL | Canvas2D | React / DOM |
+| 撤销重做与历史 | 内置，基于 transaction | 不提供 | 内置 |
 | 访问控制（UI/插件/Agent） | 内置 `capabilities` 契约 | 不提供 | 不提供 |
-| 自定义节点类型 | 统一注册机制，无需改动 SDK 内部代码 | 自定义子类 | 自定义类 |
+| 自定义节点类型 | 统一注册机制，无需改动 SDK 内部代码 | 自定义子类 | 自定义 shape 类 |
 | 平台目标 | 浏览器 + Tauri WebView（port/adapter 注入） | 浏览器 | 浏览器 |
+| 许可证 | MIT | MIT | 源码可见；SDK 生产使用需付费许可 |
+| 实时协作 | v1 不做 | 不提供 | 内置 sync 引擎 |
 
-如果你在做白板、灵感画布、AI 生成画布，或者任何需要成百上千到数十万个媒体节点流畅平移缩放、支持真正撤销重做、能可靠持久化的场景，PixiBoardJS 正是为此设计的。如果你需要的是通用 2D 图形工具（游戏、一次性插画），Konva/Fabric/原生 PixiJS 会更合适。
+如果你在做白板、灵感画布或 AI 生成画布，文档大、媒体密集，并且 Agent 或插件要和人一起往里写，选 PixiBoardJS。如果你要的是最好的 React 编辑体验、并且现在就需要多人协作，选 tldraw。如果你要的是通用 2D 图形工具、并打算自己维护文档模型，选 Konva/Fabric/原生 PixiJS。
 
 ## 核心特性
 
 - **扁平数据模型** —— 文档是纯 JSON，节点没有父子嵌套的通用场景树；任何渲染对象都可以随时销毁并从数据重建。
-- **大型稀疏画布性能** —— 运行成本主要随可见节点和活跃媒体数量增长，而不是随文档总节点数线性增长；空间索引 + 视口虚拟化 + 纹理生命周期管理开箱即用。
+- **视口虚拟化，默认开启** —— 只要宿主报告了画布尺寸，`createPixiBoard()` 就会裁剪到可见世界矩形（外加可配置的边距）。空间索引、LOD 分级和纹理生命周期管理一并提供。
 - **Node Type Registry** —— 内置矩形、文本、图片、视频、音频节点与用户自定义节点使用同一套注册机制，新增节点类型不需要修改 SDK 内部 union 类型。
 - **单一写入通道** —— 用户交互、公共 API、插件、Agent 的所有修改都进入同一条 transaction/command 管线，撤销重做、事件、持久化天然一致。
 - **Capabilities 边界** —— 面向 UI、插件和 Agent 的统一受控能力（`canvas.read` / `canvas.write` 等），不依赖任何私有实现细节。
@@ -81,6 +88,55 @@ board.history.undo();
 
 更完整的可复制外部消费者示例见 [`apps/examples-vanilla`](apps/examples-vanilla)，自定义节点示例见 [`apps/examples-custom-node`](apps/examples-custom-node)，Tauri 桌面集成示例见 [`apps/examples-desktop-sdk`](apps/examples-desktop-sdk)，本 README 顶部的在线 Demo 源码见 [`apps/site`](apps/site)。
 
+## Agent 是一等公民的写入者
+
+Agent 不是从侧门进入画布的。`canvas.write` 落进的是和指针拖拽同一条事务管线：
+
+```bash
+pnpm add @pixi-board/agent-tools
+```
+
+```ts
+import { createPixiBoardAgentTools } from "@pixi-board/agent-tools";
+
+const tools = createPixiBoardAgentTools(board.capabilities);
+
+await tools.call("canvas.write", {
+  type: "create",
+  nodes: [{ type: "rect", x: 40, y: 40, width: 120, height: 80 }],
+});
+
+board.history.undo();   // Agent 的写入和其它编辑一样可以撤销
+```
+
+由此得到：
+
+- **可撤销** —— 写入产生正常的历史条目，用户撤销 Agent 的工作不需要另写一套回滚路径。
+- **可审计** —— 每笔写入都带 `origin`（`user` / `api` / `plugin:<id>` / `agent:<id>`，Agent 工具默认为 `agent:canvas`），谁改了什么一目了然。
+- **一致** —— UI、插件和 Agent 三条路径产出相同的 document、revision 和 ChangeSet。这一点由 [`packages/agent-tools/src/contract.test.ts`](packages/agent-tools/src/contract.test.ts) 逐字段断言，不只是设计意图。
+- **支持 headless** —— 文档读写不需要 renderer。需要挂载画布的工具（preview、capture）会明确报告能力不可用，而不是假设 renderer 一定存在。
+
+读取路径同样是为 Agent 设计的：`canvas.read` 返回紧凑的节点 DTO，支持字段投影和分页，大画布不必整块 JSON 一次性返回。
+
+### 传输层由你决定
+
+`agent-tools` 是契约，不是 server。它给你两个带 JSON Schema 的工具定义（`import { canvasReadSchema, canvasWriteSchema } from "@pixi-board/agent-tools/schemas"`）和一个异步的 `call(name, input)`。把它接到 MCP、HTTP、WebSocket，还是在自己的 agent 循环里直接函数调用，都只是针对你已有 harness 的几行代码——所以 SDK 不附带 server，也不去追一个仍在演进的协议。
+
+### 也可以完全不用工具层
+
+`board.capabilities` 本身就是公开的。如果你有自己的工具 schema、自己的 DTO 形状，或者要遵循自己 agent 框架的约定，直接基于它构建：
+
+```ts
+import { createBoardCapabilities, isCapabilityError } from "@pixi-board/capabilities";
+
+const result = await board.capabilities.nodes.create(
+  { nodes: [{ type: "rect", x: 0, y: 0, width: 100, height: 100, rotation: 0, zIndex: 0 }] },
+  { origin: "agent:my-agent" },
+);
+```
+
+同一条事务管线、同一份 ChangeSet、同样可撤销，只是翻译层归你自己维护。`agent-tools` 是它之上的便利层，而不是绕过它的特权通道。
+
 ## 架构总览
 
 ```text
@@ -92,10 +148,11 @@ board.history.undo();
            │            │         │         │            │
     ┌──────▼─────┐┌─────▼──────┐┌─▼───────┐┌▼──────────┐┌▼───────────┐
     │capabilities││renderer-pixi││ adapter- ││  adapter-  ││ agent-tools │
-    │ (UI/Plugin/││  (PixiJS    ││ browser  ││   tauri    ││  / mcp-host │
-    │  Agent 契约)││   渲染缓存)  ││(IndexedDB││ (WebView   ││ (Agent 读写 │
-    │            ││             ││ /OPFS)   ││  文件系统) ││  与 MCP)    │
+    │ (UI/Plugin/││  (PixiJS    ││ browser  ││   tauri    ││ (canvas.read│
+    │  Agent 契约)││   渲染缓存)  ││(IndexedDB││ (WebView   ││ /.write +   │
+    │            ││             ││ /OPFS)   ││  文件系统) ││ JSON Schema)│
     └──────┬─────┘└─────┬───────┘└─────────┘└────────────┘└─────────────┘
+           │            │                     传输层（MCP/HTTP/直接调用）自行组装
            │            │
            └─────┬──────┘
                  │
@@ -119,21 +176,33 @@ board.history.undo();
 | [`pixiboardjs`](packages/pixiboardjs) | 唯一用户包：`createPixiBoard()`、`NodeHandle`、内置节点、capabilities 门面 | 公开 |
 | [`@pixi-board/core`](packages/core) | 文档 / store / transaction / history / selection / viewport，无 DOM 依赖 | 公开 |
 | [`@pixi-board/renderer-pixi`](packages/renderer-pixi) | PixiJS 渲染器：scene、空间索引、视口虚拟化、纹理生命周期 | 内部 |
-| [`@pixi-board/capabilities`](packages/capabilities) | 面向 UI / 插件 / Agent 的统一受控读写能力 | 内部 |
+| [`@pixi-board/capabilities`](packages/capabilities) | 面向 UI / 插件 / Agent 的统一受控读写能力 | 公开 |
+| [`@pixi-board/agent-tools`](packages/agent-tools) | `canvas.read` / `canvas.write` 工具契约及其 JSON Schema | 公开 |
 | [`@pixi-board/adapter-browser`](packages/adapter-browser) | IndexedDB / OPFS / ObjectURL 持久化与资产适配 | 内部 |
 | [`@pixi-board/adapter-tauri`](packages/adapter-tauri) | Tauri WebView 文件系统适配 | 内部 |
 | [`@pixi-board/plugin-sdk`](packages/plugin-sdk) / [`plugin-api-v3`](packages/plugin-api-v3) | 插件 `definePlugin()` 与 v3 能力契约 | 公开 / 内部 |
-| [`@pixi-board/agent-tools`](packages/agent-tools) | `canvas.read` / `canvas.write` 等 Agent 工具契约 | 内部 |
-| [`@pixi-board/mcp-host`](packages/mcp-host) | 把 Agent 工具暴露为 MCP transport | 内部 |
 
 完整依赖方向和职责边界见 [包与模块边界](docs/03-package-boundaries.md)。
 
-## 性能目标
+## 虚拟化到底带来了什么
 
-PixiBoardJS 的性能承诺限定在**大型、稀疏、媒体密集**的无限画布场景，并以可重复 benchmark 验证，而不是口号：
+这里要说的不是「比谁快」，而是渲染器的工作量与文档规模解耦。在三份节点数相差 10 倍的文档上平移同一个视口：
 
-- 文档节点数 ≠ Pixi DisplayObject 数；ID 查询 O(1)，单节点空间索引更新 O(log N)。
+| 文档节点数 | 活动渲染对象 |
+|---:|---:|
+| 10,000 | ~360 |
+| 50,000 | ~360 |
+| 100,000 | ~360 |
+
+帧工作量跟随的是这条曲线，而不是节点总数。这是值得围绕它做设计的性质；绝对毫秒数取决于你的节点、素材和 GPU。
+
+**这个数字该怎么读。** 它摘自 2026-08-07 的一次本地 canonical 运行（Chromium 151、1920×1080、DPR 1、seed 42、30 帧预热 + 120 帧采样），标记为 `evidence-only`：没有固定机器基线，也没有获批的绝对预算，因此**不构成任何性能 gate 通过**。该运行使用 ANGLE SwiftShader，不能代表硬件 GPU 吞吐，workload 是稀疏矩形卡片。它**不支持**「PixiBoardJS 在所有画布场景都比 Konva 快」这一说法——[基准文档](docs/10-performance-benchmarks.md)如实记录了它更慢的用例，包括 100k full-retained 下 p95 为 41.80ms。
+
+benchmark 守住的结构性不变量：
+
+- 文档节点数 ≠ Pixi DisplayObject 数；ID 查询 O(1)。空间索引成本按节点计、与 N 无关（均匀网格：O(该节点覆盖的格子数)）。
 - pan/zoom 热路径主要与可见节点和预加载节点数相关，单节点更新不触发全量 Scene 重建。
+- LOD 分级为节点渲染器提供缩得足够远时的降级路径——此时所有节点都合法地位于视口内，culling 已经无能为力。
 - 无动画/视频/交互时按需渲染；destroy 后 view、texture lease、listener、ticker 回到基线。
 
 ```bash
@@ -142,7 +211,7 @@ pnpm benchmark:browser   # 真实 Chromium 环境基准
 pnpm benchmark:check     # 对比历史基线，检测回归
 ```
 
-详见 [性能目标与基准](docs/10-performance-benchmarks.md)。
+完整数据（含未达标用例）详见 [性能目标与基准](docs/10-performance-benchmarks.md)。
 
 ## 开发
 
