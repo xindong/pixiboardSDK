@@ -608,12 +608,17 @@ async function importFiles(
 
 /**
  * Points the reference at the variant each builtin renderer looks for: video
- * resolves a poster, audio a waveform, image its original bytes.
+ * resolves a poster, audio a waveform, image a downscaled preview when one
+ * was generated (builtins.ts checks "preview" before "primary", so this is
+ * picked over the original automatically) and otherwise its original bytes.
  */
 function mediaAssetRefs(media: MediaImport): Record<string, AssetRef> {
   if (media.kind === "video") return { poster: { assetId: media.assetId, variant: "preview" } };
   if (media.kind === "audio") return { waveform: { assetId: media.assetId, variant: "waveform" } };
-  return { primary: { assetId: media.assetId, variant: "original" } };
+  return {
+    primary: { assetId: media.assetId, variant: "original" },
+    ...(media.hasPreview ? { preview: { assetId: media.assetId, variant: "preview" } } : {}),
+  };
 }
 
 /**

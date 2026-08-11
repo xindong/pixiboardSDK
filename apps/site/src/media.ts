@@ -20,6 +20,8 @@ export type MediaImport = {
   /** Intrinsic media size, already clamped to a sane on-canvas footprint. */
   width: number;
   height: number;
+  /** Whether a downscaled "preview" derivative was stored for this asset. */
+  hasPreview?: boolean;
 };
 
 /** Longest edge a freshly imported node is allowed to occupy in world units. */
@@ -27,6 +29,16 @@ const MAX_NODE_EDGE = 320;
 const AUDIO_NODE_WIDTH = 320;
 const AUDIO_NODE_HEIGHT = 96;
 const WAVEFORM_BARS = 96;
+/**
+ * Longest edge, in device pixels, a generated image preview is allowed to
+ * occupy. Nodes cap out at MAX_NODE_EDGE=320 world units and the demo
+ * renders at up to 2x device pixel ratio, so ~640px covers 100% zoom; 1600px
+ * leaves headroom for the user zooming in further while still cutting a
+ * typical multi-megapixel photo down by 80%+ before it becomes a texture.
+ */
+const MAX_PREVIEW_EDGE = 1600;
+const PREVIEW_MIME_TYPE = "image/webp";
+const PREVIEW_QUALITY = 0.88;
 
 export class UnsupportedMediaError extends Error {
   constructor(readonly fileName: string, readonly mimeType: string) {
@@ -105,8 +117,19 @@ export class MediaLibrary {
     await this.adapter.putAsset(record, file);
 
     if (kind === "image") {
-      const size = await imageSize(file);
-      return { assetId, kind, name: file.name, mimeType: file.type, size: file.size, ...fitNode(size.width, size.height) };
+      const preview = await imagePreview(file);
+      if (preview.previewBlob) {
+        await this.adapter.putDerivative(assetId, "preview", preview.previewBlob);
+      }
+      return {
+        assetId,
+        kind,
+        name: file.name,
+        mimeType: file.type,
+        size: file.size,
+        hasPreview: preview.previewBlob !== undefined,
+        ...fitNode(preview.width, preview.height),
+      };
     }
 
     if (kind === "video") {
@@ -197,6 +220,71 @@ async function imageSize(file: Blob): Promise<{ width: number; height: number }>
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/**
+ * Downscales an oversized photo into a canvas-sized preview so a multi
+ * megapixel original never ends up as the GPU texture behind a node that
+ * only ever renders at a few hundred pixels on screen. Vector art (SVG) is
+ * exempt — it's already resolution-independent and typically tiny, so
+ * rasterizing it down would only cost quality for no size win — and an
+ * image already at or under the preview cap is returned as-is, since
+ * there's nothing worth trimming.
+ */
+async function imagePreview(file: File): Promise<{ width: number; height: number; previewBlob?: Blob }> {
+  const size = await imageSize(file);
+  if (file.type === "image/svg+xml" || (size.width <= MAX_PREVIEW_EDGE && size.height <= MAX_PREVIEW_EDGE)) {
+    return size;
+  }
+  try {
+    const previewBlob = await renderImagePreview(file, size);
+    return { ...size, previewBlob };
+  } catch (error) {
+    // A failed downscale must not block the import — the canvas still has
+    // the original bytes to fall back to.
+    console.warn("Failed to generate an image preview", error);
+    return size;
+  }
+}
+
+function previewSize(width: number, height: number): { width: number; height: number } {
+  const scale = Math.min(MAX_PREVIEW_EDGE / width, MAX_PREVIEW_EDGE / height, 1);
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
+
+async function renderImagePreview(file: File, intrinsicSize: { width: number; height: number }): Promise<Blob> {
+  const { width, height } = previewSize(intrinsicSize.width, intrinsicSize.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("无法创建画布上下文");
+
+  if (typeof createImageBitmap === "function") {
+    // resizeWidth/resizeHeight lets the browser's own decoder downsample
+    // while decoding, which beats decoding at full resolution and then
+    // scaling in a 2D context both for speed and for quality.
+    const bitmap = await createImageBitmap(file, { resizeWidth: width, resizeHeight: height, resizeQuality: "high" });
+    try {
+      context.drawImage(bitmap, 0, 0, width, height);
+    } finally {
+      bitmap.close?.();
+    }
+  } else {
+    const url = URL.createObjectURL(file);
+    try {
+      const image = new Image();
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error("图片解码失败"));
+        image.src = url;
+      });
+      context.drawImage(image, 0, 0, width, height);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+  return canvasBlob(canvas, PREVIEW_MIME_TYPE, PREVIEW_QUALITY);
 }
 
 /**
@@ -308,8 +396,10 @@ async function audioWaveform(file: Blob): Promise<Blob> {
   return canvasBlob(canvas);
 }
 
-async function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+async function canvasBlob(canvas: HTMLCanvasElement, mimeType = "image/png", quality?: number): Promise<Blob> {
+  // Per spec, toBlob() falls back to image/png if the requested type isn't
+  // supported, so no feature-detection is needed here.
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mimeType, quality));
   if (!blob) throw new Error("无法生成预览图");
   return blob;
 }
