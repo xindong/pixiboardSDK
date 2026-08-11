@@ -65,6 +65,13 @@ export type RuntimeRenderer = {
   init(): Promise<void>;
   rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
   apply(update: BoardDocumentUpdate, changeSet: BoardChangeEvent["changeSet"]): Promise<RendererApplyResult>;
+  /**
+   * Narrows the renderer to the world rectangle currently on screen, so the
+   * number of live render objects tracks visible content rather than document
+   * size. `undefined` means "no viewport information — treat every node as
+   * visible". Optional: a renderer that retains everything stays valid.
+   */
+  setVisibleBounds?(bounds: WorldBounds | undefined, scale?: number): Promise<void>;
   refreshRegisteredTypes?(): Promise<void>;
   destroy(): Promise<void>;
 };
@@ -180,6 +187,14 @@ export type PixiBoardOptions = {
   /** Floor sizes a resize gesture may shrink a node to, in world units. */
   transform?: { minWidth?: number; minHeight?: number };
   ports?: BoardRuntimePorts;
+  /**
+   * Viewport virtualization. On by default: the renderer only keeps views for
+   * nodes inside the visible world rectangle plus `padding` world units of
+   * margin. Requires the host to report a screen size — via
+   * `ports.createResizeObserver` or `core.viewportSize` — because the renderer
+   * cannot cull against a viewport it has never been told the size of.
+   */
+  virtualization?: { enabled?: boolean; padding?: number };
   core?: Omit<BoardCoreOptions, "document">;
   renderer?: PublicRendererOptions;
   rendererFactory?: (options: PublicRendererOptions) => RuntimeRenderer;

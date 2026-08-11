@@ -417,4 +417,107 @@ describe("pixiboardjs facade contract", () => {
     expect(save).not.toHaveBeenCalled();
     expect(changes).not.toHaveBeenCalled();
   });
+
+  describe("viewport virtualization", () => {
+    function virtualizingRenderer() {
+      const setVisibleBounds = vi.fn(async () => undefined);
+      const renderer: RuntimeRenderer = {
+        init: async () => undefined,
+        rebuild: async () => undefined,
+        apply: async () => "applied",
+        setVisibleBounds,
+        destroy: async () => undefined,
+      };
+      return { renderer, setVisibleBounds };
+    }
+
+    it("reports no bounds until a host has measured the surface", async () => {
+      const { renderer, setVisibleBounds } = virtualizingRenderer();
+      const board = await createPixiBoard({
+        ...options(),
+        headless: false,
+        container: {} as Element,
+        rendererFactory: () => renderer,
+      });
+      await board.ready;
+
+      // An unmeasured surface must not cull: the core's 1x1 default is a
+      // placeholder, and passing it through would blank the canvas.
+      expect(setVisibleBounds).toHaveBeenCalledWith(undefined, 1);
+      await board.destroy();
+    });
+
+    it("culls to the measured viewport, padded, and follows pan and zoom", async () => {
+      const { renderer, setVisibleBounds } = virtualizingRenderer();
+      const board = await createPixiBoard({
+        ...options(),
+        headless: false,
+        container: {} as Element,
+        core: { ...options().core, viewportSize: { width: 800, height: 600 } },
+        virtualization: { padding: 100 },
+        rendererFactory: () => renderer,
+      });
+      await board.ready;
+      expect(setVisibleBounds).toHaveBeenLastCalledWith(
+        { minX: -100, minY: -100, maxX: 900, maxY: 700 },
+        1,
+      );
+
+      board.viewport.panBy(-200, 0);
+      await flush();
+      expect(setVisibleBounds).toHaveBeenLastCalledWith(
+        { minX: 100, minY: -100, maxX: 1100, maxY: 700 },
+        1,
+      );
+
+      board.viewport.set({ scale: 2, offset: { x: 0, y: 0 } });
+      await flush();
+      expect(setVisibleBounds).toHaveBeenLastCalledWith(
+        { minX: -100, minY: -100, maxX: 500, maxY: 400 },
+        2,
+      );
+      await board.destroy();
+    });
+
+    it("retains every node when virtualization is disabled", async () => {
+      const { renderer, setVisibleBounds } = virtualizingRenderer();
+      const board = await createPixiBoard({
+        ...options(),
+        headless: false,
+        container: {} as Element,
+        core: { ...options().core, viewportSize: { width: 800, height: 600 } },
+        virtualization: { enabled: false },
+        rendererFactory: () => renderer,
+      });
+      await board.ready;
+      board.viewport.panBy(-200, 0);
+      await flush();
+
+      for (const call of setVisibleBounds.mock.calls) expect(call[0]).toBeUndefined();
+      await board.destroy();
+    });
+
+    it("still drives a renderer that does not implement setVisibleBounds", async () => {
+      const rebuild = vi.fn(async () => undefined);
+      const renderer: RuntimeRenderer = {
+        init: async () => undefined,
+        rebuild,
+        apply: async () => "applied",
+        destroy: async () => undefined,
+      };
+      const board = await createPixiBoard({
+        ...options(),
+        headless: false,
+        container: {} as Element,
+        core: { ...options().core, viewportSize: { width: 800, height: 600 } },
+        rendererFactory: () => renderer,
+      });
+      await board.ready;
+      board.viewport.panBy(-200, 0);
+      await flush();
+
+      expect(rebuild).toHaveBeenCalledOnce();
+      await board.destroy();
+    });
+  });
 });

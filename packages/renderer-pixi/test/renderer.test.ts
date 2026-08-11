@@ -356,4 +356,68 @@ describe("renderer-pixi vertical slice", () => {
       await renderer.destroy();
     });
   });
+
+  describe("level of detail", () => {
+    function lodRenderer(options: Partial<ConstructorParameters<typeof PixiBoardRenderer>[0]> = {}) {
+      const { app, factory } = fake();
+      const registry = new NodeRendererRegistry();
+      const levels: Array<number | undefined> = [];
+      registry.register("tiered", {
+        create: (_item, context) => { levels.push(context.lod.level); return { displayObject: factory.createContainer(), state: {} }; },
+        update: (_view, _item, context) => { levels.push(context.lod.level); },
+        destroy: () => {},
+      });
+      const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, registry, ...options });
+      return { renderer, levels };
+    }
+
+    it("reports the tier for the current zoom and redraws retained views when it changes", async () => {
+      const { renderer, levels } = lodRenderer();
+      await renderer.init();
+      await renderer.rebuild(doc([node("a", "tiered")], 1));
+
+      // Default thresholds [0.25, 0.5, 1]: 0.1 is below all three.
+      await renderer.setVisibleBounds(undefined, 0.1);
+      expect(levels.at(-1)).toBe(0);
+
+      levels.length = 0;
+      await renderer.setVisibleBounds(undefined, 2);
+      expect(levels).toEqual([3]);
+
+      // Same tier: no redraw, so zoom nudges inside one tier stay free.
+      levels.length = 0;
+      await renderer.setVisibleBounds(undefined, 4);
+      expect(levels).toEqual([]);
+      await renderer.destroy();
+    });
+
+    it("honours custom thresholds and rejects a non-positive scale", async () => {
+      const { renderer, levels } = lodRenderer({ lod: { thresholds: [10] } });
+      await renderer.init();
+      await renderer.rebuild(doc([node("a", "tiered")], 1));
+
+      await renderer.setVisibleBounds(undefined, 9);
+      expect(levels.at(-1)).toBe(0);
+      await renderer.setVisibleBounds(undefined, 10);
+      expect(levels.at(-1)).toBe(1);
+
+      await expect(renderer.setVisibleBounds(undefined, 0)).rejects.toThrow(RangeError);
+      await renderer.destroy();
+    });
+
+    it("passes the tier to texture acquisition so a host can pick a cheaper variant", async () => {
+      const { app, factory } = fake();
+      const acquireTexture = vi.fn(async () => ({ texture: {} }));
+      const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, acquireTexture });
+      await renderer.init();
+      await renderer.setVisibleBounds(undefined, 0.1);
+      await renderer.rebuild(doc([{ ...node("img", "image"), assetRefs: { image: { assetId: "a" } } }], 1));
+
+      expect(acquireTexture).toHaveBeenCalledWith(
+        { assetId: "a" },
+        expect.objectContaining({ lodLevel: 0, lodScale: 0.1 }),
+      );
+      await renderer.destroy();
+    });
+  });
 });

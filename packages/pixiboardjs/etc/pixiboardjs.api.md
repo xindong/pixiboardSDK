@@ -580,6 +580,10 @@ export type PixiBoardOptions = {
         minHeight?: number;
     };
     ports?: BoardRuntimePorts;
+    virtualization?: {
+        enabled?: boolean;
+        padding?: number;
+    };
     core?: Omit<BoardCoreOptions, "document">;
     renderer?: PublicRendererOptions;
     rendererFactory?: (options: PublicRendererOptions) => RuntimeRenderer;
@@ -654,6 +658,7 @@ export type RuntimeRenderer = {
     init(): Promise<void>;
     rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
     apply(update: BoardDocumentUpdate, changeSet: BoardChangeEvent["changeSet"]): Promise<RendererApplyResult>;
+    setVisibleBounds?(bounds: WorldBounds | undefined, scale?: number): Promise<void>;
     refreshRegisteredTypes?(): Promise<void>;
     destroy(): Promise<void>;
 };
@@ -730,22 +735,22 @@ export type WorldBounds = {
 
 // Warnings were encountered during analysis:
 //
-// dist/types-CU7N-IlQ.d.ts:45:5 - (ae-forgotten-export) The symbol "AssetRef" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:271:9 - (ae-forgotten-export) The symbol "RequestOptions" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:272:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:272:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:275:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:281:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:281:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:282:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:283:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:286:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:293:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:300:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:328:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:484:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:487:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point index.d.ts
-// dist/types-CU7N-IlQ.d.ts:488:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:45:5 - (ae-forgotten-export) The symbol "AssetRef" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:271:9 - (ae-forgotten-export) The symbol "RequestOptions" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:272:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:272:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:275:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:281:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:281:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:282:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:283:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:286:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:293:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:300:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:328:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:502:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:505:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point index.d.ts
+// dist/types-hsVfFgSu.d.ts:506:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

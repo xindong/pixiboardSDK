@@ -15,17 +15,26 @@ export type FitBoundsOptions = {
 export class ViewportController {
   private state: ViewportSnapshot;
   private screen: Size;
+  /**
+   * Whether a host has told us how big the surface actually is. The
+   * constructor default is 1x1, which is a placeholder rather than a real
+   * measurement — reporting visible bounds from it would cull everything but a
+   * single world pixel, so visibleWorldBounds() stays undefined until a host
+   * calls setScreenSize().
+   */
+  private screenSizeKnown: boolean;
   private readonly listeners = new Set<(event: ViewportChangeEvent) => void>();
 
   constructor(
     initial: ViewportSnapshot = { scale: 1, offset: { x: 0, y: 0 } },
-    screen: Size = { width: 1, height: 1 },
+    screen?: Size,
     private readonly beforeMutation: () => void = () => {},
   ) {
     assertViewport(initial);
-    assertSize(screen);
+    if (screen !== undefined) assertSize(screen);
     this.state = cloneViewport(initial);
-    this.screen = { ...screen };
+    this.screen = screen ? { ...screen } : { width: 1, height: 1 };
+    this.screenSizeKnown = screen !== undefined;
   }
 
   get(): ViewportSnapshot {
@@ -42,6 +51,33 @@ export class ViewportController {
     this.beforeMutation();
     assertSize(screen);
     this.screen = { ...screen };
+    this.screenSizeKnown = true;
+  }
+
+  getScreenSize(): Size {
+    return { ...this.screen };
+  }
+
+  /**
+   * The world rectangle the surface currently shows, grown by `padding` world
+   * units on every side so a renderer can keep a margin of ready views just
+   * outside the viewport. Returns undefined while the screen size is still
+   * unknown, which callers must read as "everything is visible" rather than
+   * "nothing is".
+   */
+  visibleWorldBounds(padding = 0): WorldBounds | undefined {
+    if (!this.screenSizeKnown) return undefined;
+    if (!Number.isFinite(padding) || padding < 0) {
+      throw new RangeError("visible bounds padding must be finite and non-negative");
+    }
+    const topLeft = this.toWorld({ x: 0, y: 0 });
+    const bottomRight = this.toWorld({ x: this.screen.width, y: this.screen.height });
+    return {
+      minX: topLeft.x - padding,
+      minY: topLeft.y - padding,
+      maxX: bottomRight.x + padding,
+      maxY: bottomRight.y + padding,
+    };
   }
 
   panBy(deltaX: number, deltaY: number): void {

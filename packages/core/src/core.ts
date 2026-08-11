@@ -606,6 +606,14 @@ export class BoardViewportController {
     this.viewport.setScreenSize(size);
   }
 
+  getScreenSize(): Size {
+    return this.viewport.getScreenSize();
+  }
+
+  visibleWorldBounds(padding?: number): WorldBounds | undefined {
+    return this.viewport.visibleWorldBounds(padding);
+  }
+
   panBy(deltaX: number, deltaY: number): void {
     this.viewport.panBy(deltaX, deltaY);
   }

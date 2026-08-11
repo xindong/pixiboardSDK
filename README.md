@@ -28,24 +28,31 @@ PixiBoardJS is an infinite canvas SDK extracted from a real desktop media applic
 
 ## Why PixiBoardJS?
 
-Most canvas libraries (Konva, Fabric.js, raw PixiJS) give you a general-purpose scene graph and leave document modeling, undo/redo, persistence, and access control entirely up to you. PixiBoardJS starts from the opposite end: a flat document is the source of truth, and everything else — rendering, history, capabilities — is built around it.
+Two things here are structural, not incremental — they follow from the data model rather than from tuning.
 
-| | PixiBoardJS | Konva / Fabric.js | Raw PixiJS |
+**Live render objects track what's on screen, not how big the document is.** The document is flat JSON; the PixiJS scene is a viewport cache the renderer builds and discards. A spatial index answers "what is visible," and only those nodes get render objects. In the benchmark below, growing the document from 10k to 100k nodes leaves the number of live render objects flat.
+
+**Agent writes go through the same transaction pipeline as human edits.** There is no separate automation API. An agent's `canvas.write` produces the same revision, the same ChangeSet, and the same history entry a drag would — so it is undoable, observable, and tagged with an `origin`. Most canvas libraries have no notion of a non-human writer at all; the ones that expose an editor API let automation bypass history and access control.
+
+| | PixiBoardJS | Konva / Fabric.js | tldraw |
 |---|---|---|---|
-| Data model | Flat, serializable JSON document | Nested scene graph (parent/child) | No document model — you own the scene |
-| Target scenario | Large, sparse, media-heavy canvases | General 2D graphics/interactivity | General WebGL rendering |
-| Rendering objects | Disposable viewport cache, rebuilt from data | Persistent scene tree | Persistent scene tree |
-| Undo/redo & history | Built-in, transaction-based | Not included | Not included |
+| Live render objects | Track visible content | All nodes retained | All nodes retained |
+| Agent writes | Same transaction pipeline as human edits — undoable, audited, `origin`-tagged | Not included | No first-class agent contract |
+| Data model | Flat, serializable JSON document | Nested scene graph (parent/child) | Document model + built-in sync |
+| Rendering | PixiJS / WebGL | Canvas2D | React / DOM |
+| Undo/redo & history | Built-in, transaction-based | Not included | Built-in |
 | Access control (UI/plugin/agent) | Built-in `capabilities` contract | Not included | Not included |
-| Custom node types | Unified registry, no SDK core changes needed | Custom subclasses | Custom classes |
+| Custom node types | Unified registry, no SDK core changes needed | Custom subclasses | Custom shape classes |
 | Platform targets | Browser + Tauri WebView via ports/adapters | Browser | Browser |
+| License | MIT | MIT | Source-available; paid license for production SDK use |
+| Real-time collaboration | Not in v1 | Not included | Built-in sync engine |
 
-If you're building a whiteboard, moodboard, AI generation canvas, or any UI where hundreds to hundreds of thousands of media-rich nodes need to pan/zoom smoothly and survive reloads with real undo/redo — PixiBoardJS is built for that. If you need a general 2D graphics toolkit for games or one-off illustrations, Konva/Fabric/raw PixiJS are a better fit.
+Pick PixiBoardJS for a whiteboard, moodboard, or AI generation canvas where the document is large and media-dense, and where agents or plugins write to it alongside people. Pick tldraw if you want the best-in-class React editing experience and need multiplayer today. Pick Konva/Fabric/raw PixiJS if you want a general 2D graphics toolkit and intend to own the document model yourself.
 
 ## Core Features
 
 - **Flat data model** — the document is plain JSON; nodes have no parent/child nesting. Any render object can be destroyed and rebuilt from data at any time.
-- **Large sparse-canvas performance** — cost scales with visible and active-media node count, not total document size. Spatial indexing, viewport virtualization, and texture lifecycle management ship out of the box.
+- **Viewport virtualization, on by default** — `createPixiBoard()` culls to the visible world rectangle (plus a configurable margin) as soon as the host reports a surface size. Spatial indexing, level-of-detail tiers, and texture lifecycle management ship with it.
 - **Node Type Registry** — built-in rect/text/image/video/audio nodes and user-defined custom nodes share one registration mechanism; adding a node type never requires touching an SDK-internal union type.
 - **Single write channel** — every mutation (user interaction, public API, plugin, agent) flows through the same transaction/command pipeline, so undo/redo, events, and persistence stay naturally consistent.
 - **Capabilities boundary** — a unified, permissioned surface (`canvas.read` / `canvas.write`, etc.) for UI, plugins, and agents that never depends on private implementation details.
@@ -80,6 +87,34 @@ board.history.undo();
 ```
 
 A fuller, copy-pasteable external-consumer example lives in [`apps/examples-vanilla`](apps/examples-vanilla); a custom-node example is in [`apps/examples-custom-node`](apps/examples-custom-node); a Tauri desktop integration example is in [`apps/examples-desktop-sdk`](apps/examples-desktop-sdk); and the source for the live demo at the top of this README is in [`apps/site`](apps/site).
+
+## Agents Are First-Class Writers
+
+An agent doesn't get a side door into the canvas. `canvas.write` lands in the same transaction pipeline a pointer drag does:
+
+```ts
+import { createPixiBoardAgentTools } from "@pixi-board/agent-tools";
+
+const tools = createPixiBoardAgentTools(board.capabilities);
+
+await tools.call("canvas.write", {
+  type: "create",
+  nodes: [{ type: "rect", x: 40, y: 40, width: 120, height: 80 }],
+});
+
+board.history.undo();   // the agent's write undoes like any other edit
+```
+
+What that buys you:
+
+- **Undoable** — the write produces a normal history entry. A user can undo an agent's work without a bespoke rollback path.
+- **Audited** — every write carries an `origin` (`user` / `api` / `plugin:<id>` / `agent:<id>`; agent tools default to `agent:canvas`), so you can tell who changed what.
+- **Consistent** — UI, plugin, and agent paths produce the same document, revision, and ChangeSet. This is asserted field-by-field in [`packages/agent-tools/src/contract.test.ts`](packages/agent-tools/src/contract.test.ts), not just intended.
+- **Headless-capable** — document reads and writes work without a renderer. Tools that need a mounted canvas (preview, capture) report capability unavailability rather than assuming a renderer exists.
+
+Read paths are agent-shaped too: `canvas.read` returns compact node DTOs with field projection and pagination, so a large board doesn't have to arrive as one enormous blob of JSON.
+
+**On MCP:** [`@pixi-board/mcp-host`](packages/mcp-host) adapts these tools to JSON-RPC over stdio, HTTP, or in-process, and all three are tested for identical semantics against a real spawned child process and a loopback socket. It is currently an **internal package implementing only `tools/call`** — there is no `initialize` or `tools/list` handshake yet, so it cannot be pointed at Claude Code or Cursor as-is. Treat it as an agent-tool contract plus a handler you can wrap, not a ready-made MCP server.
 
 ## Architecture
 
@@ -124,16 +159,29 @@ A fuller, copy-pasteable external-consumer example lives in [`apps/examples-vani
 | [`@pixi-board/adapter-tauri`](packages/adapter-tauri) | Tauri WebView filesystem adapter | Internal |
 | [`@pixi-board/plugin-sdk`](packages/plugin-sdk) / [`plugin-api-v3`](packages/plugin-api-v3) | Plugin `definePlugin()` and the v3 capability contract | Public / Internal |
 | [`@pixi-board/agent-tools`](packages/agent-tools) | `canvas.read` / `canvas.write` and other agent tool contracts | Internal |
-| [`@pixi-board/mcp-host`](packages/mcp-host) | Exposes agent tools as an MCP transport | Internal |
+| [`@pixi-board/mcp-host`](packages/mcp-host) | JSON-RPC `tools/call` handler over stdio / HTTP / in-process (no MCP handshake yet) | Internal |
 
 Full dependency direction and ownership boundaries: [package boundaries](docs/03-package-boundaries.md).
 
-## Performance Goals
+## What Virtualization Actually Buys You
 
-PixiBoardJS's performance promise is scoped to **large, sparse, media-dense** infinite canvases and is verified with repeatable benchmarks, not marketing claims:
+The claim isn't "faster than X." It's that the renderer's workload is decoupled from document size. Panning a fixed viewport across three documents that differ by 10× in node count:
 
-- Document node count ≠ Pixi DisplayObject count; ID lookups are O(1), single-node spatial index updates are O(log N).
+| Document nodes | Live render objects |
+|---:|---:|
+| 10,000 | ~360 |
+| 50,000 | ~360 |
+| 100,000 | ~360 |
+
+Frame work follows that curve rather than the node count. This is the property to design around; absolute milliseconds depend on your nodes, your assets, and your GPU.
+
+**How to read this number.** It's an excerpt from one local canonical run on 2026-08-07 (Chromium 151, 1920×1080, DPR 1, seed 42, 30 warmup + 120 sampled frames), recorded as `evidence-only`: there is no fixed-machine baseline and no approved absolute budget, so no performance gate has passed. The run used ANGLE SwiftShader, which does not represent hardware GPU throughput, and the workload is sparse rectangular cards. It does **not** support a claim that PixiBoardJS is faster than Konva across canvas workloads — the [benchmark doc](docs/10-performance-benchmarks.md) records the cases where it isn't, including a 100k full-retained p95 of 41.80 ms.
+
+Structural invariants the benchmarks hold to:
+
+- Document node count ≠ Pixi DisplayObject count; ID lookups are O(1). Spatial index cost is per-node, independent of N (uniform grid: O(cells a node covers)).
 - Pan/zoom hot paths scale with visible and preloaded node count; a single-node update never triggers a full scene rebuild.
+- Level-of-detail tiers give node renderers a cheaper path when zoomed out far enough that culling can't help — every node is legitimately on screen.
 - On-demand rendering when idle (no animation/video/interaction); views, texture leases, listeners, and tickers return to baseline after destroy.
 
 ```bash
@@ -142,7 +190,7 @@ pnpm benchmark:browser   # real Chromium benchmark
 pnpm benchmark:check     # compare against historical baseline, detect regressions
 ```
 
-See [performance goals & benchmarks](docs/10-performance-benchmarks.md) for details.
+See [performance goals & benchmarks](docs/10-performance-benchmarks.md) for the full data, including the failing cases.
 
 ## Development
 

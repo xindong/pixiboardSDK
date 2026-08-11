@@ -48,7 +48,7 @@ Core 可以在没有 renderer 的情况下运行，用于文档检查、Agent �
 
 - Pixi Application 和内部 world/overlay containers。
 - NodeRendererRegistry。
-- RBush 空间索引。
+- `GridSpatialIndex` 空间索引（均匀网格，默认 cellSize 256）。
 - 可见节点和预加载边界查询。
 - NodeView create/update/destroy。
 - Texture lease、媒体 runtime 和 LOD。

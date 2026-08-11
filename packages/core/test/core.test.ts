@@ -569,4 +569,48 @@ describe("selection and viewport session state", () => {
     expect(core.document.toJSON()).toEqual(documentBeforeViewportChange);
     expect(() => core.viewport.set({ scale: 0, offset: { x: 0, y: 0 } })).toThrow(RangeError);
   });
+
+  it("reports visible world bounds only once a host has measured the surface", () => {
+    // No viewportSize: the 1x1 constructor default is a placeholder, not a
+    // measurement, and culling against it would hide the whole document.
+    const unmeasured = new BoardCore({ schemaVersion: 1 });
+    expect(unmeasured.viewport.visibleWorldBounds()).toBeUndefined();
+
+    unmeasured.viewport.setScreenSize({ width: 800, height: 600 });
+    expect(unmeasured.viewport.visibleWorldBounds()).toEqual({
+      minX: 0,
+      minY: 0,
+      maxX: 800,
+      maxY: 600,
+    });
+    expect(unmeasured.viewport.getScreenSize()).toEqual({ width: 800, height: 600 });
+  });
+
+  it("maps visible world bounds through scale and offset, and pads in world units", () => {
+    const core = createCore();
+    expect(core.viewport.visibleWorldBounds()).toEqual({
+      minX: 0,
+      minY: 0,
+      maxX: 1000,
+      maxY: 800,
+    });
+
+    // At 2x zoom the same 1000x800 surface covers half as much world.
+    core.viewport.set({ scale: 2, offset: { x: 100, y: -40 } });
+    expect(core.viewport.visibleWorldBounds()).toEqual({
+      minX: -50,
+      minY: 20,
+      maxX: 450,
+      maxY: 420,
+    });
+
+    // Padding is world units, so it does not shrink as the view zooms in.
+    expect(core.viewport.visibleWorldBounds(32)).toEqual({
+      minX: -82,
+      minY: -12,
+      maxX: 482,
+      maxY: 452,
+    });
+    expect(() => core.viewport.visibleWorldBounds(-1)).toThrow(RangeError);
+  });
 });
