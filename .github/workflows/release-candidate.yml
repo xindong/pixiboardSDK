@@ -101,6 +101,7 @@ jobs:
           ref: ${{ env.CANDIDATE_SHA }}
       - uses: ./.github/actions/setup-sdk
       - run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - run: pnpm --filter @pixi-board/core build
       - run: pnpm --filter pixiboardjs build
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm exec playwright test --config tests/browser/playwright.config.ts --grep-invert "media-heavy"

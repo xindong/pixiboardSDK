@@ -46,7 +46,10 @@ async function prepareRuntimeArtifacts() {
 
 function run(command, commandArgs, cwd) {
   return new Promise((resolveExit) => {
-    const child = spawn(command, commandArgs, { cwd, stdio: "inherit", env: process.env });
+    // Windows batch shims (pnpm.cmd, etc.) are not real executables — Node's
+    // spawn() can only launch them via a shell, and throws EINVAL if invoked
+    // directly without shell: true.
+    const child = spawn(command, commandArgs, { cwd, stdio: "inherit", env: process.env, shell: process.platform === "win32" });
     child.on("error", (error) => { console.error(error); resolveExit(1); });
     child.on("exit", (code, signal) => resolveExit(signal === null ? (code ?? 1) : 1));
   });

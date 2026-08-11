@@ -20,7 +20,7 @@
 | `boardViewport.ts` | `core/viewport` | 直接迁移 | 移除 desktop utils 依赖，配置 scale policy |
 | `boardChangeGuards.ts` | `core/change-guards` | 直接迁移 | 保留确定性比较 |
 
-源目录：[`apps/desktop/src/board`](../../pixi-board/apps/desktop/src/board)。
+源目录：`apps/desktop/src/board`（源项目 `pixi-board`，私有仓库）。
 
 ### Renderer Pixi
 

@@ -65,7 +65,7 @@ type WriteOptions = {
 - tools、panels、actions、file drop 和 selection contributions。
 - capability interface。
 
-现有 [`board-plugin-sdk`](../../pixi-board/packages/board-plugin-sdk/src/types.ts) 是迁移输入；Plugin API v3 直接使用 SDK 类型替换核心 `unknown` DTO。
+源项目 `pixi-board`（私有仓库）中现有的 `board-plugin-sdk`（`packages/board-plugin-sdk/src/types.ts`）是迁移输入；Plugin API v3 直接使用 SDK 类型替换核心 `unknown` DTO。
 
 ### Plugin Host
 

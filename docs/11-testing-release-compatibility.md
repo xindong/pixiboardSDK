@@ -12,10 +12,7 @@
 - Tauri 安装/启动 smoke。
 - CI 中完整 Rust test job。
 
-现有 CI 和 release 可参考：
-
-- [`ci.yml`](../../pixi-board/.github/workflows/ci.yml)
-- [`release.yml`](../../pixi-board/.github/workflows/release.yml)
+源项目 `pixi-board`（私有仓库）现有的 `ci.yml` 和 `release.yml`（`.github/workflows/`）可参考。
 
 ## 测试金字塔
 
