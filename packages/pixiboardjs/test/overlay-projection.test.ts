@@ -3,6 +3,7 @@ import { rotatedRectBounds, type BoardNode, type ViewportSnapshot } from "@pixi-
 import {
   anchorWorldPoint,
   projectOverlayItem,
+  resolveOverlayBounds,
   resolveScale,
   type OverlayItem,
 } from "../src/overlay-projection";
@@ -120,5 +121,46 @@ describe("projectOverlayItem", () => {
 
   it("rejects a non-finite offset rather than emitting NaN coordinates", () => {
     expect(() => project({ offset: { x: Number.POSITIVE_INFINITY, y: 0 } })).toThrow(RangeError);
+  });
+});
+
+describe("resolveOverlayBounds", () => {
+  const noTypes = { get: () => undefined };
+
+  it("falls back to rotated bounds, not the raw rect", () => {
+    // A rotated node's bounds do not start at node.x/node.y. Anything that
+    // positions an overlay from the raw origin while sizing it from these
+    // bounds ends up in two different coordinate frames.
+    const rotated = node({ rotation: Math.PI / 4 });
+    const bounds = resolveOverlayBounds(rotated, noTypes);
+
+    expect(bounds).toEqual(rotatedRectBounds(rotated));
+    expect(bounds.minX).toBeLessThan(rotated.x);
+    // The raw rect fallback would have produced exactly this, which is the
+    // frame mismatch the shared resolver removes.
+    expect(bounds).not.toEqual({
+      minX: rotated.x,
+      minY: rotated.y,
+      maxX: rotated.x + rotated.width,
+      maxY: rotated.y + rotated.height,
+    });
+  });
+
+  it("prefers a registered node type's own bounds", () => {
+    const custom = { minX: -5, minY: -6, maxX: 7, maxY: 8 };
+    const bounds = resolveOverlayBounds(node(), { get: () => ({ getBounds: () => custom }) });
+    expect(bounds).toEqual(custom);
+  });
+
+  it("is the single frame a selection box and its outlines share", () => {
+    // Reproduces the group-box bug: deriving the origin from node.x/node.y
+    // while deriving the extent from resolved bounds leaves the box displaced
+    // from the outlines it should enclose.
+    const rotated = node({ rotation: Math.PI / 4 });
+    const bounds = resolveOverlayBounds(rotated, noTypes);
+    const outlineTopLeft = anchorWorldPoint(bounds, "top-left");
+
+    expect(outlineTopLeft).toEqual({ x: bounds.minX, y: bounds.minY });
+    expect(outlineTopLeft.x).not.toBeCloseTo(rotated.x);
   });
 });

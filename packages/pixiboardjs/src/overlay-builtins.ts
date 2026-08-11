@@ -1,6 +1,6 @@
 import type { BoardNode, JsonValue } from "@pixi-board/core";
 import { attachOverlayLayer, type OverlayLayer } from "./overlay-layer";
-import type { OverlayAnchor, OverlayDeclutter, OverlayScaleMode } from "./overlay-projection";
+import { resolveOverlayBounds, type OverlayAnchor, type OverlayDeclutter, type OverlayScaleMode } from "./overlay-projection";
 import type { PixiBoard } from "./types";
 
 export type SelectionOverlayOptions = {
@@ -51,12 +51,17 @@ export function attachSelectionOverlay(board: PixiBoard, options: SelectionOverl
     let maxX = -Infinity;
     let maxY = -Infinity;
     for (const node of nodes) {
-      const topLeft = board.viewport.toScreen({ x: node.x, y: node.y });
-      const size = screenSize(board, node);
+      // Both corners come from the same resolved bounds the outlines use. A
+      // rotated node's bounds do not start at node.x/node.y, so taking the
+      // origin from one frame and the extent from another would leave the box
+      // displaced from the outlines it is meant to enclose.
+      const bounds = resolveOverlayBounds(node, board.nodeTypes);
+      const topLeft = board.viewport.toScreen({ x: bounds.minX, y: bounds.minY });
+      const bottomRight = board.viewport.toScreen({ x: bounds.maxX, y: bounds.maxY });
       minX = Math.min(minX, topLeft.x);
       minY = Math.min(minY, topLeft.y);
-      maxX = Math.max(maxX, topLeft.x + size.width);
-      maxY = Math.max(maxY, topLeft.y + size.height);
+      maxX = Math.max(maxX, bottomRight.x);
+      maxY = Math.max(maxY, bottomRight.y);
     }
     if (!groupElement) {
       groupElement = document.createElement("div");
@@ -180,10 +185,7 @@ export function attachLabelOverlay(board: PixiBoard, options: LabelOverlayOption
 
 /** A node's on-screen size, derived from the same bounds the renderer culls with. */
 function screenSize(board: PixiBoard, node: Readonly<BoardNode<JsonValue>>): { width: number; height: number } {
-  const definition = board.nodeTypes.get(node.type);
-  const bounds = definition
-    ? definition.getBounds(node as BoardNode<never>)
-    : { minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height };
+  const bounds = resolveOverlayBounds(node, board.nodeTypes);
   const scale = board.viewport.get().scale;
   return {
     width: (bounds.maxX - bounds.minX) * scale,

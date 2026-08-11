@@ -1,4 +1,5 @@
 import type { BoardNode, JsonValue, Point, ViewportSnapshot, WorldBounds } from "@pixi-board/core";
+import { rotatedRectBounds } from "@pixi-board/core";
 
 /**
  * Where on a node's world bounds an overlay item hangs.
@@ -81,6 +82,23 @@ export type OverlayPlacement = {
 };
 
 export type OverlayBoundsResolver = (node: Readonly<BoardNode<JsonValue>>) => WorldBounds;
+
+/**
+ * The world bounds every overlay measures against — the same resolver the
+ * renderer culls with, so an overlay never drifts from what the user sees.
+ *
+ * Everything that positions or sizes an overlay must go through this. Mixing a
+ * node's raw `x`/`y` with dimensions taken from resolved bounds puts the two in
+ * different coordinate frames, which shows up as a box that is displaced from
+ * the very outlines it is supposed to enclose.
+ */
+export function resolveOverlayBounds(
+  node: Readonly<BoardNode<JsonValue>>,
+  nodeTypes: { get(type: string): { getBounds(node: BoardNode<never>): WorldBounds } | undefined },
+): WorldBounds {
+  const definition = nodeTypes.get(node.type);
+  return definition ? definition.getBounds(node as BoardNode<never>) : rotatedRectBounds(node as BoardNode);
+}
 
 const ANCHOR_RATIOS: Record<Exclude<OverlayAnchor, { x: number; y: number }>, Point> = {
   "top-left": { x: 0, y: 0 },

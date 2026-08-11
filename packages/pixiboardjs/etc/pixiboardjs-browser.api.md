@@ -1275,6 +1275,13 @@ export type ResizeObserverPort = {
     disconnect(): void;
 };
 
+// @public
+export function resolveOverlayBounds(node: Readonly<BoardNode<JsonValue>>, nodeTypes: {
+    get(type: string): {
+        getBounds(node: BoardNode<never>): WorldBounds;
+    } | undefined;
+}): WorldBounds;
+
 // @public (undocumented)
 export function resolveScale(mode: OverlayScaleMode | undefined, viewportScale: number): number;
 

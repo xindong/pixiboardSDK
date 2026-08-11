@@ -1,6 +1,5 @@
 import type { BoardNode, JsonValue, WorldBounds } from "@pixi-board/core";
-import { rotatedRectBounds } from "@pixi-board/core";
-import { projectOverlayItem, type OverlayItem, type OverlayPlacement } from "./overlay-projection";
+import { projectOverlayItem, resolveOverlayBounds, type OverlayItem, type OverlayPlacement } from "./overlay-projection";
 import type { PixiBoard } from "./types";
 
 export type OverlayRenderContext = {
@@ -96,13 +95,8 @@ export function attachOverlayLayer(board: PixiBoard, options: OverlayLayerOption
   let cancelScheduled: (() => void) | undefined;
   let destroyed = false;
 
-  const boundsOf = (node: Readonly<BoardNode<JsonValue>>): WorldBounds => {
-    // A custom node type may describe a shape the raw rect does not cover, and
-    // it is the same resolver the renderer culls with — anchoring against
-    // anything else would drift from what the user sees.
-    const definition = board.nodeTypes.get(node.type);
-    return definition ? definition.getBounds(node as BoardNode<never>) : rotatedRectBounds(node as BoardNode);
-  };
+  const boundsOf = (node: Readonly<BoardNode<JsonValue>>): WorldBounds =>
+    resolveOverlayBounds(node, board.nodeTypes);
 
   const candidates = options.candidates ?? (() => board.visibleNodeIds());
 
