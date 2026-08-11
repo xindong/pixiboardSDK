@@ -4,17 +4,19 @@
 
 现有项目不是混乱代码库，而是一个边界已经出现、但仍以桌面应用目录组织的成熟应用。SDK 工作的主要任务是提取和校正依赖方向，而不是推倒重写。
 
+> 本文档记录 SDK 从内部源项目 `pixi-board`（桌面 Tauri 应用，私有仓库，不在本仓库中）提取时的评估依据。下文引用的文件路径均指向 `pixi-board` 仓库内部，仅作历史记录，不是本仓库可解析的链接。
+
 ## 已存在的正确基础
 
 ### 纯领域包
 
-[`packages/board-domain`](../../pixi-board/packages/board-domain/src/index.ts) 已包含：
+`packages/board-domain` 已包含：
 
 - `BoardNode`、`Asset`、`BoardSnapshot` 和 viewport 类型。
 - 几何、旋转 bounds 和空间计算。
 - derivative 选择和节点命名规则。
 
-主要限制是 [`BoardNodeType` 与 `AssetKind` 绑定](../../pixi-board/packages/board-domain/src/types.ts)，当前模型只能表达预定义媒体类型。
+主要限制是 `BoardNodeType` 与 `AssetKind` 绑定（见 `packages/board-domain/src/types.ts`），当前模型只能表达预定义媒体类型。
 
 ### 编辑与历史链路
 
@@ -30,18 +32,18 @@ BoardEditor
 
 对应代码：
 
-- [`boardStore.ts`](../../pixi-board/apps/desktop/src/board/boardStore.ts)
-- [`boardEditor.ts`](../../pixi-board/apps/desktop/src/board/boardEditor.ts)
-- [`boardCommands.ts`](../../pixi-board/apps/desktop/src/board/boardCommands.ts)
-- [`boardHistory.ts`](../../pixi-board/apps/desktop/src/board/boardHistory.ts)
-- [`boardScenePatch.ts`](../../pixi-board/apps/desktop/src/board/boardScenePatch.ts)
-- [`boardMutationApplier.ts`](../../pixi-board/apps/desktop/src/board/boardMutationApplier.ts)
+- `boardStore.ts`
+- `boardEditor.ts`
+- `boardCommands.ts`
+- `boardHistory.ts`
+- `boardScenePatch.ts`
+- `boardMutationApplier.ts`
 
-这些文件是 `core` 的主要迁移来源。
+（均位于 `apps/desktop/src/board/`）这些文件是 `core` 的主要迁移来源。
 
 ### 高性能渲染基础
 
-当前 [`BoardScene`](../../pixi-board/apps/desktop/src/board/boardScene.ts) 已具备：
+当前 `BoardScene`（`apps/desktop/src/board/boardScene.ts`）已具备：
 
 - Pixi Application 生命周期。
 - world/overlay 两个内部渲染层。
@@ -52,30 +54,30 @@ BoardEditor
 - 增量 ScenePatch。
 - 选择 overlay、labels 和媒体 runtime。
 
-当前架构文档也已明确“document as data, Pixi scene as cache”：
+当前架构文档也已明确"document as data, Pixi scene as cache"：
 
-- [`docs/architecture.md`](../../pixi-board/docs/architecture.md)
-- [`docs/performance.md`](../../pixi-board/docs/performance.md)
+- `docs/architecture.md`
+- `docs/performance.md`
 
 ### 平台适配雏形
 
-[`BoardRepository`](../../pixi-board/apps/desktop/src/storage/boardRepository.ts) 与 browser/Tauri 实现已经提供依赖倒置起点：
+`BoardRepository`（`apps/desktop/src/storage/boardRepository.ts`）与 browser/Tauri 实现已经提供依赖倒置起点：
 
-- [`browserBoardRepository.ts`](../../pixi-board/apps/desktop/src/storage/browserBoardRepository.ts)
-- [`tauriBoardRepository.ts`](../../pixi-board/apps/desktop/src/storage/tauriBoardRepository.ts)
-- [`desktopRuntimeAdapter.ts`](../../pixi-board/apps/desktop/src/desktopRuntimeAdapter.ts)
+- `browserBoardRepository.ts`
+- `tauriBoardRepository.ts`
+- `desktopRuntimeAdapter.ts`
 
-[`pixi.ts`](../../pixi-board/apps/desktop/src/pixi.ts) 也已将 PixiJS import 集中到单点。
+`pixi.ts` 也已将 PixiJS import 集中到单点。
 
 ### 插件和 Agent 基础
 
 现有插件体系已经包含 permission、capability、tool registry、panel 和 MCP facade：
 
-- [`board-plugin-sdk`](../../pixi-board/packages/board-plugin-sdk/src/types.ts)
-- [`board-tool-runtime`](../../pixi-board/packages/board-tool-runtime/src/runtimeTypes.ts)
-- [`pluginRuntimeHost.ts`](../../pixi-board/apps/desktop/src/plugins/pluginRuntimeHost.ts)
-- [`tauriMcpToolHost.ts`](../../pixi-board/apps/desktop/src/tauriMcpToolHost.ts)
-- [`board-plugin-canvas`](../../pixi-board/packages/board-plugin-canvas)
+- `board-plugin-sdk`（`packages/board-plugin-sdk/src/types.ts`）
+- `board-tool-runtime`（`packages/board-tool-runtime/src/runtimeTypes.ts`）
+- `pluginRuntimeHost.ts`
+- `tauriMcpToolHost.ts`
+- `board-plugin-canvas`
 
 因此目标不是重新发明插件系统，而是让它依赖统一 `BoardCapabilities`，不再依赖桌面 `MediaWhiteboard`。
 
@@ -96,7 +98,7 @@ BoardEditor
 
 ### `MediaWhiteboard` 是过重组合根
 
-[`whiteboard.ts`](../../pixi-board/apps/desktop/src/whiteboard.ts) 同时创建 Store、Editor、Scene、Viewport、Assets、Import、Persistence、Selection UI、Interaction、Writes 和 plugin events。它适合当前应用启动，不适合作为公共 SDK 类。
+`whiteboard.ts` 同时创建 Store、Editor、Scene、Viewport、Assets、Import、Persistence、Selection UI、Interaction、Writes 和 plugin events。它适合当前应用启动，不适合作为公共 SDK 类。
 
 ### Repository 接口过宽
 
@@ -115,15 +117,15 @@ DesktopShellCapability
 
 ### Browser mode 不是完整 Web SDK
 
-Browser repository 当前主要提供内存 snapshot 和资产 metadata 更新，不支持完整媒体导入、URL、derivative、文本资产和持久恢复。因此“能在 browser 启动画布”不能等同“可交付网页 SDK”。
+Browser repository 当前主要提供内存 snapshot 和资产 metadata 更新，不支持完整媒体导入、URL、derivative、文本资产和持久恢复。因此"能在 browser 启动画布"不能等同"可交付网页 SDK"。
 
 ### 多实例输入不安全
 
-[`boardInteractionController.ts`](../../pixi-board/apps/desktop/src/board/boardInteractionController.ts) 监听全局 `window` 的 keyboard、clipboard、pointer 和 resize。SDK 必须引入 focused instance、InputScope 和可配置 interaction policy。
+`boardInteractionController.ts` 监听全局 `window` 的 keyboard、clipboard、pointer 和 resize。SDK 必须引入 focused instance、InputScope 和可配置 interaction policy。
 
 ### 自定义节点缺少注册协议
 
-[`nodeView.ts`](../../pixi-board/apps/desktop/src/board/nodeView.ts) 直接按内置节点类型创建 Sprite 或 generating visual。新增节点需要修改领域 union 和渲染分支，无法由用户注册。
+`nodeView.ts` 直接按内置节点类型创建 Sprite 或 generating visual。新增节点需要修改领域 union 和渲染分支，无法由用户注册。
 
 ### Store 对外不可直接复用
 
@@ -155,4 +157,3 @@ Browser repository 当前主要提供内存 snapshot 和资产 metadata 更新�
 ## 迁移结论
 
 SDK 提取是中等规模架构重组，不是基础技术验证。最安全的切入点是先实现 Node Type Registry 垂直切片，再按 core、renderer、facade、capabilities、platform adapters 顺序迁移。
-

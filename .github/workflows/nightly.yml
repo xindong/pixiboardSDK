@@ -34,6 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-sdk
+      - run: pnpm --filter @pixi-board/core build
       - run: pnpm --filter pixiboardjs build
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm exec playwright test --config tests/browser/playwright.config.ts --grep-invert "media-heavy"

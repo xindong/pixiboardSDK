@@ -17,7 +17,7 @@ PixiBoardJS 的性能承诺限定为大型、稀疏、媒体密集无限画布�
 
 ## 当前需要修复的热路径
 
-源项目 [`boardStore.ts`](../../pixi-board/apps/desktop/src/board/boardStore.ts) 中需要关注：
+源项目 `pixi-board`（私有仓库）的 `boardStore.ts`（`apps/desktop/src/board/boardStore.ts`）中需要关注：
 
 - `replaceNodes()` 的逐节点 `findIndex`。
 - `nextZIndex()` 的全量 reduce。
