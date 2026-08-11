@@ -67,6 +67,32 @@ describe("renderer-pixi vertical slice", () => {
     const renderer = new PixiBoardRenderer({});
     expect(renderer.registry.has("rect")).toBe(true);
   });
+  it("reports the visible id set, distinguishing 'no culling information' from an empty set", async () => {
+    const { app, factory } = fake(); const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory }); await renderer.init();
+    await renderer.rebuild(doc([node("near"), node("far", "rect", 1000)], 1));
+    // Nothing has narrowed the renderer yet: undefined means "everything is
+    // visible". A DOM overlay mirroring this must not blank out here.
+    expect(renderer.visibleNodeIds()).toBeUndefined();
+    await renderer.setVisibleBounds({ minX: -1, minY: -1, maxX: 20, maxY: 20 });
+    expect([...renderer.visibleNodeIds()!]).toEqual(["near"]);
+    // An empty set is a real answer and must stay distinguishable from undefined.
+    await renderer.setVisibleBounds({ minX: 5000, minY: 5000, maxX: 5010, maxY: 5010 });
+    expect(renderer.visibleNodeIds()?.size).toBe(0);
+    // Clearing the bounds returns to "no culling information".
+    await renderer.setVisibleBounds(undefined);
+    expect(renderer.visibleNodeIds()).toBeUndefined();
+    await renderer.destroy();
+  });
+  it("hands out a copy of the visible set so callers cannot observe a half-applied frame", async () => {
+    const { app, factory } = fake(); const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory }); await renderer.init();
+    await renderer.rebuild(doc([node("near"), node("far", "rect", 1000)], 1));
+    await renderer.setVisibleBounds({ minX: -1, minY: -1, maxX: 20, maxY: 20 });
+    const captured = renderer.visibleNodeIds()!;
+    await renderer.setVisibleBounds({ minX: 990, minY: -1, maxX: 1020, maxY: 20 });
+    expect([...captured]).toEqual(["near"]);
+    expect([...renderer.visibleNodeIds()!]).toEqual(["far"]);
+    await renderer.destroy();
+  });
   it("uses the real spatial index for bounds culling and updates it from the document", async () => {
     const { app, factory } = fake(); const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory }); await renderer.init();
     await renderer.setVisibleBounds({ minX: -1, minY: -1, maxX: 20, maxY: 20 }); await renderer.rebuild(doc([node("near"), node("far", "rect", 1000)], 1));

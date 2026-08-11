@@ -13,10 +13,24 @@ const publicPackages = [
   { name: "@pixi-board/plugin-sdk", dir: resolve(root, "packages/plugin-sdk"), artifacts: ["dist/index.js", "dist/index.d.ts"] },
 ];
 const internalDependencies = new Set(["@pixi-board/adapter-browser", "@pixi-board/capabilities", "@pixi-board/renderer-pixi", "@pixi-board/plugin-api-v3"]);
+// One report per published entry point, not per package: API Extractor only
+// walks the single entry it is pointed at, so `pixiboardjs`'s subpath exports
+// need their own configs and reports to be covered at all.
 const apiReports = [
   ["pixiboardjs", resolve(root, "packages/pixiboardjs/etc/pixiboardjs.api.md")],
+  ["pixiboardjs-browser", resolve(root, "packages/pixiboardjs/etc/pixiboardjs-browser.api.md")],
+  ["pixiboardjs-node", resolve(root, "packages/pixiboardjs/etc/pixiboardjs-node.api.md")],
+  ["pixiboardjs-types", resolve(root, "packages/pixiboardjs/etc/pixiboardjs-types.api.md")],
   ["pixi-board-core", resolve(root, "packages/core/etc/pixi-board-core.api.md")],
   ["pixi-board-plugin-sdk", resolve(root, "packages/plugin-sdk/etc/pixi-board-plugin-sdk.api.md")],
+];
+const apiExtractorRuns = [
+  ["@pixi-board/core", []],
+  ["pixiboardjs", []],
+  ["pixiboardjs", ["--config", "api-extractor.browser.json"]],
+  ["pixiboardjs", ["--config", "api-extractor.node.json"]],
+  ["pixiboardjs", ["--config", "api-extractor.types.json"]],
+  ["@pixi-board/plugin-sdk", []],
 ];
 const gateDir = await mkdtemp(join(tmpdir(), "pixiboardjs-release-gate-"));
 const releaseArtifactDir = process.env.PIXIBOARD_RELEASE_ARTIFACT_DIR ? resolve(root, process.env.PIXIBOARD_RELEASE_ARTIFACT_DIR) : undefined;
@@ -123,8 +137,8 @@ async function validatePackedPackage({ pkg, packedDir, manifest, packedFiles }) 
 }
 
 async function verifyApiReports() {
-  for (const packageName of ["@pixi-board/core", "pixiboardjs", "@pixi-board/plugin-sdk"]) {
-    await runAndPrint("pnpm", ["--filter", packageName, "exec", "api-extractor", "run", "--verbose"], { cwd: root });
+  for (const [packageName, extraArgs] of apiExtractorRuns) {
+    await runAndPrint("pnpm", ["--filter", packageName, "exec", "api-extractor", "run", "--verbose", ...extraArgs], { cwd: root });
   }
 }
 

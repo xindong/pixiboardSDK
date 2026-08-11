@@ -4,6 +4,7 @@ import {
   NativeIndexedDbPort,
   NativeObjectUrlPort,
   NativeOpfsPort,
+  attachOverlayLayer,
   createPixiBoard,
   runBrowserAdapterContract,
 } from "pixiboardjs/browser";
@@ -311,6 +312,186 @@ async function runWebGlRecoveryContract() {
   return { contextResult, failureResult };
 }
 
+/**
+ * Exercises the DOM overlay layer in a real browser: pooling across pans,
+ * transform-based positioning, declutter, candidate culling and teardown.
+ * These are the parts that only a live DOM can prove.
+ */
+async function runOverlayLayerContract() {
+  const host = document.createElement("div");
+  host.style.position = "relative";
+  host.style.width = "400px";
+  host.style.height = "300px";
+  document.body.append(host);
+  const container = document.createElement("div");
+  container.style.position = "absolute";
+  container.style.inset = "0";
+  container.style.pointerEvents = "none";
+  host.append(container);
+
+  const board = await createPixiBoard({ headless: true, container: host });
+  await board.ready;
+  // Node data types are host-registered; the overlay layer resolves bounds
+  // through the same registry the renderer culls with.
+  await board.nodeTypes.register({
+    type: "overlay.card",
+    version: 1,
+    defaults: { label: "" },
+    validate: (value) => ({ label: String(value?.label ?? "") }),
+    getBounds: (node) => ({
+      minX: node.x,
+      minY: node.y,
+      maxX: node.x + node.width,
+      maxY: node.y + node.height,
+    }),
+  });
+  const nodeIds = [];
+  for (let index = 0; index < 5; index++) {
+    const handle = await board.nodes.create({
+      type: "overlay.card",
+      x: index * 100,
+      y: 0,
+      width: 40,
+      height: 20,
+      props: { label: `node-${index}` },
+    });
+    nodeIds.push(handle.id);
+  }
+
+  let renders = 0;
+  let candidates;
+  // Synchronous scheduling keeps the contract deterministic; the rAF batching
+  // itself is covered by the "one flush per frame" assertion below.
+  const layer = attachOverlayLayer(board, {
+    container,
+    candidates: () => candidates,
+    item: (node) => ({
+      anchor: "bottom-left",
+      offset: { x: 0, y: 6 },
+      scale: { mode: "clamped", min: 0.5, max: 2 },
+      declutter: { minScale: 0.2, collapseBelowScale: 0.6 },
+      data: node.props.label,
+    }),
+    render: ({ element, placement }) => {
+      renders++;
+      element.textContent = String(placement.data);
+    },
+    schedule: (callback) => { callback(); return () => undefined; },
+  });
+  layer.flush();
+
+  const elementsFor = () => [...container.children];
+  const initial = elementsFor();
+  const initialTransforms = initial.map((element) => element.style.transform);
+
+  // Positioning must go through transform, never left/top: writing those per
+  // frame forces layout for every item.
+  const usesTransformOnly = initial.every((element) => (
+    element.style.transform.startsWith("translate3d(") &&
+    (element.style.left === "0px" || element.style.left === "0") &&
+    (element.style.top === "0px" || element.style.top === "0")
+  ));
+
+  // A pan must move existing elements, not rebuild the subtree.
+  board.viewport.panBy(25, 10);
+  layer.flush();
+  const afterPan = elementsFor();
+  const pooledAcrossPan = afterPan.length === initial.length &&
+    afterPan.every((element, index) => element === initial[index]);
+  const movedAcrossPan = afterPan.every((element, index) => element.style.transform !== initialTransforms[index]);
+
+  // Zooming out past collapseBelowScale marks items collapsed; past minScale
+  // they leave the DOM entirely.
+  board.viewport.set({ scale: 0.5, offset: { x: 0, y: 0 } });
+  layer.flush();
+  const collapsedCount = elementsFor().filter((element) => (
+    element.className.includes("pixiboard-overlay-item-collapsed")
+  )).length;
+  const scaledWhenClamped = elementsFor().every((element) => element.style.transform.includes("scale(0.5)"));
+
+  board.viewport.set({ scale: 0.1, offset: { x: 0, y: 0 } });
+  layer.flush();
+  const hiddenBelowMinScale = elementsFor().length;
+
+  board.viewport.set({ scale: 1, offset: { x: 0, y: 0 } });
+  layer.flush();
+  const restoredAfterZoomBack = elementsFor().length;
+  // Elements come back from the pool rather than being freshly allocated.
+  const reusedFromPool = elementsFor().every((element) => initial.includes(element));
+
+  // Candidate culling: only the listed ids get elements. An undefined result
+  // must mean "no culling information", not "nothing visible".
+  candidates = nodeIds.slice(0, 2);
+  layer.refresh();
+  layer.flush();
+  const culledCount = elementsFor().length;
+  candidates = undefined;
+  layer.refresh();
+  layer.flush();
+  const unculledCount = elementsFor().length;
+
+  // Default culling: with no `candidates` option the layer follows the board's
+  // own visible set, which on a headless board is "unknown" — and unknown has
+  // to render everything rather than nothing.
+  const defaultCulled = attachOverlayLayer(board, {
+    container,
+    item: () => ({}),
+    render: () => undefined,
+    schedule: (callback) => { callback(); return () => undefined; },
+  });
+  defaultCulled.flush();
+  const defaultCandidateCount = defaultCulled.size();
+  const boardReportsNoCulling = board.visibleNodeIds() === undefined;
+  defaultCulled.destroy();
+
+  // Batching: several invalidations in one frame collapse into one flush.
+  let framed = 0;
+  let pending;
+  const batched = attachOverlayLayer(board, {
+    container,
+    item: () => ({}),
+    render: () => { framed++; },
+    schedule: (callback) => { pending = callback; return () => { pending = undefined; }; },
+  });
+  framed = 0;
+  batched.refresh();
+  batched.refresh();
+  batched.refresh();
+  pending?.();
+  const rendersPerFrame = framed;
+  batched.destroy();
+
+  const beforeDestroy = elementsFor().length;
+  layer.destroy();
+  const afterDestroy = elementsFor().length;
+  // A destroyed layer must also stop reacting to the board.
+  board.viewport.panBy(10, 10);
+  const afterDestroyPan = elementsFor().length;
+
+  await board.destroy();
+  host.remove();
+
+  return {
+    usesTransformOnly,
+    pooledAcrossPan,
+    movedAcrossPan,
+    collapsedCount,
+    scaledWhenClamped,
+    hiddenBelowMinScale,
+    restoredAfterZoomBack,
+    reusedFromPool,
+    culledCount,
+    unculledCount,
+    defaultCandidateCount,
+    boardReportsNoCulling,
+    rendersPerFrame,
+    renderedAtLeastOnce: renders > 0,
+    beforeDestroy,
+    afterDestroy,
+    afterDestroyPan,
+  };
+}
+
 export const browserContracts = {
   seedReloadContract,
   readReloadContract,
@@ -319,4 +500,5 @@ export const browserContracts = {
   runPersistenceContract,
   runWebGlRecoveryContract,
   runRendererAcceptanceContract,
+  runOverlayLayerContract,
 };

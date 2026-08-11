@@ -46,15 +46,23 @@ Core 可以在没有 renderer 的情况下运行，用于文档检查、Agent �
 
 只根据 core snapshot 和 ChangeSet 维护可见 Pixi View：
 
-- Pixi Application 和内部 world/overlay containers。
+- Pixi Application 和单一 `world` container。
 - NodeRendererRegistry。
 - `GridSpatialIndex` 空间索引（均匀网格，默认 cellSize 256）。
 - 可见节点和预加载边界查询。
 - NodeView create/update/destroy。
 - Texture lease、媒体 runtime 和 LOD。
-- selection overlay、labels、capture。
+- capture。
 
 Renderer 不保存业务真相。完整 reload 时必须能够只依赖 document、registered node types 和 assets 重建。
+
+Renderer **不包含 overlay container**。selection 轮廓、节点标签、resize handle 和无障碍树都属于 DOM overlay 层（见下），理由是：
+
+- 这些内容是文档的**派生视图**，不进 `BoardDocument`，也不应该占用 Pixi view 预算或参与 culling；
+- 文字在 DOM 里由浏览器按物理像素光栅化，任何缩放都保持锐利，而 WebGL 文字要么发糊要么每次缩放重新光栅；
+- WebGL canvas 对辅助技术是不透明像素，无障碍能力只能由真实 DOM 元素承载。
+
+代价是 overlay 不会出现在 `capture()` 的输出里——capture 拍的是内容，不是 chrome。若未来出现"选择框必须进截图"这类需求，再单独引入一个不参与 culling 的 Pixi overlay container，属于新增能力而非本层职责回收。
 
 ### 3. Runtime Services
 
@@ -66,6 +74,20 @@ Renderer 不保存业务真相。完整 reload 时必须能够只依赖 document
 - input/tools。
 - multi-instance focus scope。
 - lifecycle 和 capability availability。
+
+### 3.5 DOM Overlay 层
+
+浏览器专属，从 `pixiboardjs/browser` 导出，绝不进入 `core` 或 `renderer-pixi`。它把画布内容投影成真实 DOM 元素，承担三类职责：
+
+| 能力 | 入口 | 驱动源 | 虚拟化窗口 |
+|---|---|---|---|
+| 通用 overlay 原语 | `attachOverlayLayer` | viewport + changeSet | 视口可见集 |
+| 无障碍树 | `attachAccessibilityTree` | changeSet + 焦点 | 焦点邻域 |
+| resize handle | `attachDomTransformer` | selection + viewport | 当前选择 |
+
+**两套虚拟化窗口不能合并。** 视觉 overlay 按视口裁剪；无障碍树按焦点裁剪——屏幕阅读器用户没有"视口"概念，只按视口给内容会让文档其余部分对他们永远不存在。共用投影与元素池，但驱动源与窗口独立。
+
+Overlay 的状态是纯派生的：它可以在任何时刻销毁重建，不持有业务真相，与"数据是事实，渲染是缓存"同一条原则。
 
 ### 4. BoardCapabilities
 

@@ -1,5 +1,8 @@
 export * from "./index";
 export * from "./dom-transformer";
+export * from "./overlay-projection";
+export * from "./overlay-layer";
+export * from "./overlay-builtins";
 export * from "@pixi-board/adapter-browser";
 
 import {

@@ -158,6 +158,44 @@ describe("pixiboardjs facade contract", () => {
     await board.destroy();
   });
 
+  it("passes the renderer's visible set through, keeping 'unknown' distinct from 'empty'", async () => {
+    let visible: ReadonlySet<string> | undefined;
+    const renderer: RuntimeRenderer = {
+      init: async () => undefined,
+      rebuild: async () => undefined,
+      apply: async () => "applied" as const,
+      visibleNodeIds: () => visible,
+      destroy: async () => undefined,
+    };
+    const board = await createPixiBoard({
+      ...options(),
+      headless: false,
+      container: {} as Element,
+      rendererFactory: () => renderer,
+    });
+    await board.ready;
+
+    // A renderer with no culling information reports undefined, and that has
+    // to survive the trip: an overlay reading it as an empty set would hide
+    // every item on a renderer that legitimately retains everything.
+    expect(board.visibleNodeIds()).toBeUndefined();
+    visible = new Set(["id-1"]);
+    expect([...board.visibleNodeIds()!]).toEqual(["id-1"]);
+    visible = new Set();
+    expect(board.visibleNodeIds()?.size).toBe(0);
+    await board.destroy();
+  });
+
+  it("reports no visible set for a headless board rather than an empty one", async () => {
+    const board = await createPixiBoard(options());
+    await board.ready;
+    await board.nodes.create(card("a"));
+    // Headless boards have no renderer at all; "everything is visible" is the
+    // only honest answer for a caller deciding what to draw.
+    expect(board.visibleNodeIds()).toBeUndefined();
+    await board.destroy();
+  });
+
   it("supports lightweight find/findOne queries and exact document.validate signature", async () => {
     const board = await createPixiBoard(options());
     await board.ready;

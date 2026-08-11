@@ -295,6 +295,14 @@ class PixiBoardFacade implements PixiBoard {
     return this.core.nodes.get(nodeId);
   }
 
+  visibleNodeIds(): ReadonlySet<string> | undefined {
+    this.assertAlive();
+    // A renderer that does not implement culling reports undefined, which
+    // flows straight through: "no culling information" is the honest answer,
+    // and callers turn it into "everything is visible".
+    return this.renderer?.visibleNodeIds?.();
+  }
+
   transaction<Result>(label: string, operation: () => Result, options = {}): Result {
     this.assertAlive();
     return this.core.transaction(label, () => {

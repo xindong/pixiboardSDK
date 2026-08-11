@@ -275,6 +275,11 @@ const releaseEvidence =
   has(releaseDoc, /pnpm build:release/) &&
   await exists(".changeset/config.json") &&
   await exists("packages/pixiboardjs/etc/pixiboardjs.api.md") &&
+  // Subpath exports carry public API of their own; a root-entry-only report
+  // would leave `pixiboardjs/browser` unguarded.
+  await exists("packages/pixiboardjs/etc/pixiboardjs-browser.api.md") &&
+  await exists("packages/pixiboardjs/etc/pixiboardjs-node.api.md") &&
+  await exists("packages/pixiboardjs/etc/pixiboardjs-types.api.md") &&
   await exists("packages/core/etc/pixi-board-core.api.md") &&
   await exists("packages/plugin-sdk/etc/pixi-board-plugin-sdk.api.md");
 const releaseCommandEvidence =

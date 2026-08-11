@@ -72,6 +72,12 @@ export type RuntimeRenderer = {
    * visible". Optional: a renderer that retains everything stays valid.
    */
   setVisibleBounds?(bounds: WorldBounds | undefined, scale?: number): Promise<void>;
+  /**
+   * The ids culling currently keeps. `undefined` means the renderer has no
+   * culling information, which callers must read as "everything is visible"
+   * rather than "nothing is".
+   */
+  visibleNodeIds?(): ReadonlySet<string> | undefined;
   refreshRegisteredTypes?(): Promise<void>;
   destroy(): Promise<void>;
 };
@@ -363,6 +369,16 @@ export interface PixiBoard {
   };
   find(filter?: NodeQuery): ReadonlyArray<Readonly<BoardNode>>;
   findOne(selector: string): Readonly<BoardNode> | undefined;
+  /**
+   * The node ids the renderer currently keeps live, so DOM overlays can track
+   * visible content rather than document size.
+   *
+   * `undefined` means there is no culling information — a headless board, a
+   * renderer that retains everything, or a viewport whose screen size is not
+   * measured yet. Callers must treat that as "everything is visible"; treating
+   * it as an empty set would blank an overlay on a perfectly valid renderer.
+   */
+  visibleNodeIds(): ReadonlySet<string> | undefined;
   node<Props extends JsonValue = JsonValue>(nodeId: string): NodeHandle<Props>;
   transaction<Result>(label: string, operation: () => Result, options?: TransactionOptions): Result;
   on<EventName extends keyof PublicBoardEventMap>(

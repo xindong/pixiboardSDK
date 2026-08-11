@@ -181,6 +181,20 @@ export class PixiBoardRenderer {
 
   setCullingQuery(query: CullingQuery | undefined): void { this.options.cullingQuery = query; }
 
+  /**
+   * The ids culling currently keeps, or undefined when nothing has narrowed
+   * the renderer yet. The distinction matters to callers that mirror this set
+   * in the DOM: undefined has to read as "no culling information", not as
+   * "nothing is visible", or an overlay would blank out on a renderer that
+   * retains everything.
+   *
+   * Returns a copy — the internal set is mutated during reconcile, and handing
+   * it out directly would let a caller observe a half-applied frame.
+   */
+  visibleNodeIds(): ReadonlySet<string> | undefined {
+    return this.visibleBounds ? new Set(this.desiredIds) : undefined;
+  }
+
   async refreshRegisteredTypes(): Promise<void> {
     this.assertAlive();
     this.rebuildSpatialIndexFromCache();

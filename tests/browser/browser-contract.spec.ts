@@ -147,3 +147,40 @@ test("real Pixi/WebGL renderer accepts media-heavy Document nodes and returns al
   expect(result.destroySoak).toMatchObject({ cycles: 100, failures: [], finalCanvasCount: 0 });
   expect(result.notObserved).toEqual(expect.arrayContaining(["GPU memory", "draw calls/batches", "idle CPU/GPU"]));
 });
+
+test("DOM overlay layer pools elements, positions via transform and declutters by zoom", async ({ page }) => {
+  const result = await page.evaluate(() => window.pixiBoardBrowserContracts.runOverlayLayerContract());
+
+  // Positioning must never touch left/top: those force layout per item per frame.
+  expect(result.usesTransformOnly).toBe(true);
+  expect(result.renderedAtLeastOnce).toBe(true);
+
+  // A pan moves the same elements rather than rebuilding the subtree.
+  expect(result.pooledAcrossPan).toBe(true);
+  expect(result.movedAcrossPan).toBe(true);
+
+  // Declutter: collapse marks, minScale removes, and both are reversible.
+  expect(result.collapsedCount).toBe(5);
+  expect(result.scaledWhenClamped).toBe(true);
+  expect(result.hiddenBelowMinScale).toBe(0);
+  expect(result.restoredAfterZoomBack).toBe(5);
+  expect(result.reusedFromPool).toBe(true);
+
+  // Candidate culling narrows the layer; no candidate information means the
+  // whole document, not an empty overlay.
+  expect(result.culledCount).toBe(2);
+  expect(result.unculledCount).toBe(5);
+
+  // Culling is on by default via the board's visible set. On this board that
+  // set is unknown, which must render everything rather than nothing.
+  expect(result.boardReportsNoCulling).toBe(true);
+  expect(result.defaultCandidateCount).toBe(5);
+
+  // Several invalidations in one frame collapse into a single flush.
+  expect(result.rendersPerFrame).toBe(5);
+
+  // Destroy returns to baseline and detaches from the board.
+  expect(result.beforeDestroy).toBe(5);
+  expect(result.afterDestroy).toBe(0);
+  expect(result.afterDestroyPan).toBe(0);
+});

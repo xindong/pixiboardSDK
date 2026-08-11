@@ -5,10 +5,26 @@ import { join, resolve } from "node:path";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
 const run = promisify(execFile);
+// Every published entry point needs its own report: API Extractor only walks
+// the one `mainEntryPointFilePath` it is given, so a package with subpath
+// exports would otherwise ship an unguarded public surface (`pixiboardjs/browser`
+// carries the DOM overlay and persistence helpers, which live nowhere in the
+// root entry's report).
 const reports = [
   ["pixiboardjs", join(root, "packages/pixiboardjs/etc/pixiboardjs.api.md")],
+  ["pixiboardjs/browser", join(root, "packages/pixiboardjs/etc/pixiboardjs-browser.api.md")],
+  ["pixiboardjs/node", join(root, "packages/pixiboardjs/etc/pixiboardjs-node.api.md")],
+  ["pixiboardjs/types", join(root, "packages/pixiboardjs/etc/pixiboardjs-types.api.md")],
   ["@pixi-board/core", join(root, "packages/core/etc/pixi-board-core.api.md")],
   ["@pixi-board/plugin-sdk", join(root, "packages/plugin-sdk/etc/pixi-board-plugin-sdk.api.md")],
+];
+const extractorRuns = [
+  ["@pixi-board/core", []],
+  ["pixiboardjs", []],
+  ["pixiboardjs", ["--config", "api-extractor.browser.json"]],
+  ["pixiboardjs", ["--config", "api-extractor.node.json"]],
+  ["pixiboardjs", ["--config", "api-extractor.types.json"]],
+  ["@pixi-board/plugin-sdk", []],
 ];
 const blockers = [];
 
@@ -30,8 +46,8 @@ if (blockers.length) {
   process.exitCode = 1;
 } else {
   try {
-    for (const packageName of ["@pixi-board/core", "pixiboardjs", "@pixi-board/plugin-sdk"]) {
-      await run("pnpm", ["--filter", packageName, "exec", "api-extractor", "run", "--verbose"], { cwd: root });
+    for (const [packageName, extraArgs] of extractorRuns) {
+      await run("pnpm", ["--filter", packageName, "exec", "api-extractor", "run", "--verbose", ...extraArgs], { cwd: root });
     }
     console.log("API report compare passed: API Extractor production mode matches committed reports.");
   } catch (error) {
