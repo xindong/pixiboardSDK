@@ -358,7 +358,10 @@ function wireStageTransform(
 // elements with live pointer handlers rather than the decorative markup an
 // outline can get away with, so the SDK's DOM transformer owns those.
 function wireSelectionOverlay(board: PixiBoard): DomTransformer {
-  attachSelectionOverlay(board, { container: selectionOverlay });
+  // Keep the group outline on the same bounds as the transform controller.
+  // The overlay's default 6px padding would leave all eight handles visually
+  // inset from the dashed multi-selection box.
+  attachSelectionOverlay(board, { container: selectionOverlay, groupBoxPadding: 0 });
   return attachDomTransformer(board, { overlay: handleOverlay, surface: host });
 }
 
