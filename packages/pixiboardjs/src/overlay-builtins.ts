@@ -129,6 +129,9 @@ export type LabelOverlayOptions = {
   schedule?(callback: () => void): () => void;
 };
 
+type LabelData = { text: string; icon?: string };
+type LabelParts = { icon: HTMLSpanElement; text: HTMLSpanElement };
+
 const DEFAULT_LABEL_DECLUTTER: OverlayDeclutter = { minScale: 0.25, collapseBelowScale: 0.5 };
 
 /**
@@ -156,32 +159,44 @@ export function attachLabelOverlay(board: PixiBoard, options: LabelOverlayOption
         offset,
         scale: options.scale ?? "screen",
         declutter: options.declutter ?? DEFAULT_LABEL_DECLUTTER,
-        data: value,
+        data: { text: value, icon: options.icon?.(node) } satisfies LabelData,
       };
     },
-    render: ({ element, placement, node }) => {
-      const icon = options.icon?.(node);
+    render: ({ element, placement }) => {
+      let parts = labelParts.get(element);
+      if (!parts) {
+        parts = {
+          icon: document.createElement("span"),
+          text: document.createElement("span"),
+        };
+        parts.icon.className = `${prefix}-label-icon`;
+        parts.text.className = `${prefix}-label-text`;
+        element.replaceChildren(parts.icon, parts.text);
+        labelParts.set(element, parts);
+      } else if (parts.icon.parentElement !== element || parts.text.parentElement !== element) {
+        // The generic overlay pool clears a released element's subtree. Keep
+        // the cached spans, but reattach them when that element is reused.
+        element.replaceChildren(parts.icon, parts.text);
+      }
+      const data = placement.data as LabelData;
       // Collapsed labels keep their element (so the pool and the DOM order
       // stay stable) but drop the text, which is what makes a dense zoomed-out
       // board readable instead of a wall of overlapping names.
       if (placement.collapsed) {
-        element.textContent = icon ?? "";
+        if (parts.icon.textContent !== (data.icon ?? "")) parts.icon.textContent = data.icon ?? "";
+        parts.icon.hidden = data.icon === undefined;
+        parts.text.hidden = true;
         return;
       }
-      element.textContent = "";
-      if (icon !== undefined) {
-        const iconElement = document.createElement("span");
-        iconElement.className = `${prefix}-label-icon`;
-        iconElement.textContent = icon;
-        element.appendChild(iconElement);
-      }
-      const textElement = document.createElement("span");
-      textElement.className = `${prefix}-label-text`;
-      textElement.textContent = String(placement.data);
-      element.appendChild(textElement);
+      if (parts.icon.textContent !== (data.icon ?? "")) parts.icon.textContent = data.icon ?? "";
+      if (parts.text.textContent !== data.text) parts.text.textContent = data.text;
+      parts.icon.hidden = data.icon === undefined;
+      parts.text.hidden = false;
     },
   });
 }
+
+const labelParts = new WeakMap<HTMLElement, LabelParts>();
 
 /** A node's on-screen size, derived from the same bounds the renderer culls with. */
 function screenSize(board: PixiBoard, node: Readonly<BoardNode<JsonValue>>): { width: number; height: number } {

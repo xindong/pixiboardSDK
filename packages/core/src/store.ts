@@ -75,6 +75,18 @@ export class RuntimeDocumentStore {
     return cloneValue(this.materializedNodes());
   }
 
+  listNodesByIds(ids: Iterable<string>): BoardNode[] {
+    const nodes: BoardNode[] = [];
+    for (const id of ids) {
+      const node = this.getNodeReference(id);
+      if (node) nodes.push(node);
+    }
+    // Keep the same document-order guarantee as listNodes(), without scanning
+    // the whole document when a renderer has already narrowed the candidates.
+    nodes.sort((left, right) => (this.nodeOrder.get(left.id) ?? 0) - (this.nodeOrder.get(right.id) ?? 0));
+    return cloneValue(nodes);
+  }
+
   nodeCount(): number {
     return this.document.nodes.length;
   }

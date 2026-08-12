@@ -90,7 +90,12 @@ export function attachOverlayLayer(board: PixiBoard, options: OverlayLayerOption
    * churns hundreds of elements per second through the allocator.
    */
   const pool: HTMLElement[] = [];
+  const applied = new WeakMap<HTMLElement, { className: string; transform: string }>();
   const disposers: Array<() => void> = [];
+
+  let cachedCandidateIds: ReadonlyArray<string> | undefined;
+  let cachedCandidateNodes: ReadonlyArray<Readonly<BoardNode<JsonValue>>> | undefined;
+  let candidateCacheDirty = true;
 
   let cancelScheduled: (() => void) | undefined;
   let destroyed = false;
@@ -101,14 +106,20 @@ export function attachOverlayLayer(board: PixiBoard, options: OverlayLayerOption
   const candidates = options.candidates ?? (() => board.visibleNodeIds());
 
   const candidateNodes = (): ReadonlyArray<Readonly<BoardNode<JsonValue>>> => {
+    if (!candidateCacheDirty && cachedCandidateNodes) return cachedCandidateNodes;
     const ids = candidates();
-    if (!ids) return board.nodes.list();
-    const nodes: Array<Readonly<BoardNode<JsonValue>>> = [];
-    for (const id of ids) {
-      const node = board.nodes.get(id);
-      if (node) nodes.push(node);
+    if (!ids) {
+      cachedCandidateIds = undefined;
+      cachedCandidateNodes = board.nodes.list();
+      candidateCacheDirty = false;
+      return cachedCandidateNodes;
     }
-    return nodes;
+
+    const nextIds = [...ids];
+    cachedCandidateIds = nextIds;
+    cachedCandidateNodes = board.nodes.list({ ids: nextIds });
+    candidateCacheDirty = false;
+    return cachedCandidateNodes;
   };
 
   const acquire = (key: string): HTMLElement => {
@@ -122,7 +133,6 @@ export function attachOverlayLayer(board: PixiBoard, options: OverlayLayerOption
     // Transform origin has to be the anchor point itself, otherwise a scaled
     // item drifts away from the node it belongs to as the zoom changes.
     element.style.transformOrigin = "0 0";
-    element.style.willChange = "transform";
     options.container.appendChild(element);
     active.set(key, element);
     return element;
@@ -133,6 +143,7 @@ export function attachOverlayLayer(board: PixiBoard, options: OverlayLayerOption
     element.remove();
     element.removeAttribute("style");
     element.textContent = "";
+    applied.delete(element);
     pool.push(element);
   };
 
@@ -150,29 +161,42 @@ export function attachOverlayLayer(board: PixiBoard, options: OverlayLayerOption
 
       seen.add(placement.key);
       const element = acquire(placement.key);
-      element.className = [itemClassName, placement.className, placement.collapsed ? collapsedClassName : undefined]
+      const className = [itemClassName, placement.className, placement.collapsed ? collapsedClassName : undefined]
         .filter(Boolean)
         .join(" ");
-      // translate3d rather than translate: it keeps the item on its own
-      // compositor layer, so a pan never repaints the elements themselves.
-      element.style.transform =
+      // translate3d keeps positioning out of the layout path. Avoiding an
+      // unconditional write matters when several board events land together;
+      // forcing every item into its own layer via will-change is deliberately
+      // left to the host stylesheet because it can cost more than it saves.
+      const transform =
         `translate3d(${placement.screen.x}px, ${placement.screen.y}px, 0)` +
         (placement.scale === 1 ? "" : ` scale(${placement.scale})`);
+      const previous = applied.get(element);
+      if (!previous || previous.className !== className) element.className = className;
+      if (!previous || previous.transform !== transform) element.style.transform = transform;
+      applied.set(element, { className, transform });
       options.render({ element, placement, node });
     }
 
-    for (const [key, element] of [...active]) if (!seen.has(key)) release(key, element);
+    for (const [key, element] of active) if (!seen.has(key)) release(key, element);
     options.onFlush?.();
   };
 
-  const refresh = (): void => {
+  const scheduleRefresh = (): void => {
     if (destroyed || cancelScheduled) return;
     cancelScheduled = schedule(flush);
   };
 
-  for (const event of ["change", "viewport:change", "selection:change"] as const) {
-    disposers.push(board.on(event, refresh));
-  }
+  const refresh = (): void => {
+    candidateCacheDirty = true;
+    scheduleRefresh();
+  };
+
+  disposers.push(board.on("change", refresh));
+  disposers.push(board.on("selection:change", refresh));
+  // Panning/zooming only changes projection. The renderer's visible set, if
+  // any, is invalidated separately by render:complete below.
+  disposers.push(board.on("viewport:change", scheduleRefresh));
   // A rebuild can change what the renderer holds without touching the
   // document, so the visible-set-driven layers need this too.
   disposers.push(board.on("render:complete", refresh));
@@ -193,7 +217,7 @@ export function attachOverlayLayer(board: PixiBoard, options: OverlayLayerOption
       cancelScheduled = undefined;
       for (const dispose of disposers) dispose();
       disposers.length = 0;
-      for (const [key, element] of [...active]) release(key, element);
+      for (const [key, element] of active) release(key, element);
       pool.length = 0;
     },
   };

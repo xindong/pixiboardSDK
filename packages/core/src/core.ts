@@ -501,7 +501,6 @@ export class BoardNodesController {
   }
 
   list(filter: NodeListFilter = {}): ReadonlyArray<Readonly<BoardNode>> {
-    const selected = new Set(this.core.selection.get());
     const idFilter = filter.ids ? new Set(filter.ids) : undefined;
     const typeFilter = filter.types ? new Set(filter.types) : undefined;
     const limit = filter.limit ?? Number.POSITIVE_INFINITY;
@@ -514,13 +513,16 @@ export class BoardNodesController {
     // in place is sufficient — cloning again here would double the per-call
     // cost, which matters because list()/find() runs on hot paths like every
     // drag-frame "change" event.
-    const result = getCoreInternals(this.core).currentStore().listNodes().filter((node) => {
+    const store = getCoreInternals(this.core).currentStore();
+    const selected = filter.selected === undefined ? undefined : new Set(this.core.selection.get());
+    const source = idFilter ? store.listNodesByIds(idFilter) : store.listNodes();
+    const result = source.filter((node) => {
       if (idFilter && !idFilter.has(node.id)) return false;
       if (typeFilter && !typeFilter.has(node.type)) return false;
       if (filter.type && node.type !== filter.type) return false;
       if (filter.bounds && !boundsIntersect(this.core.getBounds(node.id), filter.bounds)) return false;
       if (filter.visible !== undefined && (node.visible ?? true) !== filter.visible) return false;
-      if (filter.selected !== undefined && selected.has(node.id) !== filter.selected) return false;
+      if (filter.selected !== undefined && selected!.has(node.id) !== filter.selected) return false;
       return true;
     });
     return deepFreeze(result.slice(0, limit));
