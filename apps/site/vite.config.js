@@ -1,5 +1,8 @@
 import { defineConfig } from "vite";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
   base: "./",
@@ -7,8 +10,8 @@ export default defineConfig({
     target: "es2022",
     rollupOptions: {
       input: {
-        main: resolve(__dirname, "index.html"),
-        docs: resolve(__dirname, "docs.html"),
+        main: resolve(root, "index.html"),
+        docs: resolve(root, "docs.html"),
       },
     },
   },
