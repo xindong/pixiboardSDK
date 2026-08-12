@@ -98,7 +98,10 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  backdrop-filter: blur(4px);
+  /* A backdrop blur per label forces expensive background recomposition when
+     many media nodes are visible. The opaque-ish fill keeps the same contrast
+     without turning every badge into a separate filter surface. */
+  contain: layout paint;
 }
 
 .media-label .media-label-text {

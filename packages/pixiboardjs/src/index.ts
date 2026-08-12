@@ -165,6 +165,7 @@ class PixiBoardFacade implements PixiBoard {
   private readonly rendererRegistry: NodeRendererRegistry;
   private readonly transformController: TransformController;
   private renderer?: RuntimeRenderer;
+  private renderedRevision = 0;
   private frameId = 0;
   private pendingRuntimeWork = Promise.resolve();
   private destroyPromise?: Promise<void>;
@@ -434,7 +435,9 @@ class PixiBoardFacade implements PixiBoard {
       // Before the first rebuild, so the initial scene only builds views for
       // what is actually on screen instead of the whole document.
       await this.syncVisibleBounds();
-      await renderer.rebuild(this.core.document.snapshot());
+      const snapshot = this.core.document.snapshot();
+      await renderer.rebuild(snapshot);
+      this.renderedRevision = snapshot.revision;
     }
     if (!this.signal.aborted) this.lifecycle = "ready";
   }
@@ -538,7 +541,17 @@ class PixiBoardFacade implements PixiBoard {
   private queueVisibleBoundsSync(): void {
     if (this.signal.aborted || !this.renderer?.setVisibleBounds) return;
     this.pendingRuntimeWork = this.pendingRuntimeWork
-      .then(() => this.syncVisibleBounds())
+      .then(async () => {
+        await this.syncVisibleBounds();
+        if (this.signal.aborted) return;
+        // ResizeObserver-driven culling changes do not produce a core
+        // viewport event. Notify consumers after the renderer has reconciled
+        // so visible-set-backed overlays can invalidate their candidate cache.
+        this.events.emit("render:complete", {
+          revision: this.renderedRevision,
+          frameId: ++this.frameId,
+        });
+      })
       .catch((error) => {
         if (!this.signal.aborted) queueMicrotask(() => { throw error; });
       });
@@ -563,6 +576,7 @@ class PixiBoardFacade implements PixiBoard {
           throw error;
         }
         if (this.signal.aborted) return;
+        this.renderedRevision = event.revision;
         this.events.emit("render:complete", {
           revision: event.revision,
           frameId: ++this.frameId,
