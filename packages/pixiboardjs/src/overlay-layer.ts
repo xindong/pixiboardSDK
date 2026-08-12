@@ -194,9 +194,10 @@ export function attachOverlayLayer(board: PixiBoard, options: OverlayLayerOption
 
   disposers.push(board.on("change", refresh));
   disposers.push(board.on("selection:change", refresh));
-  // Panning/zooming only changes projection. The renderer's visible set, if
-  // any, is invalidated separately by render:complete below.
-  disposers.push(board.on("viewport:change", scheduleRefresh));
+  // Panning/zooming changes projection and can also change the renderer's
+  // visible set. Invalidate the candidate cache here; otherwise the scheduled
+  // flush could keep rendering nodes from the previous viewport.
+  disposers.push(board.on("viewport:change", refresh));
   // A rebuild can change what the renderer holds without touching the
   // document, so the visible-set-driven layers need this too.
   disposers.push(board.on("render:complete", refresh));
