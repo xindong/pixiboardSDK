@@ -1,8 +1,9 @@
 # PixiBoardJS 文档总览
 
-这套文档定义 PixiBoardJS 的产品边界、目标架构、迁移顺序和可验证的交付标准。目标是让实现阶段可以按里程碑推进，而不是在重构过程中重新讨论基本方向。
+- [开发者文档](developers/README.md)：面向 SDK 使用者的安装、公开 API、接入方式和可复制示例。
+- [开发者文档一致性清单](developers/api-consistency.md)：当前公开代码与知识文档的差异、规划边界和维护顺序。
 
-## 推荐阅读顺序
+下面的文档主要面向维护者，记录产品目标、架构决策、迁移顺序和交付验收；它们不是当前公开 API 的完整参考。开发 SDK 时请先阅读开发者文档，再按需要查阅这些设计资料。
 
 1. [00-product-goals.md](00-product-goals.md)：为什么做、做什么、不做什么。
 2. [01-current-state.md](01-current-state.md)：现有 `pixi-board` 的可复用基础和主要耦合。

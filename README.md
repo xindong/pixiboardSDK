@@ -12,7 +12,7 @@ Flat document model · PixiJS rendering · custom nodes · one contract for Capa
 [![node](https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white)](package.json)
 [![pnpm](https://img.shields.io/badge/pnpm-workspace-F69220?logo=pnpm&logoColor=white)](pnpm-workspace.yaml)
 
-**[🎮 Live interactive demo](https://xindong.github.io/pixiboardSDK/)** · [Docs](docs/README.md) · [ADRs](docs/adr) · [简体中文](README.zh-CN.md)
+**[🎮 Live interactive demo](https://xindong.github.io/pixiboardSDK/)** · [开发者文档](docs/developers/README.md) · [架构与交付文档](docs/README.md) · [ADRs](docs/adr) · [简体中文](README.zh-CN.md)
 
 </div>
 
