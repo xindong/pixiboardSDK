@@ -979,14 +979,17 @@ function beginTextEdit(board: PixiBoard, nodeId: string): void {
     editor.style.left = `${screen.x}px`;
     editor.style.top = `${screen.y}px`;
     editor.style.width = `${Math.max(80, scale * current.width)}px`;
-    editor.style.height = `${Math.max(1, scale * current.height)}px`;
-    editor.style.fontSize = `${Math.max(10, scale * Number(current.props.style?.fontSize ?? 16))}px`;
+    const minHeight = Math.max(1, scale * current.height);
+    editor.style.minHeight = `${minHeight}px`;
+    editor.style.height = `${minHeight}px`;
     const fontSize = Number(current.props.style?.fontSize ?? 16);
+    const scaledFontSize = Math.max(1, scale * fontSize);
+    editor.style.fontSize = `${scaledFontSize}px`;
     editor.style.fontFamily = textFontFamily(current.props.style);
     editor.style.fontStyle = textFontStyle(current.props.style);
     editor.style.fontWeight = String(textFontWeight(current.props.style));
     editor.style.color = textCssColor(current.props.style);
-    editor.style.lineHeight = `${scale * textLineHeight(current.props.style, fontSize)}px`;
+    editor.style.lineHeight = `${Math.max(1, scale * textLineHeight(current.props.style, fontSize))}px`;
     window.requestAnimationFrame(() => {
       if (!editor.isConnected) return;
       editor.style.height = "0";
@@ -1024,8 +1027,11 @@ function beginTextEdit(board: PixiBoard, nodeId: string): void {
   });
   editor.addEventListener("blur", () => finish(true));
   editor.addEventListener("input", () => {
+    const current = board.nodes.get<TextProps>(nodeId);
+    const minHeight = current ? Math.max(1, board.viewport.get().scale * current.height) : 1;
+    editor.style.minHeight = `${minHeight}px`;
     editor.style.height = "0";
-    editor.style.height = `${editor.scrollHeight}px`;
+    editor.style.height = `${Math.max(minHeight, editor.scrollHeight)}px`;
   });
   editor.addEventListener("pointerdown", (event) => event.stopPropagation());
   editor.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
