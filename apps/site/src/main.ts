@@ -37,6 +37,7 @@ const mediaInput = document.querySelector<HTMLInputElement>("#media-input")!;
 const mediaOverlay = document.querySelector<HTMLDivElement>("#media-overlay")!;
 const dropHint = document.querySelector<HTMLDivElement>("#drop-hint")!;
 const toastHost = document.querySelector<HTMLDivElement>("#toast-host")!;
+const textEditorOverlay = document.querySelector<HTMLDivElement>("#text-editor-overlay")!;
 
 let activeBoard: PixiBoard | undefined;
 const mediaLibrary = new MediaLibrary();
@@ -48,6 +49,7 @@ type StageLike = {
 
 type RectProps = { fill: number };
 type TextProps = { text: string; style?: Record<string, string | number | boolean | null> };
+const TEXT_STYLE_DEFAULTS = { fill: 0xe8edf4, fontFamily: "Arial, sans-serif", fontSize: 16 } as const;
 
 const rectTypeDefinition: CustomNodeDefinition<RectProps> = {
   type: "rect",
@@ -66,6 +68,7 @@ const textTypeDefinition: CustomNodeDefinition<TextProps> = {
   type: "text",
   version: 1,
   defaults: { text: "" },
+  resize: { mode: "custom", resize: ({ node, width }) => ({ width, height: textNodeHeight(node.props, width) }) },
   validate(value): TextProps {
     const candidate = (value ?? {}) as Partial<TextProps>;
     return {
@@ -182,7 +185,7 @@ function seededDocument() {
     assets: [],
     nodes: [
       node("hero-rect", "rect", 80, 90, 180, 110, { fill: 0x7c8cf8 }),
-      node("hero-text", "text", 320, 100, 220, 40, { text: "拖拽我 → 移动节点", style: { fill: 0xe8edf4, fontSize: 18 } }),
+      node("hero-text", "text", 320, 100, 220, 24, { text: "拖拽我 → 移动节点", style: { ...TEXT_STYLE_DEFAULTS, fontSize: 18 } }),
       node("hero-card-1", "demo.task-card", 80, 260, 200, 64, { title: "设计 API 契约", status: "done" }),
       node("hero-card-2", "demo.task-card", 320, 260, 200, 64, { title: "实现渲染器", status: "doing" }),
       node("hero-card-3", "demo.task-card", 560, 260, 200, 64, { title: "撰写文档", status: "todo" }),
@@ -420,13 +423,15 @@ function wireToolbar(board: PixiBoard, resyncMediaBadges: () => void): void {
         break;
       }
       case "add-text": {
+        const width = 220;
+        const props: TextProps = { text: "新文本节点", style: { ...TEXT_STYLE_DEFAULTS } };
         board.nodes.create({
           type: "text",
           x: centerWorld.x - 80,
           y: centerWorld.y,
-          width: 200,
-          height: 32,
-          props: { text: "新文本节点", style: { fill: 0xe8edf4, fontSize: 16 } },
+          width,
+          height: textNodeHeight(props, width),
+          props,
         });
         break;
       }
@@ -736,7 +741,16 @@ function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer):
     if (hitId) {
       const now = performance.now();
       if (!additive && hitId === lastTapNodeId && now - lastTapTime < 320) {
-        toggleTaskCardStatus(board, hitId);
+        if (board.nodes.get(hitId)?.type === "text") {
+          // Let the second click finish before focusing the textarea. Starting
+          // the editor inside pointerdown lets the click's default focus action
+          // immediately blur and remove it again.
+          if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
+          event.preventDefault();
+          window.requestAnimationFrame(() => beginTextEdit(board, hitId));
+        } else {
+          toggleTaskCardStatus(board, hitId);
+        }
         lastTapNodeId = undefined;
         return;
       }
@@ -868,6 +882,145 @@ function toggleTaskCardStatus(board: PixiBoard, nodeId: string): void {
   const node = board.nodes.get<TaskCardProps>(nodeId);
   if (!node || node.type !== "demo.task-card") return;
   board.nodes.update<TaskCardProps>(nodeId, { props: { ...node.props, status: NEXT_STATUS[node.props.status] } });
+}
+
+function textNodeHeight(props: TextProps, width: number): number {
+  const fontSize = typeof props.style?.fontSize === "number" ? props.style.fontSize : 16;
+  const lineHeight = typeof props.style?.lineHeight === "number"
+    ? props.style.lineHeight
+    : fontSize * 1.25;
+  const text = props.text || " ";
+  const context = textMeasurementContext();
+  if (context) context.font = canvasFont(props.style, fontSize);
+  const letterSpacing = typeof props.style?.letterSpacing === "number" ? props.style.letterSpacing : 0;
+  const lineCount = text.split(/\r?\n/).reduce((count, line) => {
+    let lines = 1;
+    let occupied = 0;
+    for (const character of Array.from(line)) {
+      // Measuring one glyph at a time is intentionally conservative: it does
+      // not subtract negative kerning pairs, so the resulting node may be a
+      // little taller but cannot leave rendered Pixi text outside hit bounds.
+      const measured = context?.measureText(character).width;
+      const measuredWidth = typeof measured === "number" && Number.isFinite(measured) ? measured : fontSize;
+      const advance = Math.max(measuredWidth + letterSpacing, fontSize * 0.25);
+      if (occupied > 0 && occupied + advance > Math.max(width, 1)) {
+        lines += 1;
+        occupied = advance;
+      } else {
+        occupied += advance;
+      }
+    }
+    return count + lines;
+  }, 0);
+  return Math.max(lineHeight, Math.ceil(lineCount * lineHeight));
+}
+
+let measurementContext: CanvasRenderingContext2D | null | undefined;
+
+function textMeasurementContext(): CanvasRenderingContext2D | undefined {
+  if (measurementContext === undefined) {
+    measurementContext = document.createElement("canvas").getContext("2d");
+  }
+  return measurementContext ?? undefined;
+}
+
+function canvasFont(style: TextProps["style"], fontSize: number): string {
+  const fontStyle = typeof style?.fontStyle === "string" ? style.fontStyle : "normal";
+  const fontWeight = typeof style?.fontWeight === "string" || typeof style?.fontWeight === "number"
+    ? style.fontWeight
+    : "normal";
+  const fontFamily = typeof style?.fontFamily === "string" ? style.fontFamily : "Arial, sans-serif";
+  return `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
+}
+
+function beginTextEdit(board: PixiBoard, nodeId: string): void {
+  const node = board.nodes.get<TextProps>(nodeId);
+  if (!node || node.type !== "text") return;
+
+  const existing = textEditorOverlay.querySelector<HTMLTextAreaElement>("textarea[data-node-id]");
+  existing?.blur();
+
+  const editor = document.createElement("textarea");
+  editor.dataset.nodeId = nodeId;
+  editor.className = "text-node-editor";
+  editor.value = node.props.text;
+  editor.wrap = "soft";
+  editor.spellcheck = false;
+  editor.setAttribute("aria-label", "编辑文字节点");
+  editor.style.width = `${Math.max(80, board.viewport.get().scale * node.width)}px`;
+  editor.style.minHeight = `${Math.max(28, board.viewport.get().scale * node.height)}px`;
+
+  const place = () => {
+    const current = board.nodes.get<TextProps>(nodeId);
+    if (!current) return;
+    const screen = board.viewport.toScreen({ x: current.x, y: current.y });
+    const scale = board.viewport.get().scale;
+    editor.style.left = `${screen.x}px`;
+    editor.style.top = `${screen.y}px`;
+    editor.style.width = `${Math.max(80, scale * current.width)}px`;
+    editor.style.minHeight = `${Math.max(28, scale * current.height)}px`;
+    editor.style.fontSize = `${Math.max(10, scale * Number(current.props.style?.fontSize ?? 16))}px`;
+    editor.style.fontFamily = typeof current.props.style?.fontFamily === "string"
+      ? current.props.style.fontFamily
+      : "Arial, sans-serif";
+    editor.style.lineHeight = typeof current.props.style?.lineHeight === "number"
+      ? `${scale * current.props.style.lineHeight}px`
+      : "1.25";
+    window.requestAnimationFrame(() => {
+      if (!editor.isConnected) return;
+      editor.style.height = "0";
+      editor.style.height = `${Math.max(scale * current.height, editor.scrollHeight)}px`;
+    });
+  };
+
+  let cancelled = false;
+  const finish = (save: boolean) => {
+    if (editor.dataset.done === "true") return;
+    editor.dataset.done = "true";
+    if (save && !cancelled) {
+      const current = board.nodes.get<TextProps>(nodeId);
+      const text = editor.value.replace(/\r\n/g, "\n");
+      if (current && text !== current.props.text) {
+        const height = textNodeHeight({ ...current.props, text }, current.width);
+        board.transaction("Edit text", () => {
+          board.nodes.update<TextProps>(nodeId, { height, props: { ...current.props, text } });
+        }, { origin: "ui" });
+      }
+    }
+    editor.remove();
+    board.focus();
+  };
+
+  editor.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelled = true;
+      finish(false);
+    } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      finish(true);
+    }
+  });
+  editor.addEventListener("blur", () => finish(true));
+  editor.addEventListener("input", () => {
+    editor.style.height = "0";
+    editor.style.height = `${editor.scrollHeight}px`;
+  });
+  editor.addEventListener("pointerdown", (event) => event.stopPropagation());
+  editor.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
+  textEditorOverlay.appendChild(editor);
+  place();
+  const updatePosition = () => place();
+  const disposeViewport = board.on("viewport:change", updatePosition);
+  const disposeChange = board.on("change", updatePosition);
+  const originalRemove = editor.remove.bind(editor);
+  editor.remove = () => {
+    disposeViewport();
+    disposeChange();
+    originalRemove();
+  };
+  editor.focus();
+  editor.select();
 }
 
 function hitTestTopmost(board: PixiBoard, worldPoint: { x: number; y: number }): string | undefined {

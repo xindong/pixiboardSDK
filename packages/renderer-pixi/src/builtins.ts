@@ -7,15 +7,23 @@ export function registerBuiltinRenderers(registry: NodeRendererRegistry): void {
   registerTextureNode(registry, "image", ["preview", "image", "primary", "source"]);
   registerTextureNode(registry, "video", ["preview", "poster", "video", "primary", "source"]);
   registerTextureNode(registry, "audio", ["waveform", "preview", "audio", "primary", "source"]);
-  if (!registry.has("text")) registry.register("text", base(
-    (node, ctx) => ({ displayObject: ctx.display.createText?.(textValue(node), textStyle(node)) ?? ctx.display.createContainer(), state: {} }),
-    (view, node) => {
-      applyTransform(view, node);
-      view.displayObject.text = textValue(node);
-      const style = textStyle(node);
-      if (style) view.displayObject.style = style;
+  if (!registry.has("text")) registry.register("text", {
+    create(node, ctx) {
+      const displayObject = ctx.display.createContainer();
+      const text = ctx.display.createText?.(textValue(node), textStyle(node, node.width));
+      if (text) displayObject.addChild?.(text);
+      return { displayObject, state: { text } };
     },
-  ));
+    update(view, node) {
+      applyPlacement(view, node);
+      const text = view.state.text;
+      if (!text) return;
+      text.text = textValue(node);
+      const style = textStyle(node, node.width);
+      if (style) text.style = style;
+    },
+    destroy(view) { view.displayObject.destroy?.({ children: true }); },
+  });
   if (!registry.has("unknown-node")) registry.register("unknown-node", base((node, ctx) => ({ displayObject: ctx.display.createText?.(`${node.type}\n${node.id}`, { fill: 0x9ca3af }) ?? ctx.display.createContainer(), state: {} }), (view, node) => applyTransform(view, node)));
 }
 function registerTextureNode(registry: NodeRendererRegistry, type: string, refNames: string[]): void {
@@ -39,9 +47,21 @@ function textValue(node: Readonly<BoardNode<JsonValue>>): string {
   const value = props.text ?? props.content ?? props.value ?? node.name ?? "";
   return typeof value === "string" ? value : JSON.stringify(value);
 }
-function textStyle(node: Readonly<BoardNode<JsonValue>>): Record<string, unknown> | undefined {
+function textStyle(node: Readonly<BoardNode<JsonValue>>, width: number): Record<string, unknown> | undefined {
   const style = (node.props as Record<string, JsonValue>).style;
-  return style && typeof style === "object" && !Array.isArray(style) ? style as Record<string, unknown> : undefined;
+  const resolved = style && typeof style === "object" && !Array.isArray(style)
+    ? { ...(style as Record<string, unknown>) }
+    : {};
+  // Text nodes use their document width as a wrapping box, never as a scale
+  // target. Assigning width/height directly to Pixi.Text changes its scale and
+  // stretches glyphs whenever the node rectangle is not its natural size.
+  if (resolved.wordWrap !== false && Number.isFinite(width) && width > 0) {
+    resolved.wordWrap = true;
+    resolved.wordWrapWidth = width;
+    if (resolved.breakWords === undefined) resolved.breakWords = true;
+  }
+  return Object.keys(resolved).length > 0 ? resolved : undefined;
 }
-function applyTransform(view: PixiNodeView, node: Readonly<BoardNode<JsonValue>>): void { const d = view.displayObject; d.x = node.x; d.y = node.y; d.rotation = node.rotation; d.zIndex = node.zIndex; d.width = node.width; d.height = node.height; }
+function applyPlacement(view: PixiNodeView, node: Readonly<BoardNode<JsonValue>>): void { const d = view.displayObject; d.x = node.x; d.y = node.y; d.rotation = node.rotation; d.zIndex = node.zIndex; }
+function applyTransform(view: PixiNodeView, node: Readonly<BoardNode<JsonValue>>): void { applyPlacement(view, node); const d = view.displayObject; d.width = node.width; d.height = node.height; }
 export function defaultBounds(node: BoardNode): ReturnType<typeof rotatedRectBounds> { return rotatedRectBounds(node); }
