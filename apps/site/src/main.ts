@@ -925,12 +925,33 @@ function textMeasurementContext(): CanvasRenderingContext2D | undefined {
 }
 
 function canvasFont(style: TextProps["style"], fontSize: number): string {
-  const fontStyle = typeof style?.fontStyle === "string" ? style.fontStyle : "normal";
-  const fontWeight = typeof style?.fontWeight === "string" || typeof style?.fontWeight === "number"
-    ? style.fontWeight
-    : "normal";
-  const fontFamily = typeof style?.fontFamily === "string" ? style.fontFamily : "Arial, sans-serif";
+  const fontStyle = textFontStyle(style);
+  const fontWeight = textFontWeight(style);
+  const fontFamily = textFontFamily(style);
   return `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
+}
+
+function textFontStyle(style: TextProps["style"]): string {
+  return typeof style?.fontStyle === "string" ? style.fontStyle : "normal";
+}
+
+function textFontWeight(style: TextProps["style"]): string | number {
+  return typeof style?.fontWeight === "string" || typeof style?.fontWeight === "number" ? style.fontWeight : "normal";
+}
+
+function textFontFamily(style: TextProps["style"]): string {
+  return typeof style?.fontFamily === "string" ? style.fontFamily : "Arial, sans-serif";
+}
+
+function textCssColor(style: TextProps["style"]): string {
+  const fill = style?.fill;
+  if (typeof fill === "string") return fill;
+  if (typeof fill === "number" && Number.isFinite(fill)) return `#${Math.max(0, Math.round(fill)).toString(16).padStart(6, "0")}`;
+  return "#e8edf4";
+}
+
+function textLineHeight(style: TextProps["style"], fontSize: number): number {
+  return typeof style?.lineHeight === "number" ? style.lineHeight : fontSize * 1.25;
 }
 
 function beginTextEdit(board: PixiBoard, nodeId: string): void {
@@ -948,7 +969,7 @@ function beginTextEdit(board: PixiBoard, nodeId: string): void {
   editor.spellcheck = false;
   editor.setAttribute("aria-label", "编辑文字节点");
   editor.style.width = `${Math.max(80, board.viewport.get().scale * node.width)}px`;
-  editor.style.minHeight = `${Math.max(28, board.viewport.get().scale * node.height)}px`;
+  editor.style.height = `${Math.max(1, board.viewport.get().scale * node.height)}px`;
 
   const place = () => {
     const current = board.nodes.get<TextProps>(nodeId);
@@ -958,14 +979,14 @@ function beginTextEdit(board: PixiBoard, nodeId: string): void {
     editor.style.left = `${screen.x}px`;
     editor.style.top = `${screen.y}px`;
     editor.style.width = `${Math.max(80, scale * current.width)}px`;
-    editor.style.minHeight = `${Math.max(28, scale * current.height)}px`;
+    editor.style.height = `${Math.max(1, scale * current.height)}px`;
     editor.style.fontSize = `${Math.max(10, scale * Number(current.props.style?.fontSize ?? 16))}px`;
-    editor.style.fontFamily = typeof current.props.style?.fontFamily === "string"
-      ? current.props.style.fontFamily
-      : "Arial, sans-serif";
-    editor.style.lineHeight = typeof current.props.style?.lineHeight === "number"
-      ? `${scale * current.props.style.lineHeight}px`
-      : "1.25";
+    const fontSize = Number(current.props.style?.fontSize ?? 16);
+    editor.style.fontFamily = textFontFamily(current.props.style);
+    editor.style.fontStyle = textFontStyle(current.props.style);
+    editor.style.fontWeight = String(textFontWeight(current.props.style));
+    editor.style.color = textCssColor(current.props.style);
+    editor.style.lineHeight = `${scale * textLineHeight(current.props.style, fontSize)}px`;
     window.requestAnimationFrame(() => {
       if (!editor.isConnected) return;
       editor.style.height = "0";

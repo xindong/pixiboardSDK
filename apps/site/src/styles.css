@@ -218,18 +218,17 @@ body {
   position: absolute;
   display: block;
   margin: 0;
-  padding: 2px 4px;
-  border: 1px solid var(--accent-strong);
-  border-radius: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
   outline: none;
   resize: none;
   overflow: hidden;
   pointer-events: auto;
-  background: rgba(10, 13, 18, 0.92);
+  background: var(--bg-0);
   color: var(--text-0);
-  font: inherit;
-  line-height: 1.25;
-  box-shadow: 0 0 0 3px rgba(124, 140, 248, 0.16), 0 12px 30px rgba(0, 0, 0, 0.32);
+  caret-color: var(--accent-strong);
+  box-shadow: 0 0 0 1px var(--accent-strong), 0 0 0 4px rgba(124, 140, 248, 0.14);
   transform-origin: top left;
 }
 
