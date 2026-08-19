@@ -890,14 +890,47 @@ function textNodeHeight(props: TextProps, width: number): number {
     ? props.style.lineHeight
     : fontSize * 1.25;
   const text = props.text || " ";
+  const context = textMeasurementContext();
+  if (context) context.font = canvasFont(props.style, fontSize);
+  const letterSpacing = typeof props.style?.letterSpacing === "number" ? props.style.letterSpacing : 0;
   const lineCount = text.split(/\r?\n/).reduce((count, line) => {
-    // Latin glyphs average roughly half an em; CJK glyphs occupy a full em.
-    // Counting approximate em units tracks Pixi's word wrapping closely
-    // enough to keep the transform box around both kinds of text.
-    const emUnits = Array.from(line).reduce((units, character) => units + (/\p{Script=Han}|[\u3040-\u30ff\uac00-\ud7af]/u.test(character) ? 1 : 0.56), 0);
-    return count + Math.max(1, Math.ceil((emUnits * fontSize) / Math.max(width, 1)));
+    let lines = 1;
+    let occupied = 0;
+    for (const character of Array.from(line)) {
+      // Measuring one glyph at a time is intentionally conservative: it does
+      // not subtract negative kerning pairs, so the resulting node may be a
+      // little taller but cannot leave rendered Pixi text outside hit bounds.
+      const measured = context?.measureText(character).width;
+      const measuredWidth = typeof measured === "number" && Number.isFinite(measured) ? measured : fontSize;
+      const advance = Math.max(measuredWidth + letterSpacing, fontSize * 0.25);
+      if (occupied > 0 && occupied + advance > Math.max(width, 1)) {
+        lines += 1;
+        occupied = advance;
+      } else {
+        occupied += advance;
+      }
+    }
+    return count + lines;
   }, 0);
   return Math.max(lineHeight, Math.ceil(lineCount * lineHeight));
+}
+
+let measurementContext: CanvasRenderingContext2D | null | undefined;
+
+function textMeasurementContext(): CanvasRenderingContext2D | undefined {
+  if (measurementContext === undefined) {
+    measurementContext = document.createElement("canvas").getContext("2d");
+  }
+  return measurementContext ?? undefined;
+}
+
+function canvasFont(style: TextProps["style"], fontSize: number): string {
+  const fontStyle = typeof style?.fontStyle === "string" ? style.fontStyle : "normal";
+  const fontWeight = typeof style?.fontWeight === "string" || typeof style?.fontWeight === "number"
+    ? style.fontWeight
+    : "normal";
+  const fontFamily = typeof style?.fontFamily === "string" ? style.fontFamily : "Arial, sans-serif";
+  return `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
 }
 
 function beginTextEdit(board: PixiBoard, nodeId: string): void {
