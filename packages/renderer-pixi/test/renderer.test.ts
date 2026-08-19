@@ -9,7 +9,7 @@ const update = (changedNodes: BoardNode[], revision: number) => ({ revision, cha
 function fake() {
   const stage: any = { children: [], addChild(child: any) { this.children.push(child); }, removeChild(child: any) { this.children = this.children.filter((x: any) => x !== child); } };
   const app: any = { stage, init: vi.fn(async () => {}), destroy: vi.fn(), render: vi.fn(), ticker: { add: vi.fn(), remove: vi.fn(), start: vi.fn(), stop: vi.fn() } };
-  const factory: any = { createContainer: () => ({ children: [], addChild(child: any) { this.children.push(child); }, removeChild(child: any) { this.children = this.children.filter((x: any) => x !== child); }, destroy: vi.fn() }), createRect: () => ({ destroy: vi.fn() }), createText: (text: string) => ({ text, destroy: vi.fn() }) };
+  const factory: any = { createContainer: () => ({ children: [], addChild(child: any) { this.children.push(child); }, removeChild(child: any) { this.children = this.children.filter((x: any) => x !== child); }, destroy: vi.fn() }), createRect: () => ({ destroy: vi.fn() }), createText: (text: string, style?: Record<string, unknown>) => ({ text, style, destroy: vi.fn() }) };
   return { app, factory };
 }
 
@@ -66,6 +66,21 @@ describe("renderer-pixi vertical slice", () => {
     expect(viewFactory.createImage?.({ assetId: "asset-id" }, node("image", "image"))).toBe(sprite);
     const renderer = new PixiBoardRenderer({});
     expect(renderer.registry.has("rect")).toBe(true);
+  });
+  it("lays out text to the node width without scaling the glyph object", async () => {
+    const { app, factory } = fake();
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory });
+    await renderer.init();
+    await renderer.rebuild(doc([{ ...node("text", "text"), width: 180, height: 48, props: { text: "A long line", style: { fontSize: 16 } } }], 1));
+
+    const view = renderer.activeViews.get("text") as any;
+    const text = view.state.text;
+    expect(view.displayObject).toMatchObject({ x: 0, y: 0, rotation: 0, zIndex: 0 });
+    expect(view.displayObject.width).toBeUndefined();
+    expect(view.displayObject.height).toBeUndefined();
+    expect(text.style).toMatchObject({ fontSize: 16, wordWrap: true, wordWrapWidth: 180, breakWords: true });
+
+    await renderer.destroy();
   });
   it("reports the visible id set, distinguishing 'no culling information' from an empty set", async () => {
     const { app, factory } = fake(); const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory }); await renderer.init();
