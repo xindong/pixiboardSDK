@@ -130,6 +130,163 @@ await board.nodeTypes.register({
 });
 ```
 
+## Site 实现范式：选择、编辑、历史与媒体节点
+
+下面的范式来自 `apps/site` 的真实实现，但只依赖公开的 `PixiBoard` API。它适用于白板、流程图和素材编排器等宿主：节点数据保持扁平可序列化，交互统一走 selection、transaction 和 history，渲染器只管理临时显示对象。
+
+### 通用节点定义
+
+先定义数据契约，再注册 renderer。`validate()` 负责恢复可靠的 props，`getBounds()` 负责命中和框选，`resize` 负责约束尺寸。
+
+```ts
+type TextProps = { text: string; style?: Record<string, JsonValue> };
+type MediaKind = "image" | "video" | "audio";
+type MediaProps = { name: string; mimeType: string; size: number };
+
+const textDefinition: CustomNodeDefinition<TextProps> = {
+  type: "text", version: 1, defaults: { text: "" },
+  resize: {
+    mode: "custom",
+    resize: ({ node, width }) => ({ width, height: measureTextHeight(node.props, width) }),
+  },
+  validate(value) {
+    const input = (value ?? {}) as Partial<TextProps>;
+    return { text: typeof input.text === "string" ? input.text : "", style: input.style };
+  },
+  getBounds: (node) => ({ minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height }),
+};
+
+function mediaDefinition(type: MediaKind): CustomNodeDefinition<MediaProps> {
+  return {
+    type, version: 1,
+    defaults: { name: "", mimeType: "", size: 0 },
+    resize: type === "audio"
+      ? { mode: "custom", resize: ({ node, width }) => ({ width, height: node.height }) }
+      : { mode: "aspect-ratio" },
+    validate(value) {
+      const input = (value ?? {}) as Partial<MediaProps>;
+      return {
+        name: typeof input.name === "string" ? input.name : "",
+        mimeType: typeof input.mimeType === "string" ? input.mimeType : "",
+        size: typeof input.size === "number" ? input.size : 0,
+      };
+    },
+    getBounds: (node) => ({ minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height }),
+  };
+}
+
+await board.nodeTypes.register(textDefinition);
+for (const type of ["image", "video", "audio"] as const) {
+  await board.nodeTypes.register(mediaDefinition(type));
+}
+```
+
+文字节点按字体和换行宽度计算高度，不能把文字当图片直接设置 `width` / `height` 拉伸。图片和视频使用 `aspect-ratio`；音频波形通常固定高度，只允许横向拉伸。
+
+### 多选、框选和多节点移动
+
+选择状态与文档节点分离：普通点击替换选择，`Shift` / `Cmd` / `Ctrl` 点击切换单个节点；空白区域拖拽时把屏幕矩形转换为世界矩形，再设置命中的节点。
+
+```ts
+function selectByPointer(event: PointerEvent, nodeId?: string) {
+  const additive = event.shiftKey || event.metaKey || event.ctrlKey;
+  if (!nodeId) return board.selection.clear();
+  if (additive) board.selection.toggle(nodeId);
+  else board.selection.set([nodeId]);
+}
+
+function selectInScreenRect(start: Point, end: Point) {
+  const a = board.viewport.toWorld(start);
+  const b = board.viewport.toWorld(end);
+  const rect = { minX: Math.min(a.x, b.x), minY: Math.min(a.y, b.y), maxX: Math.max(a.x, b.x), maxY: Math.max(a.y, b.y) };
+  const ids = board.nodes.list().filter((node) => node.x < rect.maxX && node.x + node.width > rect.minX && node.y < rect.maxY && node.y + node.height > rect.minY).map((node) => node.id);
+  board.selection.set(ids);
+}
+
+function moveSelection(dx: number, dy: number) {
+  const origins = board.selection.get().map((id) => board.nodes.get(id)).filter(Boolean)
+    .map((node) => ({ id: node!.id, x: node!.x, y: node!.y }));
+  board.transaction("Move selection", () => {
+    for (const origin of origins) board.nodes.update(origin.id, { x: origin.x + dx, y: origin.y + dy });
+  }, { origin: "ui", coalesceKey: "drag-selection" });
+}
+```
+
+拖拽的每一帧都可以复用同一个 `coalesceKey`，整次手势就只占一个 undo step。
+
+### 文字编辑：DOM overlay + 节点事务
+
+Pixi 文本负责显示，原位编辑使用 DOM `textarea` 覆盖在节点上。编辑框必须复用渲染态的字体、字号、字重、行高、颜色和宽度；编辑时使用不透明背景覆盖原文字，避免虚影。`Esc` 取消，失焦或 `Cmd/Ctrl + Enter` 提交。
+
+```ts
+function commitText(nodeId: string, editor: HTMLTextAreaElement) {
+  const current = board.nodes.get<TextProps>(nodeId);
+  if (!current) return;
+  const text = editor.value.replace(/\r\n/g, "\n");
+  const height = measureTextHeight({ ...current.props, text }, current.width);
+  board.transaction("Edit text", () => {
+    board.nodes.update(nodeId, { height, props: { ...current.props, text } });
+  }, { origin: "ui" });
+}
+```
+
+视口平移或缩放时重新计算 overlay 的屏幕位置和尺寸；overlay 只是交互层，唯一事实来源仍是 `node.props.text`。
+
+### Undo / redo 与事务边界
+
+离散动作各自建立有语义的事务，连续拖拽或缩放使用稳定的 `coalesceKey`。撤销和重做直接使用历史栈，不要在业务层自行反向计算 patch。
+
+```ts
+await board.nodes.create({
+  type: "image", x: 80, y: 80, width: 320, height: 180,
+  props: { name: "cover.jpg", mimeType: "image/jpeg", size: 240_000 },
+  assetRefs: { preview: { assetId: "asset-123", variant: "preview" } },
+});
+
+if (board.history.canUndo()) board.history.undo();
+if (board.history.canRedo()) board.history.redo();
+```
+
+一个事务产生一个 revision、ChangeSet 和 history entry；文字提交、创建节点、删除节点等是离散事务，拖拽手势则合并提交。
+
+### 图片、视频、音频：assetRefs + renderer
+
+媒体节点的 `props` 只存描述信息，实际文件或纹理通过 `assetRefs` 引用。内置 Pixi renderer 会按候选 ref 名称查找资源：image 使用 `preview/image/primary/source`，video 使用 `preview/poster/video/primary/source`，audio 使用 `waveform/preview/audio/primary/source`。
+
+```ts
+const mediaRenderer = (kind: MediaKind): CustomNodeRenderer<MediaProps> => ({
+  async create(node, ctx) {
+    const names = kind === "image"
+      ? ["preview", "image", "primary", "source"]
+      : kind === "video"
+        ? ["preview", "poster", "video", "primary", "source"]
+        : ["waveform", "preview", "audio", "primary", "source"];
+    const ref = names.map((name) => node.assetRefs?.[name]).find(Boolean);
+    const lease = ref ? await ctx.assets.acquireTexture(ref, { kind }) : undefined;
+    const display = await ctx.display.createImage?.(ref, node) ?? ctx.display.createContainer();
+    if (lease?.texture !== undefined) display.texture = lease.texture;
+    return { displayObject: display, state: { lease } };
+  },
+  update(view, node) {
+    Object.assign(view.displayObject, { x: node.x, y: node.y, rotation: node.rotation, width: node.width, height: node.height });
+  },
+  destroy(view) {
+    view.displayObject.destroy?.({ children: true });
+    view.state.lease?.release?.();
+  },
+});
+```
+
+资源 lease 应在 renderer 的销毁生命周期中释放；异步 `create()` 还要检查 `ctx.signal.aborted`。渲染对象不写入文档，离屏后可以安全销毁并从最新 JSON 重建。
+
+### 通用检查清单
+
+- 数据状态放在扁平的 `node.props` 和 `assetRefs`，渲染对象只保存临时状态。
+- 每个节点都有 `validate()`、`getBounds()`，并明确自己的 resize policy。
+- 多选只操作 `board.selection`；移动、文字提交、媒体创建都通过事务进入历史。
+- DOM overlay 只承载编辑交互，提交后立即回写节点并销毁 overlay。
+- renderer 实现 `create/update/destroy` 对称生命周期，异步资源使用 lease 和 abort signal。
+
 ## Capabilities 与 Agent tools
 
 统一能力层提供 `document`、`nodes`、`assets`、`selection`、`viewport`、`history`、`preview` 和 `capture`。直接调用能力层时，写操作可以带 `origin`，例如 `agent:my-agent`；结果和错误是可序列化的能力契约。

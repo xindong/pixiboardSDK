@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PixiBoardJS — 高性能无限画布 SDK</title>
+    <title>PixiBoard</title>
     <meta
       name="description"
       content="PixiBoardJS：面向大型媒体与 AI 工作流的高性能无限画布 SDK。扁平数据模型、PixiJS 渲染、自定义节点、Agent 能力，一个包即可接入。"
@@ -12,7 +12,38 @@
   </head>
   <body>
     <div id="app">
-      <div class="canvas-host" id="board-host" tabindex="0" aria-label="PixiBoardJS 画布"></div>
+      <main class="shell">
+        <section class="board-shell" id="board-shell">
+          <nav class="tool-rail" aria-label="Canvas tools">
+            <button class="tool-button" type="button" title="导入" aria-label="导入" data-action="upload"></button>
+            <button class="tool-button" type="button" title="截图" aria-label="截图" data-action="export-image"></button>
+          </nav>
+
+          <div class="project-switcher" data-project-switcher>
+            <button class="project-trigger" type="button" aria-haspopup="menu" aria-expanded="false" data-project-trigger>
+              <span class="project-current-name" data-project-current>画布</span>
+              <span class="project-trigger-icon" aria-hidden="true"></span>
+            </button>
+            <div class="project-menu" hidden data-project-menu>
+              <div class="project-list" role="menu" data-project-list>
+                <div class="project-item" data-active="true">
+                  <button class="project-item-open" type="button" role="menuitem">画布</button>
+                </div>
+              </div>
+              <div class="project-actions">
+                <button class="project-action" type="button" data-project-rename>重命名</button>
+                <button class="project-action" type="button" data-project-new>新建画布</button>
+                <button class="project-action" type="button" data-project-export-json>导出 JSON</button>
+                <button class="project-action" type="button" data-project-cleanup-assets>清理未用资源</button>
+                <button class="project-action danger" type="button" data-project-clear-storage>清空本地存储</button>
+                <button class="project-action danger" type="button" data-project-delete>删除当前</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="canvas-host" id="board-host" tabindex="0" aria-label="PixiBoard 画布"></div>
+        </section>
+      </main>
       <div class="media-overlay" id="media-overlay" aria-hidden="true"></div>
       <div class="selection-overlay" id="selection-overlay" aria-hidden="true"></div>
       <!-- The SDK's DOM transformer appends its eight interactive resize
@@ -21,93 +52,76 @@
       <div class="handle-overlay" id="handle-overlay" aria-hidden="true"></div>
       <div class="text-editor-overlay" id="text-editor-overlay"></div>
       <div class="selection-box" id="selection-box" hidden></div>
-      <div class="drop-hint" id="drop-hint" hidden>松开即可上传图片 / 视频 / 音频</div>
-      <div class="toast-host" id="toast-host" role="status" aria-live="polite"></div>
+      <div class="selection-actions" id="selection-actions" hidden aria-label="选中资源操作">
+        <div class="selection-actions-row">
+          <button type="button" class="sp-button sp-download" data-selection-action="download" title="下载原始文件" aria-label="下载原始文件"></button>
+          <button type="button" class="sp-button sp-open" data-selection-action="open" title="在新窗口打开原始文件" aria-label="在新窗口打开原始文件"></button>
+          <button type="button" class="sp-button sp-view" data-selection-action="view" title="查看文件内容" aria-label="查看文件内容"></button>
+          <button type="button" class="sp-button sp-play" data-selection-action="open-player" title="打开播放器" aria-label="打开播放器"></button>
+          <button type="button" class="sp-button sp-frame" data-selection-action="restore-ratio" title="恢复导入尺寸" aria-label="恢复导入尺寸"></button>
+          <button type="button" class="sp-button sp-refresh" data-selection-action="refresh-preview" title="重新生成预览" aria-label="重新生成预览"></button>
+          <button type="button" class="sp-button sp-delete" data-selection-action="delete" title="删除节点" aria-label="删除节点"></button>
+        </div>
+        <div class="selection-playback sp-media" id="selection-playback" hidden>
+          <button type="button" class="sp-button playback-toggle" data-selection-action="toggle-playback" title="播放/暂停" aria-label="播放/暂停">▶</button>
+          <input class="playback-progress sp-progress" id="playback-progress" type="range" min="0" max="1000" value="0" aria-label="播放进度" />
+          <span class="playback-time sp-time" id="playback-time">0:00 / 0:00</span>
+        </div>
+      </div>
+      <div class="document-viewer" id="document-viewer" hidden role="dialog" aria-modal="true" aria-labelledby="document-viewer-title">
+        <div class="document-viewer-panel">
+          <header class="document-viewer-header">
+            <span class="viewer-title-group">
+              <strong id="document-viewer-title">文件内容</strong>
+              <span class="viewer-subtitle" data-document-viewer-meta></span>
+            </span>
+            <span class="viewer-actions">
+              <button class="viewer-action viewer-open" type="button" data-document-viewer-open title="打开原始文件" aria-label="打开原始文件"></button>
+              <button class="viewer-action viewer-download" type="button" data-document-viewer-download title="下载原始文件" aria-label="下载原始文件"></button>
+              <button class="viewer-action viewer-close" type="button" data-document-viewer-close title="关闭" aria-label="关闭"></button>
+            </span>
+          </header>
+          <div class="document-viewer-body" data-document-viewer-body></div>
+        </div>
+      </div>
+      <div class="media-player-viewer" id="media-player-viewer" hidden role="dialog" aria-modal="true" aria-labelledby="media-player-title">
+        <div class="media-player-panel">
+          <header class="media-player-header">
+            <span class="viewer-title-group">
+              <strong id="media-player-title">媒体播放</strong>
+              <span class="viewer-subtitle" data-media-player-meta></span>
+            </span>
+            <span class="viewer-actions">
+              <button class="viewer-action viewer-open" type="button" data-media-player-open title="打开原始文件" aria-label="打开原始文件"></button>
+              <button class="viewer-action viewer-download" type="button" data-media-player-download title="下载原始文件" aria-label="下载原始文件"></button>
+              <button class="viewer-action viewer-close" type="button" data-media-player-close title="关闭" aria-label="关闭"></button>
+            </span>
+          </header>
+          <div class="media-player-body" data-media-player-body></div>
+        </div>
+      </div>
+      <div class="drop-hint" id="drop-hint" hidden>松开即可导入资源</div>
+      <div class="import-lock-overlay" id="import-lock" hidden aria-live="polite" aria-busy="true">
+        <div class="import-lock-panel" role="status">
+          <span class="import-lock-icon" aria-hidden="true"></span>
+          <span class="import-lock-copy">
+            <span class="import-lock-title">正在导入资源</span>
+            <span class="import-lock-subtitle">预览生成中，画布暂时锁定</span>
+          </span>
+        </div>
+      </div>
       <input
         id="media-input"
         class="visually-hidden"
         type="file"
-        accept="image/*,video/*,audio/*"
+        accept="image/*,video/*,audio/*,.glb,.gltf,.obj,.fbx,.stl,.ply,.dae,.3mf,.3ds,.vrml,.wrl,.zip,.html,.htm,.md,.markdown,.txt,.svg"
         multiple
       />
 
-      <header class="topbar">
-        <div class="brand">
-          <span class="brand-mark">◆</span>
-          <span class="brand-name">PixiBoardJS</span>
-          <span class="brand-tag">Interactive Demo</span>
-        </div>
-        <nav class="topbar-links">
-          <a href="https://github.com/xindong/pixiboardSDK" target="_blank" rel="noopener">GitHub</a>
-          <a class="topbar-link-active" href="./docs.html" aria-label="打开 PixiBoardJS 开发文档">Docs <span>开发文档</span></a>
-          <button id="info-toggle" class="icon-button" title="关于这个 Demo" aria-expanded="false">ⓘ 关于</button>
-        </nav>
-      </header>
-
-      <div class="toolbar" id="toolbar">
-        <div class="toolbar-group">
-          <button data-action="add-rect" title="添加矩形节点">▭ 矩形</button>
-          <button data-action="add-text" title="添加文本节点">T 文本</button>
-          <button data-action="add-card" title="添加自定义任务卡节点">◆ 任务卡</button>
-          <button data-action="upload" title="上传图片、视频或音频">⬆ 上传媒体</button>
-        </div>
-        <div class="toolbar-group">
-          <button data-action="undo" title="撤销">↶ 撤销</button>
-          <button data-action="redo" title="重做">↷ 重做</button>
-          <button data-action="fit" title="适配全部节点">⤢ 适配</button>
-          <button data-action="reset" title="重置场景">⟲ 重置</button>
-        </div>
-        <div class="toolbar-group">
-          <button data-action="export" title="导出当前文档为 JSON">⇩ 导出 JSON</button>
-          <button data-action="clear-storage" class="danger" title="清空浏览器中保存的媒体与文档">🗑 清空存储</button>
-        </div>
+      <div class="status-bar" aria-live="polite">
+        <span class="status" id="status-text">启动中</span>
+        <span class="zoom-status" id="hud-scale">100%</span>
       </div>
-
-      <div class="hud" id="hud">
-        <div class="hud-row"><span class="hud-label">节点数</span><span id="hud-nodes">0</span></div>
-        <div class="hud-row"><span class="hud-label">选中</span><span id="hud-selection">0</span></div>
-        <div class="hud-row"><span class="hud-label">缩放</span><span id="hud-scale">100%</span></div>
-        <div class="hud-row"><span class="hud-label">渲染帧</span><span id="hud-fps">0</span></div>
-      </div>
-
-      <div class="hint">拖拽节点移动 · 拖拽控制点缩放（Esc 取消） · 双击文字编辑（⌘/Ctrl + Enter 保存） · 空白处拖拽框选 · Shift/⌘ 点击多选 · 拖入或上传媒体 · ⌘/Ctrl + 滚轮缩放 · 双击任务卡切换状态 · Delete 删除选中</div>
-
-      <aside class="panel" id="info-panel">
-        <button class="panel-close" id="info-close" aria-label="关闭">✕</button>
-        <h2>关于这个 Demo</h2>
-        <p>
-          这个画布由真实的
-          <code>pixiboardjs</code> 包 + <code>@pixi-board/renderer-pixi</code> 渲染器驱动，
-          不是截图或视频。你现在看到的每一次拖拽、缩放和撤销，都是在调用 SDK 的公共 API。
-        </p>
-        <h3>核心特性</h3>
-        <ul class="feature-list">
-          <li><strong>扁平数据模型</strong> — 文档是纯 JSON，节点没有父子嵌套，渲染对象随时可销毁重建。</li>
-          <li><strong>Node Type Registry</strong> — 内置矩形、文本、图片、视频等类型与自定义类型统一注册，见「任务卡」示例。</li>
-          <li><strong>Transaction / History</strong> — 所有写入都进入同一条 transaction 管线，撤销重做开箱即用。</li>
-          <li><strong>Viewport 控制</strong> — pan / zoom / fitBounds 是 SDK 的一等能力，非画布库私有实现。</li>
-          <li><strong>Web + Tauri</strong> — 同一套 core 与 capabilities 可以在浏览器与 Tauri WebView 中运行。</li>
-        </ul>
-        <h3>代码片段</h3>
-        <pre class="code-block"><code>import { createPixiBoard } from "pixiboardjs";
-import { PixiBoardRenderer } from "@pixi-board/renderer-pixi";
-
-const board = await createPixiBoard({
-  container: document.querySelector("#board"),
-  rendererFactory: (o) =&gt; new PixiBoardRenderer(o),
-});
-await board.ready;
-
-await board.nodes.create({
-  type: "rect",
-  x: 40, y: 40, width: 120, height: 80,
-  props: { fill: 0x7c8cf8 },
-});</code></pre>
-        <a class="cta" href="https://github.com/xindong/pixiboardSDK" target="_blank" rel="noopener">
-          在 GitHub 上查看源码 →
-        </a>
-        <p class="footer-line">PixiBoardJS SDK · MIT License · 由 <a href="https://github.com/xindong" target="_blank" rel="noopener">Xindong</a> 维护</p>
-      </aside>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

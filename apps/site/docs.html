@@ -33,6 +33,7 @@
           <a href="#nodes">节点 API</a>
           <a href="#workflow">事务与交互</a>
           <a href="#custom-nodes">自定义节点</a>
+          <a href="#site-examples">Site 实现范式</a>
           <a href="#capabilities">Capabilities</a>
           <a href="#agent-tools">Agent tools</a>
           <a href="#platforms">浏览器与桌面</a>
@@ -122,14 +123,51 @@ board.viewport.zoomAt({ x: <span class="code-number">400</span>, y: <span class=
           <div class="docs-note"><strong>边界</strong><span>业务状态应写入 <code>node.props</code>，不要只保存在渲染对象中。这样保存、重载和 Agent 读取都能得到同一份状态。</span></div>
         </section>
 
+        <section class="docs-section" id="site-examples">
+          <div class="section-heading"><span class="section-number">05</span><div><span class="eyebrow">FROM THE SITE</span><h3>选择、编辑、历史与媒体节点</h3></div></div>
+          <p>下面是交互 Demo 中已经验证过的一套通用实现方式：数据定义保持扁平，交互统一进入事务和历史，renderer 只管理可重建的显示对象。</p>
+          <div class="feature-strip"><div><span class="feature-icon">□</span><strong>多选与框选</strong><small>selection.set / toggle + 屏幕到世界坐标转换</small></div><div><span class="feature-icon">T</span><strong>文字编辑</strong><small>DOM textarea overlay，提交回 node.props</small></div><div><span class="feature-icon">↻</span><strong>Undo / redo</strong><small>transaction + coalesceKey 合并连续手势</small></div></div>
+          <div class="docs-code-card"><button class="copy-code" data-copy-target="site-selection-code">复制</button><pre id="site-selection-code"><code><span class="code-keyword">function</span> selectInScreenRect(start, end) {
+  <span class="code-keyword">const</span> a = board.viewport.toWorld(start);
+  <span class="code-keyword">const</span> b = board.viewport.toWorld(end);
+  <span class="code-keyword">const</span> rect = { minX: Math.min(a.x, b.x), minY: Math.min(a.y, b.y),
+    maxX: Math.max(a.x, b.x), maxY: Math.max(a.y, b.y) };
+  <span class="code-keyword">const</span> ids = board.nodes.list().filter((node) =&gt;
+    node.x &lt; rect.maxX &amp;&amp; node.x + node.width &gt; rect.minX &amp;&amp;
+    node.y &lt; rect.maxY &amp;&amp; node.y + node.height &gt; rect.minY).map((node) =&gt; node.id);
+  board.selection.set(ids);
+}
+
+board.transaction(<span class="code-string">"Move selection"</span>, () =&gt; {
+  <span class="code-keyword">for</span> (<span class="code-keyword">const</span> origin <span class="code-keyword">of</span> dragOrigins) {
+    board.nodes.update(origin.id, { x: origin.x, y: origin.y });
+  }
+}, { origin: <span class="code-string">"ui"</span>, coalesceKey: <span class="code-string">`move:${gestureId}`</span> });</code></pre></div>
+          <div class="workflow-grid">
+            <div><h4>文字编辑</h4><p>编辑态沿用渲染态 typography，并用不透明背景覆盖原文字，避免虚影。</p><pre class="mini-code"><code><span class="code-keyword">const</span> text = editor.value.replace(<span class="code-string">/\r\n/g</span>, <span class="code-string">"\n"</span>);
+board.transaction(<span class="code-string">"Edit text"</span>, () =&gt; {
+  board.nodes.update(nodeId, { height: measureTextHeight(text),
+    props: { ...current.props, text } });
+}, { origin: <span class="code-string">"ui"</span> });</code></pre></div>
+            <div><h4>图片 / 视频 / 音频</h4><p>共用一个数据定义工厂；image/video 保持比例，audio 固定高度。实际纹理由 <code>assetRefs</code> 和 renderer lease 提供。</p><pre class="mini-code"><code><span class="code-keyword">const</span> media = mediaDefinition(<span class="code-string">"video"</span>);
+<span class="code-keyword">await</span> board.nodeTypes.register(media);
+<span class="code-keyword">await</span> board.nodes.create({
+  type: <span class="code-string">"video"</span>, width: <span class="code-number">320</span>, height: <span class="code-number">180</span>,
+  props: { name: <span class="code-string">"demo.mp4"</span>, mimeType: <span class="code-string">"video/mp4"</span>, size: <span class="code-number">0</span> },
+  assetRefs: { poster: { assetId: <span class="code-string">"asset-1"</span>, variant: <span class="code-string">"preview"</span> } },
+});</code></pre></div>
+          </div>
+          <div class="docs-note"><strong>原则</strong><span>节点数据放在 <code>props</code> / <code>assetRefs</code>；DOM overlay 只承载编辑交互；renderer 实现 <code>create / update / destroy</code>，离屏后可以从最新文档重建。</span></div>
+        </section>
+
         <section class="docs-section" id="capabilities">
-          <div class="section-heading"><span class="section-number">05</span><div><span class="eyebrow">ONE WRITE CHANNEL</span><h3>Capabilities</h3></div></div>
+          <div class="section-heading"><span class="section-number">06</span><div><span class="eyebrow">ONE WRITE CHANNEL</span><h3>Capabilities</h3></div></div>
           <p><code>board.capabilities</code> 是应用、插件和 Agent 共用的读写表面。写入会进入同一事务管线，并携带 origin、revision 和 ChangeSet。</p>
           <div class="capability-pills"><span>document</span><span>nodes</span><span>assets</span><span>selection</span><span>viewport</span><span>history</span><span>preview</span><span>capture</span></div>
         </section>
 
         <section class="docs-section" id="agent-tools">
-          <div class="section-heading"><span class="section-number">06</span><div><span class="eyebrow">AUTOMATION READY</span><h3>Agent tools</h3></div></div>
+          <div class="section-heading"><span class="section-number">07</span><div><span class="eyebrow">AUTOMATION READY</span><h3>Agent tools</h3></div></div>
           <p>安装 <code>@pixi-board/agent-tools</code> 后，可以把 <code>canvas.read</code> 和 <code>canvas.write</code> 交给自己的 Agent harness。工具包提供 schema、校验、分页和可序列化错误，但不内置 MCP 或 HTTP server。</p>
           <div class="docs-code-card"><button class="copy-code" data-copy-target="agent-code">复制</button><pre id="agent-code"><code><span class="code-keyword">import</span> { createPixiBoardAgentTools } <span class="code-keyword">from</span> <span class="code-string">"@pixi-board/agent-tools"</span>;
 
@@ -141,7 +179,7 @@ board.viewport.zoomAt({ x: <span class="code-number">400</span>, y: <span class=
         </section>
 
         <section class="docs-section" id="platforms">
-          <div class="section-heading"><span class="section-number">07</span><div><span class="eyebrow">DEPLOY WHERE YOU WORK</span><h3>浏览器与桌面接入</h3></div></div>
+          <div class="section-heading"><span class="section-number">08</span><div><span class="eyebrow">DEPLOY WHERE YOU WORK</span><h3>浏览器与桌面接入</h3></div></div>
           <div class="platform-grid"><div><h4>Browser</h4><p>从 <code>pixiboardjs/browser</code> 使用 DOM overlay 和浏览器宿主能力；通过 persistence 注入保存和加载。</p></div><div><h4>Tauri</h4><p>复用同一套 board API，把文件、项目和桌面能力通过宿主 adapter 注入。</p></div></div>
           <div class="docs-final-cta"><div><span class="eyebrow">NEXT STEP</span><h3>准备好开始了吗？</h3><p>先运行交互 Demo，再从完整开发文档和示例工程开始接入。</p></div><div class="docs-hero-actions"><a class="docs-button docs-button-primary" href="./index.html">打开 Demo ↗</a><a class="docs-button" href="https://github.com/xindong/pixiboardSDK/blob/main/docs/developers/README.md" target="_blank" rel="noopener">完整文档 ↗</a></div></div>
         </section>
