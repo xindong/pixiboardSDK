@@ -736,7 +736,6 @@ function nudgeSelection(board: PixiBoard, dx: number, dy: number): void {
 }
 
 function resetZoom(board: PixiBoard): void {
-  const viewport = board.viewport.get();
   const center = { x: host.clientWidth / 2, y: host.clientHeight / 2 };
   const worldCenter = board.viewport.toWorld(center);
   board.viewport.set({

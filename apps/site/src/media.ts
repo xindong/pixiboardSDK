@@ -589,61 +589,6 @@ function parsePlyVertices(text: string): ModelVertex[] {
   return vertices;
 }
 
-function drawProjectedModel(
-  context: CanvasRenderingContext2D,
-  vertices: ModelVertex[],
-  width: number,
-  height: number,
-): void {
-  const bounds = vertices.reduce(
-    (acc, [x, y, z]) => ({
-      minX: Math.min(acc.minX, x),
-      minY: Math.min(acc.minY, y),
-      minZ: Math.min(acc.minZ, z),
-      maxX: Math.max(acc.maxX, x),
-      maxY: Math.max(acc.maxY, y),
-      maxZ: Math.max(acc.maxZ, z),
-    }),
-    { minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity },
-  );
-  const center = {
-    x: (bounds.minX + bounds.maxX) / 2,
-    y: (bounds.minY + bounds.maxY) / 2,
-    z: (bounds.minZ + bounds.maxZ) / 2,
-  };
-  const points = vertices.map(([x, y, z]) => {
-    const nx = x - center.x;
-    const ny = y - center.y;
-    const nz = z - center.z;
-    return {
-      x: (nx - nz) * 0.86,
-      y: ny * -1 + (nx + nz) * 0.32,
-      depth: nx + ny + nz,
-    };
-  });
-  const minX = Math.min(...points.map((point) => point.x));
-  const maxX = Math.max(...points.map((point) => point.x));
-  const minY = Math.min(...points.map((point) => point.y));
-  const maxY = Math.max(...points.map((point) => point.y));
-  const scale = Math.min((width - 112) / Math.max(1, maxX - minX), (height - 210) / Math.max(1, maxY - minY));
-  const origin = { x: width / 2 - ((minX + maxX) / 2) * scale, y: height / 2 + 48 - ((minY + maxY) / 2) * scale };
-
-  context.save();
-  context.translate(origin.x, origin.y);
-  context.fillStyle = "rgba(79, 70, 229, 0.22)";
-  context.strokeStyle = "rgba(15, 23, 42, 0.36)";
-  context.lineWidth = 1.5;
-  for (const point of points.sort((a, b) => a.depth - b.depth).filter((_, index) => index % Math.ceil(points.length / 1800) === 0)) {
-    const x = point.x * scale;
-    const y = point.y * scale;
-    context.beginPath();
-    context.arc(x, y, 2.2, 0, Math.PI * 2);
-    context.fill();
-  }
-  drawBoundingWireframe(context, bounds, center, scale);
-  context.restore();
-}
-
 function drawBoundingWireframe(
   context: CanvasRenderingContext2D,
   bounds: { minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number },
@@ -674,12 +619,6 @@ function drawBoundingWireframe(
     context.lineTo(end.x, end.y);
   }
   context.stroke();
-}
-
-function modelFallbackText(extension: string): string {
-  if (["glb", "gltf"].includes(extension)) return "GLTF/GLB 文件已保存。当前预览显示格式、大小和原始文件入口。";
-  if (["stl", "obj", "ply"].includes(extension)) return "模型几何读取失败，已保留原始文件；可以下载或打开原始文件继续检查。";
-  return "模型文件已保存为原始资源。当前格式还没有浏览器内几何预览。";
 }
 
 async function filePreview(file: File, kind: MediaKind): Promise<Blob> {
