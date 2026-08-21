@@ -1580,6 +1580,7 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
   let scrubbing = false;
   let rafHandle: number | undefined;
   let lastPersistedPlaybackTime = 0;
+  let pendingSeekTime: number | undefined;
 
   selectionActions.addEventListener("pointerdown", (event) => event.stopPropagation());
   selectionActions.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
@@ -1605,6 +1606,21 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
     if (!node || !canPlayMediaKind(node.type)) return;
     lastPersistedPlaybackTime = seconds;
     board.nodes.update<MediaProps>(node.id, { props: { ...node.props, playbackTime: seconds } });
+  };
+
+  const applySeekTime = (node: BoardNode<MediaProps>, element: HTMLMediaElement, seconds: number): void => {
+    if (!Number.isFinite(seconds) || seconds < 0) return;
+    const max = Number.isFinite(element.duration) && element.duration > 0 ? Math.max(0, element.duration - 0.05) : seconds;
+    const next = Math.min(seconds, max);
+    pendingSeekTime = next;
+    try {
+      element.currentTime = next;
+      pendingSeekTime = undefined;
+      persistPlaybackTime(node.id, element);
+      refreshVideoFramePreview(node.id, activeAssetId, element);
+    } catch {
+      // If the element is not ready yet, keep the target queued for metadata.
+    }
   };
 
   const resetPlaybackTime = (nodeId: string): void => {
@@ -1717,11 +1733,12 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
         element.src = url;
         element.className = node.type === "video" ? "inline-media-element inline-media-video" : "inline-media-element inline-media-audio";
         const restorePlaybackTime = () => {
-          const start = node.props.playbackTime ?? 0;
+          const start = pendingSeekTime ?? node.props.playbackTime ?? 0;
           if (!Number.isFinite(start) || start <= 0) return;
           const max = Number.isFinite(element.duration) && element.duration > 0 ? Math.max(0, element.duration - 0.05) : start;
           try {
             element.currentTime = Math.min(start, max);
+            pendingSeekTime = undefined;
           } catch {
             // Some browsers reject early seeks until more media data has loaded.
           }
@@ -1884,8 +1901,18 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
   });
   playbackProgress.addEventListener("input", () => {
     const duration = activePlayback?.controls.duration() ?? 0;
-    if (duration <= 0) return;
-    activePlayback?.controls.seek((Number(playbackProgress.value) / 1000) * duration);
+    const seekTime = duration > 0 ? (Number(playbackProgress.value) / 1000) * duration : 0;
+    const node = selectedMediaNode(board);
+    if (!node) return;
+    const playback = ensurePlayback();
+    const element = activeInlineElement;
+    if (playback && element) {
+      applySeekTime(node, element, seekTime);
+      playback.controls.seek(seekTime);
+      return;
+    }
+    pendingSeekTime = seekTime;
+    persistPlaybackTime(node.id, element);
   });
   const stopScrubbing = () => {
     scrubbing = false;
