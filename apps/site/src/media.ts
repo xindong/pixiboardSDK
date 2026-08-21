@@ -589,38 +589,6 @@ function parsePlyVertices(text: string): ModelVertex[] {
   return vertices;
 }
 
-function drawBoundingWireframe(
-  context: CanvasRenderingContext2D,
-  bounds: { minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number },
-  center: { x: number; y: number; z: number },
-  scale: number,
-): void {
-  const corners: ModelVertex[] = [
-    [bounds.minX, bounds.minY, bounds.minZ], [bounds.maxX, bounds.minY, bounds.minZ],
-    [bounds.maxX, bounds.maxY, bounds.minZ], [bounds.minX, bounds.maxY, bounds.minZ],
-    [bounds.minX, bounds.minY, bounds.maxZ], [bounds.maxX, bounds.minY, bounds.maxZ],
-    [bounds.maxX, bounds.maxY, bounds.maxZ], [bounds.minX, bounds.maxY, bounds.maxZ],
-  ];
-  const project = ([x, y, z]: [number, number, number]) => {
-    const nx = x - center.x;
-    const ny = y - center.y;
-    const nz = z - center.z;
-    return { x: (nx - nz) * 0.86 * scale, y: (ny * -1 + (nx + nz) * 0.32) * scale };
-  };
-  const edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
-  context.beginPath();
-  for (const [a, b] of edges) {
-    const startCorner = corners[a];
-    const endCorner = corners[b];
-    if (!startCorner || !endCorner) continue;
-    const start = project(startCorner);
-    const end = project(endCorner);
-    context.moveTo(start.x, start.y);
-    context.lineTo(end.x, end.y);
-  }
-  context.stroke();
-}
-
 async function filePreview(file: File, kind: MediaKind): Promise<Blob> {
   const canvas = document.createElement("canvas");
   canvas.width = (kind === "model" ? MODEL_NODE_WIDTH : DOCUMENT_NODE_WIDTH) * 2;

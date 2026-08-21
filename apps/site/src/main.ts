@@ -1900,11 +1900,11 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
     scrubbing = true;
   });
   playbackProgress.addEventListener("input", () => {
-    const duration = activePlayback?.controls.duration() ?? 0;
-    const seekTime = duration > 0 ? (Number(playbackProgress.value) / 1000) * duration : 0;
     const node = selectedMediaNode(board);
     if (!node) return;
     const playback = ensurePlayback();
+    const duration = playback?.controls.duration() ?? 0;
+    const seekTime = duration > 0 ? (Number(playbackProgress.value) / 1000) * duration : 0;
     const element = activeInlineElement;
     if (playback && element) {
       applySeekTime(node, element, seekTime);
