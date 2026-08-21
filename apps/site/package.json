@@ -10,7 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "pixiboardjs": "workspace:*"
+    "lucide": "^1.33.0",
+    "pixiboardjs": "workspace:*",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@pixi-board/adapter-browser": "workspace:*",

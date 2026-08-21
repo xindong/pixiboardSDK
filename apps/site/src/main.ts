@@ -4,43 +4,97 @@ import {
   attachLabelOverlay,
   attachSelectionOverlay,
   createPixiBoard,
-  type CustomDisplayObject,
   type CustomNodeDefinition,
+  type CustomTextureLease,
   type DomTransformer,
   type PixiBoard,
   type RuntimeRenderer,
 } from "pixiboardjs/browser";
-import { NodeTypeRegistry, type AssetRef } from "@pixi-board/core";
+import { NodeTypeRegistry, type AssetRef, type BoardDocument, type BoardNode } from "@pixi-board/core";
 import { createPixiApplicationFactory, loadPixiRuntime, PixiBoardRenderer } from "@pixi-board/renderer-pixi";
+import { createIcon } from "./ui/icons";
 import {
   classifyMedia,
   MediaLibrary,
   UnsupportedMediaError,
+  modelVertices,
   type AssetVariant,
   type MediaImport,
   type MediaKind,
+  type ModelVertex,
 } from "./media";
+import { createMediaPlaybackController, type MediaPlaybackController } from "./media-playback";
+import { SiteProjectStore, type SiteProject } from "./project-store";
+
+const THREE_ORBIT_CONTROLS_URL = "three/examples/jsm/controls/OrbitControls.js";
 
 const host = document.querySelector<HTMLDivElement>("#board-host")!;
-const hudNodes = document.querySelector<HTMLSpanElement>("#hud-nodes")!;
-const hudSelection = document.querySelector<HTMLSpanElement>("#hud-selection")!;
 const hudScale = document.querySelector<HTMLSpanElement>("#hud-scale")!;
-const hudFps = document.querySelector<HTMLSpanElement>("#hud-fps")!;
-const toolbar = document.querySelector<HTMLDivElement>("#toolbar")!;
+const statusText = document.querySelector<HTMLSpanElement>("#status-text")!;
+const toolbar = document.querySelector<HTMLDivElement>("#toolbar");
 const selectionBox = document.querySelector<HTMLDivElement>("#selection-box")!;
 const selectionOverlay = document.querySelector<HTMLDivElement>("#selection-overlay")!;
 const handleOverlay = document.querySelector<HTMLDivElement>("#handle-overlay")!;
-const infoPanel = document.querySelector<HTMLDivElement>("#info-panel")!;
-const infoToggle = document.querySelector<HTMLButtonElement>("#info-toggle")!;
-const infoClose = document.querySelector<HTMLButtonElement>("#info-close")!;
 const mediaInput = document.querySelector<HTMLInputElement>("#media-input")!;
 const mediaOverlay = document.querySelector<HTMLDivElement>("#media-overlay")!;
 const dropHint = document.querySelector<HTMLDivElement>("#drop-hint")!;
-const toastHost = document.querySelector<HTMLDivElement>("#toast-host")!;
+const importLock = document.querySelector<HTMLDivElement>("#import-lock")!;
 const textEditorOverlay = document.querySelector<HTMLDivElement>("#text-editor-overlay")!;
+const selectionActions = document.querySelector<HTMLDivElement>("#selection-actions")!;
+const selectionPlayback = document.querySelector<HTMLDivElement>("#selection-playback")!;
+const playbackToggle = selectionActions.querySelector<HTMLButtonElement>("[data-selection-action='toggle-playback']")!;
+const playbackProgress = document.querySelector<HTMLInputElement>("#playback-progress")!;
+const playbackTime = document.querySelector<HTMLSpanElement>("#playback-time")!;
+const documentViewer = document.querySelector<HTMLDivElement>("#document-viewer")!;
+const documentViewerTitle = document.querySelector<HTMLElement>("#document-viewer-title")!;
+const documentViewerMeta = document.querySelector<HTMLSpanElement>("[data-document-viewer-meta]")!;
+const documentViewerBody = document.querySelector<HTMLDivElement>("[data-document-viewer-body]")!;
+const documentViewerOpen = document.querySelector<HTMLButtonElement>("[data-document-viewer-open]")!;
+const documentViewerDownload = document.querySelector<HTMLButtonElement>("[data-document-viewer-download]")!;
+const documentViewerClose = document.querySelector<HTMLButtonElement>("[data-document-viewer-close]")!;
+const mediaPlayerViewer = document.querySelector<HTMLDivElement>("#media-player-viewer")!;
+const mediaPlayerTitle = document.querySelector<HTMLElement>("#media-player-title")!;
+const mediaPlayerMeta = document.querySelector<HTMLSpanElement>("[data-media-player-meta]")!;
+const mediaPlayerBody = document.querySelector<HTMLDivElement>("[data-media-player-body]")!;
+const mediaPlayerOpen = document.querySelector<HTMLButtonElement>("[data-media-player-open]")!;
+const mediaPlayerDownload = document.querySelector<HTMLButtonElement>("[data-media-player-download]")!;
+const mediaPlayerClose = document.querySelector<HTMLButtonElement>("[data-media-player-close]")!;
+const uploadButton = document.querySelector<HTMLButtonElement>('button[data-action="upload"]');
+const screenshotButton = document.querySelector<HTMLButtonElement>('button[data-action="export-image"]');
+
+uploadButton?.replaceChildren(createIcon("upload", { size: 17 }));
+screenshotButton?.replaceChildren(createIcon("camera", { size: 17 }));
+documentViewerOpen.replaceChildren(createIcon("open", { size: 15 }));
+documentViewerDownload.replaceChildren(createIcon("download", { size: 15 }));
+documentViewerClose.replaceChildren(createIcon("x", { size: 15 }));
+mediaPlayerOpen.replaceChildren(createIcon("open", { size: 15 }));
+mediaPlayerDownload.replaceChildren(createIcon("download", { size: 15 }));
+mediaPlayerClose.replaceChildren(createIcon("x", { size: 15 }));
+
+const selectionToolbar = document.createElement("div");
+selectionToolbar.className = "selection-actions-row";
+
+selectionActions.replaceChildren(selectionToolbar, selectionPlayback);
 
 let activeBoard: PixiBoard | undefined;
 const mediaLibrary = new MediaLibrary();
+const projectStore = new SiteProjectStore();
+const BOARD_NODES_CLIPBOARD_TYPE = "application/x-pixiboard-nodes";
+const ARROW_KEY_STEP = 1;
+const ARROW_KEY_STEP_LARGE = 10;
+let clipboardNodes: BoardNode[] | undefined;
+let pasteCount = 0;
+let cloneSequence = 0;
+let activeProject: SiteProject | undefined;
+let mediaPlayerLoadVersion = 0;
+
+type ModelViewerState = {
+  renderer: import("three").WebGLRenderer;
+  scene: import("three").Scene;
+  camera: import("three").PerspectiveCamera;
+  controls: { update(): void; dispose(): void };
+  dispose(): void;
+};
 
 type StageLike = {
   scale: { set(x: number, y: number): void };
@@ -49,7 +103,7 @@ type StageLike = {
 
 type RectProps = { fill: number };
 type TextProps = { text: string; style?: Record<string, string | number | boolean | null> };
-const TEXT_STYLE_DEFAULTS = { fill: 0xe8edf4, fontFamily: "Arial, sans-serif", fontSize: 16 } as const;
+const TEXT_STYLE_DEFAULTS = { fill: 0x111827, fontFamily: "Arial, sans-serif", fontSize: 16 } as const;
 
 const rectTypeDefinition: CustomNodeDefinition<RectProps> = {
   type: "rect",
@@ -81,7 +135,7 @@ const textTypeDefinition: CustomNodeDefinition<TextProps> = {
   },
 };
 
-type MediaProps = { name: string; mimeType: string; size: number };
+type MediaProps = { name: string; mimeType: string; size: number; duration?: number; playbackTime?: number; intrinsicWidth?: number; intrinsicHeight?: number };
 
 /**
  * The Pixi renderer already ships image/video/audio renderers that resolve
@@ -106,107 +160,57 @@ function mediaTypeDefinition(type: MediaKind): CustomNodeDefinition<MediaProps> 
         name: typeof candidate.name === "string" ? candidate.name : "",
         mimeType: typeof candidate.mimeType === "string" ? candidate.mimeType : "",
         size: typeof candidate.size === "number" ? candidate.size : 0,
+        ...(typeof candidate.duration === "number" && Number.isFinite(candidate.duration) && candidate.duration > 0 ? { duration: candidate.duration } : {}),
+        ...(typeof candidate.playbackTime === "number" && Number.isFinite(candidate.playbackTime) && candidate.playbackTime > 0 ? { playbackTime: candidate.playbackTime } : {}),
+        ...(typeof candidate.intrinsicWidth === "number" ? { intrinsicWidth: candidate.intrinsicWidth } : {}),
+        ...(typeof candidate.intrinsicHeight === "number" ? { intrinsicHeight: candidate.intrinsicHeight } : {}),
       };
     },
     getBounds(node) {
       return { minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height };
     },
+    ...(["model", "html", "markdown", "text-file", "file"].includes(type) ? { renderer: previewTextureRenderer(type) } : {}),
   };
 }
 
-type TaskCardProps = { title: string; status: "todo" | "doing" | "done" };
-
-const STATUS_COLOR: Record<TaskCardProps["status"], number> = {
-  todo: 0x667487,
-  doing: 0xf6b73c,
-  done: 0x52d68e,
-};
-
-type TaskCardViewState = { body: CustomDisplayObject | undefined; label: CustomDisplayObject | undefined };
-
-const taskCardDefinition: CustomNodeDefinition<TaskCardProps, TaskCardViewState> = {
-  type: "demo.task-card",
-  version: 1,
-  defaults: { title: "New task", status: "todo" },
-  validate(value): TaskCardProps {
-    const candidate = (value ?? {}) as Partial<TaskCardProps>;
-    const status: TaskCardProps["status"] =
-      candidate.status === "doing" || candidate.status === "done" ? candidate.status : "todo";
-    return { title: typeof candidate.title === "string" ? candidate.title : "New task", status };
-  },
-  getBounds(node) {
-    return { minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height };
-  },
-  renderer: {
-    create(node, context) {
-      const displayObject = context.display.createContainer();
-      const body = context.display.createRect?.(node.width, node.height, STATUS_COLOR[node.props.status]);
-      const label = context.display.createText?.(node.props.title, { fill: 0x0a0d12, fontSize: 14, fontWeight: "600" });
-      if (body) displayObject.addChild?.(body);
-      if (label) {
-        label.x = 12;
-        label.y = node.height / 2 - 8;
-        displayObject.addChild?.(label);
-      }
-      return { displayObject, state: { body, label } };
+function previewTextureRenderer(type: MediaKind): CustomNodeDefinition<MediaProps, { lease?: CustomTextureLease }>["renderer"] {
+  return {
+    async create(node, context) {
+      const ref = node.assetRefs?.preview;
+      const lease = ref ? await context.assets.acquireTexture(ref, { kind: type }) : undefined;
+      if (context.signal.aborted) throw new DOMException("Aborted", "AbortError");
+      const displayObject = await context.display.createImage?.(ref, node) ?? context.display.createContainer();
+      if (lease?.texture !== undefined) displayObject.texture = lease.texture;
+      displayObject.mediaKind = type;
+      return { displayObject, state: { lease } };
     },
     update(view, node) {
       view.displayObject.x = node.x;
       view.displayObject.y = node.y;
       view.displayObject.rotation = node.rotation;
       view.displayObject.zIndex = node.zIndex;
-      if (view.state.label) view.state.label.text = node.props.title;
-      const body = view.state.body as (CustomDisplayObject & { clear?(): CustomDisplayObject; rect?(x: number, y: number, w: number, h: number): CustomDisplayObject & { fill?(color: number): void }; }) | undefined;
-      if (body?.clear) {
-        body.clear();
-        body.rect?.(0, 0, node.width, node.height).fill?.(STATUS_COLOR[node.props.status]);
-      }
+      view.displayObject.width = node.width;
+      view.displayObject.height = node.height;
     },
     destroy(view) {
+      view.state.lease?.release?.();
       view.displayObject.destroy?.({ children: true });
     },
-  },
-};
-
-const NEXT_STATUS: Record<TaskCardProps["status"], TaskCardProps["status"]> = {
-  todo: "doing",
-  doing: "done",
-  done: "todo",
-};
-
-const RECT_COLORS = [0x7c8cf8, 0x52d68e, 0xf6b73c, 0xf16c8c, 0x4ecbe0];
-let colorCursor = 0;
-let seedCounter = 0;
+  };
+}
 
 function seededDocument() {
   return {
     schemaVersion: 1,
     revision: 0,
     assets: [],
-    nodes: [
-      node("hero-rect", "rect", 80, 90, 180, 110, { fill: 0x7c8cf8 }),
-      node("hero-text", "text", 320, 100, 220, 24, { text: "拖拽我 → 移动节点", style: { ...TEXT_STYLE_DEFAULTS, fontSize: 18 } }),
-      node("hero-card-1", "demo.task-card", 80, 260, 200, 64, { title: "设计 API 契约", status: "done" }),
-      node("hero-card-2", "demo.task-card", 320, 260, 200, 64, { title: "实现渲染器", status: "doing" }),
-      node("hero-card-3", "demo.task-card", 560, 260, 200, 64, { title: "撰写文档", status: "todo" }),
-    ],
+    nodes: [],
   };
-}
-
-function node(
-  id: string,
-  type: string,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  props: Record<string, unknown>,
-) {
-  return { id, type, typeVersion: 1, x, y, width, height, rotation: 0, zIndex: 0, props };
 }
 
 async function main(): Promise<void> {
   let application: { canvas: HTMLCanvasElement; stage: StageLike; render?(): void } | undefined;
+  let pixiRenderer: PixiBoardRenderer | undefined;
   const applicationFactory = createPixiApplicationFactory({
     resizeTo: host,
     antialias: true,
@@ -221,19 +225,27 @@ async function main(): Promise<void> {
   nodeTypes.register(mediaTypeDefinition("image"));
   nodeTypes.register(mediaTypeDefinition("video"));
   nodeTypes.register(mediaTypeDefinition("audio"));
+  nodeTypes.register(mediaTypeDefinition("model"));
+  nodeTypes.register(mediaTypeDefinition("html"));
+  nodeTypes.register(mediaTypeDefinition("markdown"));
+  nodeTypes.register(mediaTypeDefinition("text-file"));
+  nodeTypes.register(mediaTypeDefinition("file"));
 
   // A previously persisted board wins over the seeded scene so uploads survive
   // a reload; a corrupt record must not brick the demo.
-  let restored: Awaited<ReturnType<MediaLibrary["loadDocument"]>>;
+  let restored: SiteProject;
   try {
-    restored = await mediaLibrary.loadDocument();
+    restored = await projectStore.loadActive(() => seededDocument());
   } catch (error) {
-    console.warn("Failed to restore the persisted document", error);
+    console.warn("Failed to restore the persisted site project", error);
+    const legacyDocument = await mediaLibrary.loadDocument().catch(() => undefined);
+    restored = await projectStore.create("画布", legacyDocument ?? seededDocument());
   }
+  activeProject = restored;
 
   const board = await createPixiBoard({
     container: host,
-    document: restored ?? seededDocument(),
+    document: restored.document,
     core: { nodeTypes },
     interactions: { pointer: true, keyboard: true },
     ports: {
@@ -241,8 +253,18 @@ async function main(): Promise<void> {
       onKeyboardEvent: (event) => handleKeyboard(event as KeyboardEvent),
       createResizeObserver: (callback) => new ResizeObserver(callback),
     },
-    rendererFactory: (options) =>
-      new PixiBoardRenderer({
+    capture: async (input, options = {}) => {
+      if (!pixiRenderer) throw new Error("Capture is unavailable before the renderer is ready");
+      const result = await pixiRenderer.capture(input as never, options);
+      return {
+        dataUrl: result.dataUrl,
+        mimeType: result.mimeType,
+        ...(result.width !== undefined ? { width: result.width } : {}),
+        ...(result.height !== undefined ? { height: result.height } : {}),
+      };
+    },
+    rendererFactory: (options) => {
+      pixiRenderer = new PixiBoardRenderer({
         ...(options as Record<string, unknown>),
         applicationFactory: async () => {
           const app = await applicationFactory();
@@ -250,22 +272,28 @@ async function main(): Promise<void> {
           return app;
         },
         acquireTexture: (ref: AssetRef) => acquireMediaTexture(ref),
-      } as ConstructorParameters<typeof PixiBoardRenderer>[0]) as unknown as RuntimeRenderer,
+      } as ConstructorParameters<typeof PixiBoardRenderer>[0]);
+      return pixiRenderer as unknown as RuntimeRenderer;
+    },
   });
   await board.ready;
   if (application) host.appendChild(application.canvas);
-  await board.nodeTypes.register(taskCardDefinition);
 
   activeBoard = board;
   wireStageTransform(board, application);
   const transformer = wireSelectionOverlay(board);
-  wirePointerInteractions(board, transformer);
-  wireInfoPanel();
-  wireHud(board);
+  wireStatus(board);
   const resyncMediaBadges = wireMediaBadges(board);
+  wireProjectMenu(board, resyncMediaBadges);
+  wirePointerInteractions(board, transformer, resyncMediaBadges);
+  wireDocumentViewer();
+  wireMediaPlayerViewer();
+  wireSelectionActions(board, resyncMediaBadges);
+  wireClipboardAndContextMenu(board, resyncMediaBadges);
   wireToolbar(board, resyncMediaBadges);
   wireMediaUpload(board, resyncMediaBadges);
   wirePersistence(board);
+  statusText.textContent = "已就绪";
 
   // Fit once up front so the initial scene is centered. Later resizes must
   // NOT re-fit: the SDK already tracks `host`'s size via its own
@@ -393,35 +421,13 @@ function padBounds(bounds: { minX: number; minY: number; maxX: number; maxY: num
   };
 }
 
-function wireInfoPanel(): void {
-  const setOpen = (open: boolean) => {
-    infoPanel.classList.toggle("open", open);
-    infoToggle.setAttribute("aria-expanded", String(open));
-  };
-  infoToggle.addEventListener("click", () => setOpen(!infoPanel.classList.contains("open")));
-  infoClose.addEventListener("click", () => setOpen(false));
-}
-
 function wireToolbar(board: PixiBoard, resyncMediaBadges: () => void): void {
-  toolbar.addEventListener("click", (event) => {
+  const handleAction = (event: Event) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-action]");
     if (!button) return;
     const action = button.dataset.action;
     const centerWorld = board.viewport.toWorld({ x: host.clientWidth / 2, y: host.clientHeight / 2 });
     switch (action) {
-      case "add-rect": {
-        const fill = RECT_COLORS[colorCursor++ % RECT_COLORS.length];
-        board.nodes.create({
-          type: "rect",
-          x: centerWorld.x - 60 + (seedCounter % 5) * 14,
-          y: centerWorld.y - 40 + (seedCounter % 5) * 14,
-          width: 120,
-          height: 80,
-          props: { fill },
-        });
-        seedCounter += 1;
-        break;
-      }
       case "add-text": {
         const width = 220;
         const props: TextProps = { text: "新文本节点", style: { ...TEXT_STYLE_DEFAULTS } };
@@ -435,17 +441,6 @@ function wireToolbar(board: PixiBoard, resyncMediaBadges: () => void): void {
         });
         break;
       }
-      case "add-card": {
-        board.nodes.create<TaskCardProps>({
-          type: "demo.task-card",
-          x: centerWorld.x - 100,
-          y: centerWorld.y - 32,
-          width: 200,
-          height: 64,
-          props: { title: "自定义节点示例", status: "todo" },
-        });
-        break;
-      }
       case "undo":
         board.history.undo();
         break;
@@ -455,11 +450,14 @@ function wireToolbar(board: PixiBoard, resyncMediaBadges: () => void): void {
       case "fit":
         board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
         break;
-      case "reset":
-        void board.document.load(seededDocument());
-        break;
       case "export":
         exportDocument(board);
+        break;
+      case "export-image":
+        void exportCanvasImage(board);
+        break;
+      case "cleanup-assets":
+        void cleanupUnusedAssets(board);
         break;
       case "upload":
         mediaInput.click();
@@ -470,7 +468,9 @@ function wireToolbar(board: PixiBoard, resyncMediaBadges: () => void): void {
       default:
         break;
     }
-  });
+  };
+  toolbar?.addEventListener("click", handleAction);
+  document.querySelector<HTMLDivElement>(".tool-rail")?.addEventListener("click", handleAction);
 }
 
 function wireMediaUpload(board: PixiBoard, resyncMediaBadges: () => void): void {
@@ -514,6 +514,860 @@ function wireMediaUpload(board: PixiBoard, resyncMediaBadges: () => void): void 
   });
 }
 
+function wireClipboardAndContextMenu(board: PixiBoard, resyncMediaBadges: () => void): void {
+  const menu = document.createElement("div");
+  menu.className = "context-menu";
+  menu.hidden = true;
+  document.body.appendChild(menu);
+
+  type ContextMenuItem = { label: string; icon: string; danger?: boolean; action: () => void };
+
+  const closeMenu = () => {
+    menu.hidden = true;
+    menu.replaceChildren();
+  };
+
+  const showMenu = (event: MouseEvent) => {
+    event.preventDefault();
+    if (host.dataset.suppressContextMenu === "true") {
+      host.dataset.suppressContextMenu = "false";
+      return;
+    }
+    const point = board.viewport.toWorld(toHostPoint(event));
+    const hitId = hitTestTopmost(board, point);
+    if (hitId && !board.selection.get().includes(hitId)) board.selection.set([hitId]);
+    if (!hitId) board.selection.clear();
+
+    const selected = selectedMediaNode(board);
+    const selectedNode = hitId ? board.nodes.get(hitId) : undefined;
+    const canvasItems: ContextMenuItem[] = [
+      { label: "刷新", icon: "refresh", action: () => location.reload() },
+      { label: "适配全部", icon: "fit", action: () => board.viewport.fitBounds(padBounds(computeContentBounds(board), 80)) },
+    ];
+    const nodeItems: ContextMenuItem[] = [
+      { label: "重命名", icon: "rename", action: () => renameSelectedNode(board, resyncMediaBadges) },
+      { label: "复制", icon: "copy", action: () => copySelection(board) },
+      { label: "剪切", icon: "cut", action: () => cutSelection(board) },
+      { label: "复制一份", icon: "duplicate", action: () => duplicateSelection(board) },
+      { label: "删除", icon: "delete", danger: true, action: () => deleteSelection(board) },
+      ...(selectedNode ? [{ label: "复制节点名称", icon: "text", action: () => copyNodeName(selectedNode) }] : []),
+      ...(selected
+        ? [
+            { label: "下载原始文件", icon: "download", action: () => downloadSelectedMedia(board) },
+            { label: "打开原始文件", icon: "open", action: () => openSelectedMedia(board) },
+            ...(canViewMediaKind(selected.type) ? [{ label: "查看内容", icon: "view", action: () => viewSelectedMedia(board) }] : []),
+            ...(canPlayMediaKind(selected.type) ? [{ label: "打开播放器", icon: "play", action: () => openSelectedMediaPlayer(board) }] : []),
+            { label: "恢复比例", icon: "frame", action: () => restoreSelectedMediaRatio(board) },
+            { label: "刷新预览", icon: "refresh", action: () => refreshSelectedMediaPreview(board, resyncMediaBadges) },
+          ]
+        : []),
+      { label: "适配全部", icon: "fit", action: () => board.viewport.fitBounds(padBounds(computeContentBounds(board), 80)) },
+    ];
+    const items = hitId ? nodeItems : canvasItems;
+
+    const list = document.createElement("div");
+    list.className = "context-menu-list";
+    list.replaceChildren(...items.map((item) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `context-menu-item${item.danger ? " danger" : ""}`;
+      button.dataset.icon = item.icon;
+      const icon = document.createElement("span");
+      icon.className = "context-menu-icon";
+      icon.setAttribute("aria-hidden", "true");
+      const label = document.createElement("span");
+      label.className = "context-menu-label";
+      label.textContent = item.label;
+      button.replaceChildren(icon, label);
+      button.addEventListener("click", () => {
+        closeMenu();
+        item.action();
+      });
+      return button;
+    }));
+    menu.replaceChildren(list);
+    menu.hidden = false;
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.min(window.innerWidth - rect.width - 8, Math.max(8, event.clientX))}px`;
+    menu.style.top = `${Math.min(window.innerHeight - rect.height - 8, Math.max(8, event.clientY))}px`;
+  };
+
+  host.addEventListener("contextmenu", showMenu);
+  document.addEventListener("pointerdown", (event) => {
+    if (!menu.contains(event.target as Node)) closeMenu();
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeMenu();
+  });
+
+  window.addEventListener("copy", (event) => {
+    if (isTypingTarget(event.target)) return;
+    if (!copySelection(board)) return;
+    event.preventDefault();
+    event.clipboardData?.setData(BOARD_NODES_CLIPBOARD_TYPE, "1");
+    event.clipboardData?.setData("text/plain", "");
+  });
+
+  window.addEventListener("cut", (event) => {
+    if (isTypingTarget(event.target)) return;
+    if (!cutSelection(board)) return;
+    event.preventDefault();
+    event.clipboardData?.setData(BOARD_NODES_CLIPBOARD_TYPE, "1");
+    event.clipboardData?.setData("text/plain", "");
+  });
+
+  window.addEventListener("paste", (event) => {
+    if (isTypingTarget(event.target)) return;
+    const files = [...(event.clipboardData?.files ?? [])].filter((file) => classifyMedia(file) !== undefined);
+    if (files.length) {
+      event.preventDefault();
+      void importFiles(board, files, freeSpaceAnchor(board), resyncMediaBadges);
+      return;
+    }
+    if (event.clipboardData?.types.includes(BOARD_NODES_CLIPBOARD_TYPE) && clipboardNodes?.length) {
+      event.preventDefault();
+      pasteNodes(board);
+      return;
+    }
+    const text = event.clipboardData?.getData("text/plain")?.trim();
+    if (!text) return;
+    event.preventDefault();
+    void pasteTextAsNode(board, text, resyncMediaBadges);
+  });
+}
+
+function copySelection(board: PixiBoard): boolean {
+  const selected = board.selection.get()
+    .map((id) => board.nodes.get(id))
+    .filter((item): item is BoardNode => item !== undefined)
+    .sort((a, b) => a.zIndex - b.zIndex);
+  if (selected.length === 0) return false;
+  clipboardNodes = selected.map((item) => structuredClone(item));
+  pasteCount = 0;
+  showToast(`已复制 ${selected.length} 个节点`, "success");
+  return true;
+}
+
+function copyNodeName(node: BoardNode): void {
+  const name = nodeName(node).trim() || node.type;
+  void navigator.clipboard.writeText(name)
+    .then(() => showToast("已复制节点名称", "success"))
+    .catch((error) => showToast(`复制失败：${error instanceof Error ? error.message : String(error)}`, "error"));
+}
+
+function cutSelection(board: PixiBoard): boolean {
+  if (!copySelection(board)) return false;
+  deleteSelection(board, "Cut nodes");
+  return true;
+}
+
+function pasteNodes(board: PixiBoard): void {
+  if (!clipboardNodes?.length) return;
+  pasteCount += 1;
+  const offset = 24 * pasteCount;
+  const clones = clipboardNodes.map((item) => cloneNodeForInsert(item, { x: offset, y: offset }));
+  board.transaction("Paste nodes", () => {
+    for (const item of clones) board.nodes.create(item);
+  }, { origin: "ui" });
+  board.selection.set(clones.map((item) => item.id).filter((id): id is string => typeof id === "string"));
+}
+
+function duplicateSelection(board: PixiBoard): void {
+  const selected = board.selection.get()
+    .map((id) => board.nodes.get(id))
+    .filter((item): item is BoardNode => item !== undefined)
+    .sort((a, b) => a.zIndex - b.zIndex);
+  if (!selected.length) return;
+  const clones = selected.map((item) => cloneNodeForInsert(item, { x: 24, y: 24 }));
+  board.transaction("Duplicate nodes", () => {
+    for (const item of clones) board.nodes.create(item);
+  }, { origin: "ui" });
+  board.selection.set(clones.map((item) => item.id).filter((id): id is string => typeof id === "string"));
+}
+
+function cloneNodeForInsert(node: BoardNode, offset: { x: number; y: number }) {
+  return {
+    id: `site-node-${Date.now()}-${++cloneSequence}`,
+    type: node.type,
+    typeVersion: node.typeVersion,
+    name: node.name,
+    x: node.x + offset.x,
+    y: node.y + offset.y,
+    width: node.width,
+    height: node.height,
+    rotation: node.rotation,
+    zIndex: node.zIndex + 1,
+    locked: node.locked,
+    visible: node.visible,
+    assetRefs: node.assetRefs ? structuredClone(node.assetRefs) : undefined,
+    props: structuredClone(node.props),
+  };
+}
+
+function deleteSelection(board: PixiBoard, label = "Delete nodes"): boolean {
+  const ids = board.selection.get();
+  if (!ids.length) return false;
+  board.transaction(label, () => {
+    for (const id of ids) board.nodes.remove(id);
+  }, { origin: "ui" });
+  board.selection.clear();
+  return true;
+}
+
+async function pasteTextAsNode(board: PixiBoard, text: string, resyncMediaBadges: () => void): Promise<void> {
+  const file = new File([text], clipboardTextFileName(text), { type: "text/plain" });
+  await importFiles(board, [file], freeSpaceAnchor(board), resyncMediaBadges);
+}
+
+function clipboardTextFileName(text: string): string {
+  const firstLine = text.split(/\r?\n/, 1)[0]?.trim().replace(/[^a-z0-9\u4e00-\u9fa5_-]+/gi, "-").slice(0, 32);
+  return `${firstLine || "clipboard-text"}.txt`;
+}
+
+function nudgeSelection(board: PixiBoard, dx: number, dy: number): void {
+  const ids = board.selection.get();
+  if (!ids.length) return;
+  board.transaction("Nudge selection", () => {
+    for (const id of ids) {
+      const node = board.nodes.get(id);
+      if (node) board.nodes.update(id, { x: node.x + dx, y: node.y + dy });
+    }
+  }, { origin: "ui" });
+}
+
+function resetZoom(board: PixiBoard): void {
+  const viewport = board.viewport.get();
+  const center = { x: host.clientWidth / 2, y: host.clientHeight / 2 };
+  const worldCenter = board.viewport.toWorld(center);
+  board.viewport.set({
+    scale: 1,
+    offset: { x: center.x - worldCenter.x, y: center.y - worldCenter.y },
+  });
+}
+
+function zoomAtCenter(board: PixiBoard, factor: number): void {
+  board.viewport.zoomAt({ x: host.clientWidth / 2, y: host.clientHeight / 2 }, factor);
+}
+
+function downloadSelectedMedia(board: PixiBoard): void {
+  const node = selectedMediaNode(board);
+  const assetId = selectedMediaAssetId(node);
+  if (!node || !assetId) return;
+  void downloadMediaAsset(assetId, node.props.name || `${node.type}-${node.id}`);
+}
+
+function openSelectedMedia(board: PixiBoard): void {
+  const node = selectedMediaNode(board);
+  const assetId = selectedMediaAssetId(node);
+  if (!node || !assetId) return;
+  void openMediaAsset(assetId);
+}
+
+async function downloadMediaAsset(assetId: string, name: string): Promise<void> {
+  const url = await mediaLibrary.downloadUrl(assetId);
+  if (!url) {
+    showToast("原始文件不存在，无法下载", "error");
+    return;
+  }
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+}
+
+async function openMediaAsset(assetId: string): Promise<void> {
+  const url = await mediaLibrary.downloadUrl(assetId);
+  if (!url) {
+    showToast("原始文件不存在，无法打开", "error");
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function viewSelectedMedia(board: PixiBoard): void {
+  const node = selectedMediaNode(board);
+  const assetId = selectedMediaAssetId(node);
+  if (!node || !assetId || !canViewMediaKind(node.type)) return;
+
+  documentViewerTitle.textContent = node.props.name || "文件内容";
+  documentViewerMeta.textContent = `${mediaKindLabel(node.type)} · ${formatBytes(node.props.size)}`;
+  documentViewerOpen.onclick = () => void openMediaAsset(assetId);
+  documentViewerDownload.onclick = () => void downloadMediaAsset(assetId, node.props.name || `${node.type}-${node.id}`);
+  documentViewerBody.replaceChildren();
+  documentViewerBody.replaceChildren(loadingView("正在载入文件…"));
+  documentViewer.hidden = false;
+
+  void (async () => {
+    if (node.type === "html") {
+      const text = await mediaLibrary.originalText(assetId);
+      if (text === undefined) throw new Error("原始文件不存在");
+      const frame = document.createElement("iframe");
+      frame.title = node.props.name || "HTML preview";
+      frame.setAttribute("sandbox", "");
+      frame.srcdoc = text;
+      documentViewerBody.replaceChildren(frame);
+      return;
+    }
+
+    if (node.type === "image") {
+      const url = await mediaLibrary.objectUrl(assetId, "original");
+      if (!url) throw new Error("原始文件不存在");
+      const image = document.createElement("img");
+      image.alt = node.props.name || "图片预览";
+      image.src = url;
+      documentViewerBody.replaceChildren(image);
+      return;
+    }
+
+    if (node.type === "model") {
+      const blob = await mediaLibrary.originalBlob(assetId);
+      if (!blob) throw new Error("原始文件不存在");
+      const file = new File([blob], node.props.name || `model-${assetId}`, { type: node.props.mimeType || blob.type });
+      documentViewerBody.replaceChildren(await createModelViewer(file));
+      return;
+    }
+
+    const text = await mediaLibrary.originalText(assetId);
+    if (text === undefined) throw new Error("原始文件不存在");
+    if (node.type === "markdown") {
+      const article = document.createElement("article");
+      article.className = "document-markdown";
+      article.innerHTML = renderSimpleMarkdown(text);
+      documentViewerBody.replaceChildren(article);
+    } else {
+      const source = document.createElement("pre");
+      source.className = "document-source";
+      source.textContent = text;
+      documentViewerBody.replaceChildren(source);
+    }
+  })().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    documentViewerBody.replaceChildren(errorView(`查看失败：${message}`));
+    showToast(`查看失败：${message}`, "error");
+  });
+}
+
+async function createModelViewer(file: File): Promise<HTMLElement> {
+  const modelWindow = window as Window & { __pixiboardModelViewerCleanup?: () => void };
+  modelWindow.__pixiboardModelViewerCleanup?.();
+  modelWindow.__pixiboardModelViewerCleanup = undefined;
+  const extension = file.name.toLowerCase().split(".").pop() ?? "model";
+  const shell = document.createElement("div");
+  shell.className = "model-viewer";
+
+  const canvas = document.createElement("canvas");
+  canvas.className = "model-viewer-canvas";
+
+  const status = document.createElement("div");
+  status.className = "model-viewer-status";
+  status.textContent = `${extension.toUpperCase()} · ${formatBytes(file.size)}`;
+  shell.replaceChildren(canvas, status);
+
+  const THREE = await import("three");
+  const vertices = await modelVertices(file, extension).catch((): ModelVertex[] => []);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xe8edf3);
+
+  const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 10000);
+  camera.position.set(4, 3, 5);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: false, canvas });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+  const ambient = new THREE.AmbientLight(0xffffff, 1.5);
+  const key = new THREE.DirectionalLight(0xffffff, 2.4);
+  key.position.set(4, 7, 6);
+  const fill = new THREE.DirectionalLight(0xaecbfa, 1.2);
+  fill.position.set(-5, 2, 3);
+  scene.add(ambient, key, fill);
+
+  const object = await loadModelObject(THREE, file, extension, vertices);
+  scene.add(object);
+  frameObject(THREE, object, camera);
+
+  const resize = () => {
+    const width = Math.max(1, shell.clientWidth);
+    const height = Math.max(1, shell.clientHeight);
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+  };
+
+  const controlsModule = await import(THREE_ORBIT_CONTROLS_URL);
+  const controls = new controlsModule.OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.target.set(0, 0, 0);
+  controls.update();
+
+  let disposed = false;
+  const animate = () => {
+    if (disposed) return;
+    resize();
+    controls.update();
+    renderer.render(scene, camera);
+    status.textContent = `${extension.toUpperCase()} · ${formatBytes(file.size)} · 拖动旋转 · 滚轮缩放`;
+    requestAnimationFrame(animate);
+  };
+  animate();
+
+  const state: ModelViewerState = {
+    renderer,
+    scene,
+    camera,
+    controls,
+    dispose() {
+      disposed = true;
+      controls.dispose();
+      disposeObject(THREE, object);
+      renderer.dispose();
+    },
+  };
+
+  modelWindow.__pixiboardModelViewerCleanup = () => state.dispose();
+  return shell;
+}
+
+async function loadModelObject(
+  THREE: typeof import("three"),
+  file: File,
+  extension: string,
+  vertices: ModelVertex[],
+): Promise<InstanceType<typeof THREE.Object3D>> {
+  const loadUrl = URL.createObjectURL(file);
+  try {
+    switch (extension) {
+      case "glb":
+      case "gltf": {
+        const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+        const loaded = await new GLTFLoader().loadAsync(loadUrl);
+        return normalizeLoadedModel(THREE, loaded);
+      }
+      case "obj": {
+        const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
+        const loaded = await new OBJLoader().loadAsync(loadUrl);
+        return normalizeLoadedModel(THREE, loaded);
+      }
+      case "fbx": {
+        const { FBXLoader } = await import("three/examples/jsm/loaders/FBXLoader.js");
+        const loaded = await new FBXLoader().loadAsync(loadUrl);
+        return normalizeLoadedModel(THREE, loaded);
+      }
+      case "stl": {
+        const { STLLoader } = await import("three/examples/jsm/loaders/STLLoader.js");
+        const loaded = await new STLLoader().loadAsync(loadUrl);
+        return normalizeLoadedModel(THREE, loaded);
+      }
+      case "ply": {
+        const { PLYLoader } = await import("three/examples/jsm/loaders/PLYLoader.js");
+        const loaded = await new PLYLoader().loadAsync(loadUrl);
+        return normalizeLoadedModel(THREE, loaded);
+      }
+      case "dae": {
+        const { ColladaLoader } = await import("three/examples/jsm/loaders/ColladaLoader.js");
+        const loaded = await new ColladaLoader().loadAsync(loadUrl);
+        return normalizeLoadedModel(THREE, loaded);
+      }
+      case "3mf": {
+        const { ThreeMFLoader } = await import("three/examples/jsm/loaders/3MFLoader.js");
+        const loaded = await new ThreeMFLoader().loadAsync(loadUrl);
+        return normalizeLoadedModel(THREE, loaded);
+      }
+      case "3ds": {
+        const { TDSLoader } = await import("three/examples/jsm/loaders/TDSLoader.js");
+        const loaded = await new TDSLoader().loadAsync(loadUrl);
+        return normalizeLoadedModel(THREE, loaded);
+      }
+      case "vrml":
+      case "wrl": {
+        const { VRMLLoader } = await import("three/examples/jsm/loaders/VRMLLoader.js");
+        const loaded = await new VRMLLoader().loadAsync(loadUrl);
+        return normalizeLoadedModel(THREE, loaded);
+      }
+      default:
+        return createFallbackModel(THREE, file, extension, vertices);
+    }
+  } finally {
+    URL.revokeObjectURL(loadUrl);
+  }
+}
+
+function createFallbackModel(
+  THREE: typeof import("three"),
+  file: File,
+  extension: string,
+  vertices: ModelVertex[],
+): InstanceType<typeof THREE.Object3D> {
+  const group = new THREE.Group();
+  const material = new THREE.MeshStandardMaterial({ color: 0xb7c0cc, roughness: 0.82, metalness: 0.08 });
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.2, 2.2), material);
+  group.add(mesh);
+  if (vertices.length >= 3) {
+    const geometry = new THREE.BufferGeometry();
+    const flat = new Float32Array(vertices.flat());
+    geometry.setAttribute("position", new THREE.BufferAttribute(flat, 3));
+    geometry.computeBoundingBox();
+    const cloud = new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0x4f7cff, size: 0.04 }));
+    group.add(cloud);
+  }
+  group.userData.label = file.name || `${extension} model`;
+  return group;
+}
+
+function normalizeLoadedModel(THREE: typeof import("three"), loaded: unknown): InstanceType<typeof THREE.Object3D> {
+  const object = loaded as { scene?: unknown };
+  if (object && object.scene instanceof THREE.Object3D) return object.scene;
+  if (loaded instanceof THREE.Object3D) return loaded;
+  if (loaded instanceof THREE.BufferGeometry) return new THREE.Mesh(loaded, new THREE.MeshStandardMaterial({ color: 0xb7c0cc }));
+  throw new Error("Loaded model result is not renderable");
+}
+
+function frameObject(THREE: typeof import("three"), object: InstanceType<typeof THREE.Object3D>, camera: InstanceType<typeof THREE.PerspectiveCamera>): void {
+  const box = new THREE.Box3().setFromObject(object);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDimension = Math.max(size.x, size.y, size.z);
+  if (!Number.isFinite(maxDimension) || maxDimension <= 0) return;
+  object.position.sub(center);
+  camera.position.set(maxDimension * 1.2, maxDimension * 0.9, maxDimension * 1.8);
+  camera.lookAt(0, 0, 0);
+  camera.near = Math.max(maxDimension / 1000, 0.01);
+  camera.far = maxDimension * 20;
+  camera.updateProjectionMatrix();
+}
+
+function disposeObject(THREE: typeof import("three"), object: InstanceType<typeof THREE.Object3D>): void {
+  object.traverse((child) => {
+    const mesh = child as { geometry?: { dispose?: () => void }; material?: unknown };
+    mesh.geometry?.dispose?.();
+    disposeMaterial(THREE, mesh.material);
+  });
+}
+
+function disposeMaterial(THREE: typeof import("three"), material: unknown): void {
+  if (Array.isArray(material)) {
+    material.forEach((entry) => disposeMaterial(THREE, entry));
+    return;
+  }
+  if (material && typeof material === "object" && "dispose" in material) {
+    (material as { dispose?: () => void }).dispose?.();
+  }
+}
+
+function formatBytes(size: number): string {
+  if (!Number.isFinite(size) || size <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = size;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
+}
+
+function mediaKindLabel(kind: MediaKind): string {
+  return ({
+    image: "图片",
+    video: "视频",
+    audio: "音频",
+    model: "模型",
+    html: "HTML",
+    markdown: "Markdown",
+    "text-file": "文本",
+    file: "文件",
+  } satisfies Record<MediaKind, string>)[kind];
+}
+
+function loadingView(message: string): HTMLElement {
+  const shell = document.createElement("div");
+  shell.className = "viewer-state";
+  const spinner = document.createElement("span");
+  spinner.className = "viewer-spinner";
+  spinner.setAttribute("aria-hidden", "true");
+  const label = document.createElement("span");
+  label.textContent = message;
+  shell.replaceChildren(spinner, label);
+  return shell;
+}
+
+function errorView(message: string): HTMLElement {
+  const shell = document.createElement("div");
+  shell.className = "viewer-state viewer-state-error";
+  shell.textContent = message;
+  return shell;
+}
+
+function wireDocumentViewer(): void {
+  const close = () => {
+    (window as Window & { __pixiboardModelViewerCleanup?: () => void }).__pixiboardModelViewerCleanup?.();
+    (window as Window & { __pixiboardModelViewerCleanup?: () => void }).__pixiboardModelViewerCleanup = undefined;
+    documentViewer.hidden = true;
+    documentViewerMeta.textContent = "";
+    documentViewerOpen.onclick = null;
+    documentViewerDownload.onclick = null;
+    documentViewerBody.replaceChildren();
+  };
+  documentViewerOpen.replaceChildren(createIcon("open", { size: 15 }));
+  documentViewerDownload.replaceChildren(createIcon("download", { size: 15 }));
+  documentViewerClose.replaceChildren(createIcon("x", { size: 15 }));
+  documentViewerClose.addEventListener("click", close);
+  documentViewer.addEventListener("pointerdown", (event) => {
+    if (event.target === documentViewer) close();
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !documentViewer.hidden) close();
+  });
+}
+
+function openSelectedMediaPlayer(board: PixiBoard): void {
+  const node = selectedMediaNode(board);
+  const assetId = selectedMediaAssetId(node);
+  if (!node || !assetId || !canPlayMediaKind(node.type)) return;
+
+  const loadVersion = ++mediaPlayerLoadVersion;
+  mediaPlayerTitle.textContent = node.props.name || (node.type === "video" ? "视频播放" : "音频播放");
+  mediaPlayerMeta.textContent = `${mediaKindLabel(node.type)} · ${formatBytes(node.props.size)}`;
+  mediaPlayerOpen.onclick = () => void openMediaAsset(assetId);
+  mediaPlayerDownload.onclick = () => void downloadMediaAsset(assetId, node.props.name || `${node.type}-${node.id}`);
+  mediaPlayerBody.replaceChildren(loadingView("正在载入媒体…"));
+  mediaPlayerViewer.hidden = false;
+
+  void mediaLibrary.objectUrl(assetId, "original").then((url) => {
+    if (loadVersion !== mediaPlayerLoadVersion || mediaPlayerViewer.hidden) return;
+    if (!url) throw new Error("原始文件不存在");
+    const element = document.createElement(node.type === "video" ? "video" : "audio");
+    element.controls = true;
+    element.preload = "metadata";
+    element.src = url;
+    if (node.type === "video") {
+      (element as HTMLVideoElement).playsInline = true;
+    }
+    mediaPlayerBody.replaceChildren(element);
+    void element.play().catch(() => undefined);
+  }).catch((error) => {
+    mediaPlayerBody.replaceChildren(errorView(`播放失败：${error instanceof Error ? error.message : String(error)}`));
+    showToast(`播放失败：${error instanceof Error ? error.message : String(error)}`, "error");
+  });
+}
+
+function wireMediaPlayerViewer(): void {
+  const close = () => {
+    mediaPlayerLoadVersion += 1;
+    for (const element of mediaPlayerBody.querySelectorAll<HTMLMediaElement>("video,audio")) {
+      element.pause();
+      element.removeAttribute("src");
+      element.load();
+    }
+    mediaPlayerViewer.hidden = true;
+    mediaPlayerMeta.textContent = "";
+    mediaPlayerOpen.onclick = null;
+    mediaPlayerDownload.onclick = null;
+    mediaPlayerBody.replaceChildren();
+  };
+  mediaPlayerOpen.replaceChildren(createIcon("open", { size: 15 }));
+  mediaPlayerDownload.replaceChildren(createIcon("download", { size: 15 }));
+  mediaPlayerClose.replaceChildren(createIcon("x", { size: 15 }));
+  mediaPlayerClose.addEventListener("click", close);
+  mediaPlayerViewer.addEventListener("pointerdown", (event) => {
+    if (event.target === mediaPlayerViewer) close();
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !mediaPlayerViewer.hidden) close();
+  });
+}
+
+function restoreSelectedMediaRatio(board: PixiBoard): void {
+  const node = selectedMediaNode(board);
+  const width = node?.props.intrinsicWidth;
+  const height = node?.props.intrinsicHeight;
+  if (!node || !width || !height) {
+    showToast("这个节点没有记录导入尺寸", "error");
+    return;
+  }
+  board.transaction("Restore media ratio", () => board.nodes.update<MediaProps>(node.id, { width, height }), { origin: "ui" });
+}
+
+function refreshSelectedMediaPreview(board: PixiBoard, resyncMediaBadges: () => void): void {
+  const node = selectedMediaNode(board);
+  const assetId = selectedMediaAssetId(node);
+  if (!node || !assetId || !isMediaKind(node.type)) return;
+  showToast("正在刷新预览...");
+  void mediaLibrary.refreshPreview(assetId, node.type).then((changed) => {
+    if (!changed) {
+      showToast("这个资源没有可刷新的派生预览", "error");
+      return;
+    }
+    for (const variant of ["preview", "waveform"] as const) textureCache.delete(`${assetId}:${variant}`);
+    const current = board.nodes.get<MediaProps>(node.id);
+    if (current) {
+      const refreshVariant: AssetVariant = current.type === "audio" ? "waveform" : "preview";
+      const assetRefs = Object.fromEntries(
+        Object.entries(current.assetRefs ?? {}).filter(([key]) => !key.startsWith("_refreshPreview")),
+      );
+      board.nodes.update<MediaProps>(node.id, {
+        assetRefs: {
+          ...assetRefs,
+          [`_refreshPreview${Date.now()}`]: { assetId, variant: refreshVariant },
+        },
+      });
+    }
+    resyncMediaBadges();
+    showToast("预览已刷新", "success");
+  }).catch((error) => showToast(`刷新失败：${error instanceof Error ? error.message : String(error)}`, "error"));
+}
+
+function selectedMediaAssetId(node: BoardNode<MediaProps> | undefined): string | undefined {
+  return node?.assetRefs?.primary?.assetId ?? node?.assetRefs?.preview?.assetId ?? node?.assetRefs?.poster?.assetId ?? node?.assetRefs?.waveform?.assetId;
+}
+
+function renameSelectedNode(board: PixiBoard, resyncMediaBadges: () => void): void {
+  const [nodeId, extra] = board.selection.get();
+  if (!nodeId || extra) return;
+  beginNodeRename(board, nodeId, resyncMediaBadges);
+}
+
+function beginNodeRename(board: PixiBoard, nodeId: string, resyncMediaBadges: () => void): void {
+  const node = board.nodes.get(nodeId);
+  if (!node) return;
+  const currentName = nodeName(node);
+  const existing = textEditorOverlay.querySelector<HTMLElement>("[data-node-rename]");
+  existing?.remove();
+
+  const input = document.createElement("input");
+  input.className = "node-name-editor";
+  input.dataset.nodeRename = nodeId;
+  input.value = currentName;
+  input.placeholder = currentName;
+  input.maxLength = 160;
+  input.spellcheck = false;
+  input.setAttribute("aria-label", "节点名称");
+
+  let finished = false;
+  let cancelled = false;
+  const save = () => {
+    if (finished || cancelled) return;
+    finished = true;
+    const latest = board.nodes.get(nodeId);
+    if (!latest) {
+      input.remove();
+      return;
+    }
+    const nextName = input.value.trim();
+    const latestName = nodeName(latest);
+    if (nextName && nextName !== latestName) {
+      applyNodeRename(board, latest, nextName);
+      resyncMediaBadges();
+    }
+    input.remove();
+    board.focus();
+  };
+
+  const cancel = () => {
+    if (finished) return;
+    cancelled = true;
+    finished = true;
+    input.remove();
+    board.focus();
+  };
+
+  input.addEventListener("pointerdown", (event) => event.stopPropagation());
+  input.addEventListener("click", (event) => event.stopPropagation());
+  input.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  }, { passive: false });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      input.blur();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancel();
+    }
+  });
+  input.addEventListener("blur", () => save());
+  textEditorOverlay.appendChild(input);
+
+  const reposition = () => {
+    if (!input.isConnected) return;
+    const latest = board.nodes.get(nodeId);
+    if (!latest) {
+      input.remove();
+      return;
+    }
+    positionNodeRenameEditor(board, latest, input);
+  };
+  reposition();
+  const unsubscribeChange = board.on("change", reposition);
+  const unsubscribeViewport = board.on("viewport:change", reposition);
+  const originalRemove = input.remove.bind(input);
+  let removed = false;
+  input.remove = () => {
+    if (removed) return;
+    removed = true;
+    unsubscribeChange();
+    unsubscribeViewport();
+    window.removeEventListener("resize", reposition);
+    originalRemove();
+  };
+  window.addEventListener("resize", reposition);
+
+  window.requestAnimationFrame(() => {
+    input.focus();
+    input.select();
+  });
+}
+
+function applyNodeRename(board: PixiBoard, node: BoardNode, nextName: string): void {
+  board.transaction("Rename node", () => {
+    if (isMediaKind(node.type)) {
+      const mediaNode = node as BoardNode<MediaProps>;
+      board.nodes.update<MediaProps>(node.id, { name: nextName, props: { ...mediaNode.props, name: nextName } });
+    } else if (node.type === "text") {
+      const textNode = node as BoardNode<TextProps>;
+      board.nodes.update<TextProps>(node.id, { name: nextName, props: { ...textNode.props, text: nextName } });
+    } else {
+      board.nodes.update(node.id, { name: nextName });
+    }
+  }, { origin: "ui" });
+}
+
+function positionNodeRenameEditor(board: PixiBoard, node: BoardNode, form: HTMLElement): void {
+  const screen = nodeScreenRect(board, node);
+  const tagWidth = mediaTagScreenWidth(node);
+  const width = Math.min(Math.max(180, screen.maxX - screen.minX), 360);
+  const left = Math.max(12, Math.min(window.innerWidth - width - 12, screen.minX + tagWidth + 5));
+  const top = Math.max(12, Math.min(window.innerHeight - 42, screen.minY - 22));
+  form.style.left = `${left}px`;
+  form.style.top = `${top - 2}px`;
+  form.style.width = `${width}px`;
+}
+
+function mediaTagScreenWidth(node: BoardNode): number {
+  if (!isMediaKind(node.type)) return 0;
+  return Math.ceil(mediaTag(node).length * 6 + 12);
+}
+
+function nodeName(node: BoardNode): string {
+  if (isMediaKind(node.type)) {
+    const props = node.props as Partial<MediaProps>;
+    return typeof props.name === "string" && props.name ? props.name : node.name || node.type;
+  }
+  if (node.type === "text") {
+    const props = node.props as Partial<TextProps>;
+    return typeof props.text === "string" && props.text ? props.text : node.name || "文本";
+  }
+  return node.name || node.type;
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  if (!element) return false;
+  return ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName) || element.isContentEditable;
+}
+
 /**
  * Imports each file, laying the resulting nodes out in a row that grows into a
  * grid, anchored on the requested world point. Nodes are created one at a time
@@ -532,44 +1386,60 @@ async function importFiles(
   }
   if (!supported.length) return;
 
+  importLock.hidden = false;
+  host.style.pointerEvents = "none";
+  statusText.textContent = `正在导入 ${supported.length} 个资源`;
   showToast(`正在处理 ${supported.length} 个文件…`);
   const created: MediaImport[] = [];
   let cursor = { x: anchor.x, y: anchor.y };
   let rowHeight = 0;
   let rowWidth = 0;
 
-  for (const file of supported) {
-    try {
-      const media = await mediaLibrary.importFile(file);
-      // Wrap the row once it grows past a comfortable width so a large batch
-      // does not stretch off into empty space.
-      if (rowWidth > 0 && rowWidth + media.width > 720) {
-        cursor = { x: anchor.x, y: cursor.y + rowHeight + 16 };
-        rowWidth = 0;
-        rowHeight = 0;
+  try {
+    for (const file of supported) {
+      try {
+        const media = await mediaLibrary.importFile(file);
+        // Wrap the row once it grows past a comfortable width so a large batch
+        // does not stretch off into empty space.
+        if (rowWidth > 0 && rowWidth + media.width > 720) {
+          cursor = { x: anchor.x, y: cursor.y + rowHeight + 16 };
+          rowWidth = 0;
+          rowHeight = 0;
+        }
+        await board.nodes.create<MediaProps>({
+          type: media.kind,
+          x: cursor.x + rowWidth,
+          y: cursor.y,
+          width: media.width,
+          height: media.height,
+          assetRefs: mediaAssetRefs(media),
+          props: {
+            name: media.name,
+            mimeType: media.mimeType,
+            size: media.size,
+            ...(media.duration ? { duration: media.duration } : {}),
+            intrinsicWidth: media.width,
+            intrinsicHeight: media.height,
+          },
+        });
+        rowWidth += media.width + 16;
+        rowHeight = Math.max(rowHeight, media.height);
+        created.push(media);
+      } catch (error) {
+        const message = error instanceof UnsupportedMediaError
+          ? error.message
+          : `${file.name} 处理失败：${error instanceof Error ? error.message : String(error)}`;
+        showToast(message, "error");
       }
-      await board.nodes.create<MediaProps>({
-        type: media.kind,
-        x: cursor.x + rowWidth,
-        y: cursor.y,
-        width: media.width,
-        height: media.height,
-        assetRefs: mediaAssetRefs(media),
-        props: { name: media.name, mimeType: media.mimeType, size: media.size },
-      });
-      rowWidth += media.width + 16;
-      rowHeight = Math.max(rowHeight, media.height);
-      created.push(media);
-    } catch (error) {
-      const message = error instanceof UnsupportedMediaError
-        ? error.message
-        : `${file.name} 处理失败：${error instanceof Error ? error.message : String(error)}`;
-      showToast(message, "error");
     }
+  } finally {
+    importLock.hidden = true;
+    host.style.pointerEvents = "";
+    statusText.textContent = "已就绪";
   }
 
   if (created.length) {
-    showToast(`已添加 ${created.length} 个媒体节点`, "success");
+    showToast(`已添加 ${created.length} 个资源节点`, "success");
     resyncMediaBadges();
     // New media may land outside the current view; bring it into frame so the
     // upload visibly did something.
@@ -587,6 +1457,7 @@ async function importFiles(
 function mediaAssetRefs(media: MediaImport): Record<string, AssetRef> {
   if (media.kind === "video") return { poster: { assetId: media.assetId, variant: "preview" } };
   if (media.kind === "audio") return { waveform: { assetId: media.assetId, variant: "waveform" } };
+  if (["model", "html", "markdown", "text-file", "file"].includes(media.kind)) return { preview: { assetId: media.assetId, variant: "preview" } };
   return {
     primary: { assetId: media.assetId, variant: "original" },
     ...(media.hasPreview ? { preview: { assetId: media.assetId, variant: "preview" } } : {}),
@@ -603,10 +1474,481 @@ function freeSpaceAnchor(board: PixiBoard): { x: number; y: number } {
   return { x: bounds.minX, y: bounds.maxY + 48 };
 }
 
-const KIND_ICON: Record<MediaKind, string> = { image: "🖼", video: "🎬", audio: "🎵" };
+function mediaTag(node: Readonly<BoardNode>): string {
+  if (node.type === "video" || node.type === "audio") {
+    const duration = (node.props as Partial<MediaProps>).duration;
+    if (typeof duration === "number" && Number.isFinite(duration) && duration > 0) return formatTime(duration);
+  }
+  return KIND_ICON[node.type as MediaKind] ?? node.type.toUpperCase();
+}
+
+const KIND_ICON: Record<MediaKind, string> = { image: "IMG", video: "VID", audio: "AUD", model: "3D", html: "HTML", markdown: "MD", "text-file": "TXT", file: "FILE" };
 
 function isMediaKind(type: string): type is MediaKind {
-  return type === "image" || type === "video" || type === "audio";
+  return ["image", "video", "audio", "model", "html", "markdown", "text-file", "file"].includes(type);
+}
+
+function canViewMediaKind(type: string): boolean {
+  return ["image", "model", "html", "markdown", "text-file", "file"].includes(type);
+}
+
+function canPlayMediaKind(type: string): boolean {
+  return type === "video" || type === "audio";
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function renderSimpleMarkdown(source: string): string {
+  const lines = source.replaceAll("\r\n", "\n").split("\n");
+  const html: string[] = [];
+  let inCode = false;
+  let listOpen = false;
+
+  const closeList = () => {
+    if (!listOpen) return;
+    html.push("</ul>");
+    listOpen = false;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    if (line.startsWith("```")) {
+      if (inCode) {
+        html.push("</code></pre>");
+      } else {
+        closeList();
+        html.push("<pre><code>");
+      }
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode) {
+      html.push(`${escapeHtml(rawLine)}\n`);
+      continue;
+    }
+
+    const heading = /^(#{1,3})\s+(.+)$/.exec(line);
+    if (heading) {
+      closeList();
+      const level = heading[1]?.length ?? 1;
+      html.push(`<h${level}>${escapeHtml(heading[2] ?? "")}</h${level}>`);
+      continue;
+    }
+
+    const bullet = /^[-*]\s+(.+)$/.exec(line);
+    if (bullet) {
+      if (!listOpen) {
+        html.push("<ul>");
+        listOpen = true;
+      }
+      html.push(`<li>${escapeHtml(bullet[1] ?? "")}</li>`);
+      continue;
+    }
+
+    if (!line.trim()) {
+      closeList();
+      continue;
+    }
+
+    closeList();
+    html.push(`<p>${escapeHtml(line)}</p>`);
+  }
+
+  if (inCode) html.push("</code></pre>");
+  closeList();
+  return html.join("\n");
+}
+
+function selectedMediaNode(board: PixiBoard): BoardNode<MediaProps> | undefined {
+  const [nodeId, extra] = board.selection.get();
+  if (!nodeId || extra) return undefined;
+  const node = board.nodes.get<MediaProps>(nodeId);
+  return node && isMediaKind(node.type) ? node : undefined;
+}
+
+function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): void {
+  let activeNodeId: string | undefined;
+  let activePlayback: MediaPlaybackController | undefined;
+  let activeInlineElement: HTMLMediaElement | undefined;
+  let activeAssetId: string | undefined;
+  let scrubbing = false;
+  let rafHandle: number | undefined;
+  let lastPersistedPlaybackTime = 0;
+
+  selectionActions.addEventListener("pointerdown", (event) => event.stopPropagation());
+  selectionActions.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
+
+  const videoFrameRefreshPatch = (node: BoardNode<MediaProps>, assetId: string): Pick<BoardNode<MediaProps>, "assetRefs"> => {
+    const assetRefs = Object.fromEntries(
+      Object.entries(node.assetRefs ?? {}).filter(([key]) => !key.startsWith("_refreshPreview")),
+    );
+    return {
+      assetRefs: {
+        ...assetRefs,
+        [`_refreshPreview${Date.now()}`]: { assetId, variant: "preview" },
+      },
+    };
+  };
+
+  const persistPlaybackTime = (nodeId: string | undefined, element: HTMLMediaElement | undefined): void => {
+    if (!nodeId || !element) return;
+    const seconds = element.currentTime;
+    if (!Number.isFinite(seconds) || seconds < 0) return;
+    if (Math.abs(seconds - lastPersistedPlaybackTime) < 0.2) return;
+    const node = board.nodes.get<MediaProps>(nodeId);
+    if (!node || !canPlayMediaKind(node.type)) return;
+    lastPersistedPlaybackTime = seconds;
+    board.nodes.update<MediaProps>(node.id, { props: { ...node.props, playbackTime: seconds } });
+  };
+
+  const resetPlaybackTime = (nodeId: string): void => {
+    const node = board.nodes.get<MediaProps>(nodeId);
+    if (!node || !canPlayMediaKind(node.type) || node.props.playbackTime === undefined) return;
+    lastPersistedPlaybackTime = 0;
+    const { playbackTime: _playbackTime, ...props } = node.props;
+    board.nodes.update<MediaProps>(node.id, { props });
+  };
+
+  const refreshVideoFramePreview = (nodeId: string | undefined, assetId: string | undefined, element: HTMLMediaElement | undefined): void => {
+    if (!nodeId || !assetId || !(element instanceof HTMLVideoElement)) return;
+    const node = board.nodes.get<MediaProps>(nodeId);
+    if (!node || node.type !== "video") return;
+    void mediaLibrary.updateVideoPreviewFromElement(assetId, element).then((changed) => {
+      if (!changed) return;
+      textureCache.delete(`${assetId}:preview`);
+      const current = board.nodes.get<MediaProps>(nodeId);
+      if (!current || current.type !== "video") return;
+      board.nodes.update<MediaProps>(current.id, videoFrameRefreshPatch(current, assetId));
+      resyncMediaBadges();
+    }).catch(() => undefined);
+  };
+
+  const stopPlayback = () => {
+    const nodeId = activeNodeId;
+    const assetId = activeAssetId;
+    const element = activeInlineElement;
+    persistPlaybackTime(nodeId, element);
+    refreshVideoFramePreview(nodeId, assetId, element);
+    if (rafHandle !== undefined) {
+      cancelAnimationFrame(rafHandle);
+      rafHandle = undefined;
+    }
+    activePlayback?.destroy();
+    activePlayback = undefined;
+    activeInlineElement = undefined;
+    activeNodeId = undefined;
+    activeAssetId = undefined;
+    lastPersistedPlaybackTime = 0;
+    selectionPlayback.hidden = true;
+    playbackToggle.replaceChildren(createIcon("play", { size: 15 }));
+    playbackToggle.disabled = false;
+    playbackProgress.value = "0";
+    playbackTime.textContent = "0:00 / 0:00";
+  };
+
+  const currentPlaybackNode = () => {
+    const node = selectedMediaNode(board);
+    return node && (node.type === "video" || node.type === "audio") ? node : undefined;
+  };
+
+  const syncPlayback = () => {
+    const node = currentPlaybackNode();
+    selectionPlayback.hidden = !node;
+    if (!node) return;
+    if (activeNodeId && activeNodeId !== node.id) {
+      stopPlayback();
+      selectionPlayback.hidden = false;
+    }
+    const playback = activePlayback?.controls;
+    const duration = playback?.duration() ?? 0;
+    const current = playback?.currentTime() ?? 0;
+    const loading = playback?.isLoading() ?? false;
+    playbackToggle.replaceChildren(createIcon(loading ? "loading" : playback?.isPlaying() ? "pause" : "play", { className: loading ? "sp-spin" : undefined, size: 15 }));
+    playbackToggle.disabled = loading;
+    if (!scrubbing) playbackProgress.value = duration > 0 ? String(Math.round((current / duration) * 1000)) : "0";
+    playbackTime.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
+  };
+
+  const startPlaybackTick = () => {
+    if (rafHandle !== undefined) return;
+    const tick = () => {
+      syncPlayback();
+      rafHandle = requestAnimationFrame(tick);
+    };
+    rafHandle = requestAnimationFrame(tick);
+  };
+
+  const syncInlineElement = () => {
+    if (!activeInlineElement || !activeNodeId) return;
+    const node = board.nodes.get<MediaProps>(activeNodeId);
+    if (!node || !canPlayMediaKind(node.type)) {
+      stopPlayback();
+      return;
+    }
+    positionInlineMediaElement(board, node, activeInlineElement);
+  };
+
+  const ensurePlayback = () => {
+    const node = currentPlaybackNode();
+    const assetId = node?.assetRefs?.primary?.assetId ?? node?.assetRefs?.poster?.assetId ?? node?.assetRefs?.waveform?.assetId;
+    if (!node || !assetId) return undefined;
+    if (activePlayback && activeNodeId === node.id) return activePlayback;
+    stopPlayback();
+    const playback = createMediaPlaybackController({
+      durationFallback: node.props.duration,
+      createElement: async () => {
+        const url = await mediaLibrary.objectUrl(assetId, "original");
+        if (!url) return undefined;
+        const element = document.createElement(node.type === "video" ? "video" : "audio");
+        element.preload = "metadata";
+        element.crossOrigin = "anonymous";
+        if (node.type === "video") {
+          (element as HTMLVideoElement).playsInline = true;
+          element.muted = false;
+        } else {
+          element.controls = true;
+        }
+        element.src = url;
+        element.className = node.type === "video" ? "inline-media-element inline-media-video" : "inline-media-element inline-media-audio";
+        const restorePlaybackTime = () => {
+          const start = node.props.playbackTime ?? 0;
+          if (!Number.isFinite(start) || start <= 0) return;
+          const max = Number.isFinite(element.duration) && element.duration > 0 ? Math.max(0, element.duration - 0.05) : start;
+          try {
+            element.currentTime = Math.min(start, max);
+          } catch {
+            // Some browsers reject early seeks until more media data has loaded.
+          }
+        };
+        element.addEventListener("loadedmetadata", restorePlaybackTime, { once: true });
+        element.addEventListener("pause", () => {
+          persistPlaybackTime(node.id, element);
+          refreshVideoFramePreview(node.id, assetId, element);
+        });
+        element.addEventListener("seeked", () => {
+          persistPlaybackTime(node.id, element);
+          refreshVideoFramePreview(node.id, assetId, element);
+        });
+        element.addEventListener("ended", () => resetPlaybackTime(node.id));
+        element.addEventListener("timeupdate", () => persistPlaybackTime(node.id, element));
+        mediaOverlay.appendChild(element);
+        activeInlineElement = element;
+        positionInlineMediaElement(board, node, element);
+        return element;
+      },
+      destroyElement: (element) => {
+        element.pause();
+        element.removeAttribute("src");
+        element.load();
+        element.remove();
+        if (activeInlineElement === element) activeInlineElement = undefined;
+      },
+    });
+    playback.controls.subscribe(syncPlayback);
+    activePlayback = playback;
+    activeNodeId = node.id;
+    activeAssetId = assetId;
+    lastPersistedPlaybackTime = node.props.playbackTime ?? 0;
+    startPlaybackTick();
+    return playback;
+  };
+
+  const renderToolbar = (node: BoardNode<MediaProps>) => {
+    const actions = [
+      { id: "download", title: "下载原始文件", icon: "download" as const, hidden: false },
+      { id: "open", title: "打开原始文件", icon: "open" as const, hidden: false },
+      { id: "view", title: "查看文件内容", icon: "view" as const, hidden: !canViewMediaKind(node.type) },
+      { id: "open-player", title: "打开播放器", icon: "play" as const, hidden: !canPlayMediaKind(node.type) },
+      { id: "restore-ratio", title: "恢复导入尺寸", icon: "frame" as const, hidden: !node.props.intrinsicWidth || !node.props.intrinsicHeight },
+      { id: "refresh-preview", title: "刷新预览", icon: "refresh" as const, hidden: !isMediaKind(node.type) },
+      { id: "delete", title: "删除节点", icon: "delete" as const, hidden: false },
+    ];
+
+    selectionToolbar.replaceChildren(
+      ...actions
+        .filter((action) => !action.hidden)
+        .map((action) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "sp-button";
+          button.title = action.title;
+          button.setAttribute("aria-label", action.title);
+          button.dataset.selectionAction = action.id;
+          button.append(createIcon(action.icon, { size: 15 }));
+          return button;
+        }),
+    );
+  };
+
+  const refreshPanel = () => {
+    const node = selectedMediaNode(board);
+    if (!node) {
+      selectionActions.hidden = true;
+      selectionToolbar.replaceChildren();
+      stopPlayback();
+      return;
+    }
+    if (!canPlayMediaKind(node.type) && activePlayback) stopPlayback();
+
+    selectionActions.hidden = false;
+    renderToolbar(node);
+    const screen = nodeScreenRect(board, node);
+    const panelWidth = selectionActions.getBoundingClientRect().width || 260;
+    const centerX = Math.max(12 + panelWidth / 2, Math.min(window.innerWidth - panelWidth / 2 - 12, (screen.minX + screen.maxX) / 2));
+    const y = Math.max(12, Math.min(window.innerHeight - 42, screen.maxY + 8));
+    selectionActions.style.left = `${centerX}px`;
+    selectionActions.style.top = `${y}px`;
+    syncPlayback();
+  };
+
+  selectionToolbar.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-selection-action]");
+    if (!button) return;
+    const action = button.dataset.selectionAction;
+    const node = selectedMediaNode(board);
+    if (!node) return;
+
+    if (action === "download") {
+      downloadSelectedMedia(board);
+    } else if (action === "open") {
+      openSelectedMedia(board);
+    } else if (action === "view") {
+      viewSelectedMedia(board);
+    } else if (action === "open-player") {
+      openSelectedMediaPlayer(board);
+    } else if (action === "restore-ratio") {
+      const width = node.props.intrinsicWidth;
+      const height = node.props.intrinsicHeight;
+      if (!width || !height) {
+        showToast("这个节点没有记录导入尺寸", "error");
+        return;
+      }
+      board.transaction("Restore media ratio", () => board.nodes.update<MediaProps>(node.id, { width, height }), { origin: "ui" });
+    } else if (action === "refresh-preview") {
+      const assetId = node.assetRefs?.primary?.assetId ?? node.assetRefs?.preview?.assetId ?? node.assetRefs?.poster?.assetId ?? node.assetRefs?.waveform?.assetId;
+      if (!assetId || !isMediaKind(node.type)) return;
+      showToast("正在刷新预览...");
+      void mediaLibrary.refreshPreview(assetId, node.type).then((changed) => {
+        if (!changed) {
+          showToast("这个资源没有可刷新的派生预览", "error");
+          return;
+        }
+        for (const variant of ["preview", "waveform"] as const) textureCache.delete(`${assetId}:${variant}`);
+        const current = board.nodes.get<MediaProps>(node.id);
+        if (current) {
+          const refreshVariant: AssetVariant = current.type === "audio" ? "waveform" : "preview";
+          const assetRefs = Object.fromEntries(
+            Object.entries(current.assetRefs ?? {}).filter(([key]) => !key.startsWith("_refreshPreview")),
+          );
+          board.nodes.update<MediaProps>(node.id, {
+            assetRefs: {
+              ...assetRefs,
+              [`_refreshPreview${Date.now()}`]: { assetId, variant: refreshVariant },
+            },
+          });
+        }
+        resyncMediaBadges();
+        showToast("预览已刷新", "success");
+      }).catch((error) => showToast(`刷新失败：${error instanceof Error ? error.message : String(error)}`, "error"));
+    } else if (action === "delete") {
+      stopPlayback();
+      deleteSelection(board);
+    }
+  });
+
+  selectionPlayback.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-selection-action='toggle-playback']");
+    if (!button) return;
+    if (event.detail !== 0) return;
+    void ensurePlayback()?.controls.toggle()
+      .catch((error) => showToast(`播放失败：${error instanceof Error ? error.message : String(error)}`, "error"))
+      .finally(syncPlayback);
+  });
+
+  playbackToggle.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void ensurePlayback()?.controls.toggle()
+      .catch((error) => showToast(`播放失败：${error instanceof Error ? error.message : String(error)}`, "error"))
+      .finally(syncPlayback);
+  });
+
+  playbackProgress.addEventListener("pointerdown", () => {
+    scrubbing = true;
+  });
+  playbackProgress.addEventListener("input", () => {
+    const duration = activePlayback?.controls.duration() ?? 0;
+    if (duration <= 0) return;
+    activePlayback?.controls.seek((Number(playbackProgress.value) / 1000) * duration);
+  });
+  const stopScrubbing = () => {
+    scrubbing = false;
+    syncPlayback();
+  };
+  playbackProgress.addEventListener("pointerup", stopScrubbing);
+  playbackProgress.addEventListener("change", stopScrubbing);
+
+  board.on("selection:change", refreshPanel);
+  board.on("viewport:change", () => {
+    refreshPanel();
+    syncInlineElement();
+  });
+  board.on("change", () => {
+    refreshPanel();
+    syncInlineElement();
+  });
+  window.addEventListener("resize", () => {
+    refreshPanel();
+    syncInlineElement();
+  });
+  refreshPanel();
+}
+
+function positionInlineMediaElement(board: PixiBoard, node: BoardNode<MediaProps>, element: HTMLMediaElement): void {
+  const viewport = board.viewport.get();
+  const topLeft = board.viewport.toScreen({ x: node.x, y: node.y });
+  element.style.left = `${topLeft.x}px`;
+  element.style.top = `${topLeft.y}px`;
+  element.style.width = `${Math.max(1, node.width * viewport.scale)}px`;
+  element.style.height = `${Math.max(1, node.height * viewport.scale)}px`;
+  element.style.transform = `rotate(${node.rotation}rad)`;
+}
+
+function nodeScreenRect(board: PixiBoard, node: BoardNode): { minX: number; minY: number; maxX: number; maxY: number } {
+  const rotation = node.rotation || 0;
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  const corners = [
+    { x: 0, y: 0 },
+    { x: node.width, y: 0 },
+    { x: node.width, y: node.height },
+    { x: 0, y: node.height },
+  ].map((corner) => board.viewport.toScreen({
+    x: node.x + corner.x * cos - corner.y * sin,
+    y: node.y + corner.x * sin + corner.y * cos,
+  }));
+
+  return {
+    minX: Math.min(...corners.map((corner) => corner.x)),
+    minY: Math.min(...corners.map((corner) => corner.y)),
+    maxX: Math.max(...corners.map((corner) => corner.x)),
+    maxY: Math.max(...corners.map((corner) => corner.y)),
+  };
+}
+
+function formatTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
+  const total = Math.floor(seconds);
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${minutes}:${rest.toString().padStart(2, "0")}`;
 }
 
 /**
@@ -621,12 +1963,14 @@ function wireMediaBadges(board: PixiBoard): () => void {
   const layer = attachLabelOverlay(board, {
     container: mediaOverlay,
     classPrefix: "media",
+    anchor: "top-left",
+    offset: { x: 0, y: -22 },
     text: (node) => {
       if (!isMediaKind(node.type)) return undefined;
       const props = node.props as Partial<MediaProps>;
-      return typeof props.name === "string" && props.name ? props.name : node.type;
+      return typeof props.name === "string" && props.name ? props.name : node.name ?? node.type;
     },
-    icon: (node) => (isMediaKind(node.type) ? KIND_ICON[node.type] : undefined),
+    icon: (node) => (isMediaKind(node.type) ? mediaTag(node) : undefined),
   });
 
   // The SDK applies "change" asynchronously (queued behind the renderer apply
@@ -652,7 +1996,12 @@ let persistQueue = Promise.resolve();
 
 function persist(board: PixiBoard): Promise<void> {
   persistQueue = persistQueue
-    .then(() => mediaLibrary.saveDocument(board.document.toJSON()))
+    .then(async () => {
+      if (!activeProject) return;
+      const snapshot = board.document.toJSON();
+      await projectStore.save(activeProject.id, snapshot);
+      activeProject = { ...activeProject, updatedAt: Date.now(), document: snapshot };
+    })
     .catch((error) => {
       console.warn("Failed to persist the document", error);
     });
@@ -662,22 +2011,57 @@ function persist(board: PixiBoard): Promise<void> {
 async function clearStorage(board: PixiBoard, resyncMediaBadges: () => void): Promise<void> {
   try {
     await mediaLibrary.clear();
+    await projectStore.clear();
     textureCache.clear();
-    await board.document.load(seededDocument());
+    const project = await projectStore.create("画布", seededDocument());
+    activeProject = project;
+    await board.document.load(project.document, { replaceHistory: true });
+    board.selection.clear();
     board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
+    const currentName = document.querySelector<HTMLSpanElement>("[data-project-current]");
+    if (currentName) currentName.textContent = project.name;
     resyncMediaBadges();
-    showToast("已清空浏览器中保存的媒体与文档", "success");
+    showToast("已清空浏览器中保存的媒体与画布", "success");
   } catch (error) {
     showToast(`清空失败：${error instanceof Error ? error.message : String(error)}`, "error");
   }
 }
 
-function showToast(message: string, tone: "info" | "error" | "success" = "info"): void {
-  const toast = document.createElement("div");
-  toast.className = tone === "info" ? "toast" : `toast ${tone}`;
-  toast.textContent = message;
-  toastHost.appendChild(toast);
-  window.setTimeout(() => toast.remove(), tone === "error" ? 6000 : 2600);
+async function cleanupUnusedAssets(board: PixiBoard): Promise<void> {
+  try {
+    if (board.history.canUndo() && !window.confirm("清理未用资源会永久删除当前所有画布都不再引用的本地文件；如果随后撤销已删除的媒体节点，文件可能无法恢复。继续清理？")) {
+      return;
+    }
+    await persist(board);
+    const [storedAssetIds, projects] = await Promise.all([mediaLibrary.assetIds(), projectStore.all()]);
+    const referenced = new Set<string>();
+    for (const project of projects) collectDocumentAssetIds(project.document, referenced);
+    const unused = storedAssetIds.filter((assetId) => !referenced.has(assetId));
+    if (!unused.length) {
+      showToast("没有可清理的未用资源", "success");
+      return;
+    }
+
+    for (const assetId of unused) {
+      await mediaLibrary.deleteAsset(assetId);
+      for (const variant of ["original", "preview", "waveform"] as const) textureCache.delete(`${assetId}:${variant}`);
+    }
+    showToast(`已清理 ${unused.length} 个未用资源`, "success");
+  } catch (error) {
+    showToast(`清理失败：${error instanceof Error ? error.message : String(error)}`, "error");
+  }
+}
+
+function collectDocumentAssetIds(document: BoardDocument, output: Set<string>): void {
+  for (const node of document.nodes ?? []) {
+    for (const ref of Object.values(node.assetRefs ?? {})) {
+      if (ref && typeof ref.assetId === "string") output.add(ref.assetId);
+    }
+  }
+  for (const asset of document.assets ?? []) output.add(asset.id);
+}
+
+function showToast(_message: string, _tone: "info" | "error" | "success" = "info"): void {
 }
 
 function exportDocument(board: PixiBoard): void {
@@ -691,8 +2075,235 @@ function exportDocument(board: PixiBoard): void {
   URL.revokeObjectURL(url);
 }
 
-function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer): void {
-  let mode: "idle" | "select" | "drag-node" = "idle";
+async function exportCanvasImage(board: PixiBoard): Promise<void> {
+  try {
+    const result = await board.capture({ target: "viewport", format: "png" });
+    const link = document.createElement("a");
+    link.href = result.dataUrl;
+    link.download = "pixiboard-canvas.png";
+    link.click();
+    showToast("已导出画布截图", "success");
+  } catch (error) {
+    showToast(`截图生成失败：${error instanceof Error ? error.message : String(error)}`, "error");
+  }
+}
+
+function wireProjectMenu(board: PixiBoard, resyncMediaBadges: () => void): void {
+  const trigger = document.querySelector<HTMLButtonElement>("[data-project-trigger]");
+  const menu = document.querySelector<HTMLDivElement>("[data-project-menu]");
+  const list = document.querySelector<HTMLDivElement>("[data-project-list]");
+  const newButton = document.querySelector<HTMLButtonElement>("[data-project-new]");
+  const renameButton = document.querySelector<HTMLButtonElement>("[data-project-rename]");
+  const exportJsonButton = document.querySelector<HTMLButtonElement>("[data-project-export-json]");
+  const cleanupAssetsButton = document.querySelector<HTMLButtonElement>("[data-project-cleanup-assets]");
+  const clearStorageButton = document.querySelector<HTMLButtonElement>("[data-project-clear-storage]");
+  const deleteButton = document.querySelector<HTMLButtonElement>("[data-project-delete]");
+  const currentName = document.querySelector<HTMLSpanElement>("[data-project-current]");
+  if (!trigger || !menu || !list) return;
+  if (currentName) currentName.textContent = activeProject?.name ?? "画布";
+  let renamingProjectId: string | undefined;
+
+  const finishRename = async (projectId: string, name: string) => {
+    const nextName = name.trim();
+    if (!nextName) {
+      renamingProjectId = undefined;
+      await renderProjects();
+      return;
+    }
+    const project = await projectStore.rename(projectId, nextName);
+    renamingProjectId = undefined;
+    if (!project) return;
+    if (project.id === activeProject?.id) {
+      activeProject = project;
+      if (currentName) currentName.textContent = project.name;
+    }
+    await renderProjects();
+    showToast("画布已重命名", "success");
+  };
+
+  const renderProjects = async () => {
+    const projects = await projectStore.list();
+    list.replaceChildren(...projects.map((project) => {
+      const active = project.id === activeProject?.id;
+      const item = document.createElement("div");
+      item.className = "project-item";
+      item.dataset.active = String(active);
+
+      if (active && renamingProjectId === project.id) {
+        const form = document.createElement("form");
+        form.className = "project-item-rename";
+        const input = document.createElement("input");
+        input.className = "project-item-input";
+        input.value = project.name;
+        input.maxLength = 64;
+        input.setAttribute("aria-label", "画布名称");
+        const save = document.createElement("button");
+        save.type = "submit";
+        save.className = "project-item-action project-item-save";
+        save.title = "保存";
+        save.setAttribute("aria-label", "保存画布名称");
+        const saveIcon = document.createElement("span");
+        saveIcon.className = "project-icon project-icon-save";
+        saveIcon.setAttribute("aria-hidden", "true");
+        save.replaceChildren(saveIcon);
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          void finishRename(project.id, input.value);
+        });
+        input.addEventListener("keydown", (event) => {
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          renamingProjectId = undefined;
+          void renderProjects();
+        });
+        form.replaceChildren(input, save);
+        item.append(form);
+        window.requestAnimationFrame(() => {
+          input.focus();
+          input.select();
+        });
+        return item;
+      }
+
+      const openButton = document.createElement("button");
+      openButton.className = "project-item-open";
+      openButton.type = "button";
+      openButton.role = "menuitem";
+      openButton.textContent = project.name;
+      openButton.title = project.name;
+      openButton.addEventListener("click", () => {
+        if (project.id === activeProject?.id) {
+          setOpen(false);
+          return;
+        }
+        void switchProject(board, project.id).then(() => {
+          setOpen(false);
+          void renderProjects();
+        });
+      });
+
+      item.append(openButton);
+      if (active) {
+        const editButton = document.createElement("button");
+        editButton.type = "button";
+        editButton.className = "project-item-edit";
+        editButton.title = "重命名";
+        editButton.setAttribute("aria-label", "重命名当前画布");
+        const editIcon = document.createElement("span");
+        editIcon.className = "project-icon project-icon-pencil";
+        editIcon.setAttribute("aria-hidden", "true");
+        editButton.replaceChildren(editIcon);
+        editButton.addEventListener("click", (event) => {
+          event.stopPropagation();
+          renamingProjectId = project.id;
+          void renderProjects();
+        });
+        item.append(editButton);
+      }
+      return item;
+    }));
+  };
+
+  const setOpen = (open: boolean) => {
+    menu.hidden = !open;
+    trigger.setAttribute("aria-expanded", String(open));
+    if (open) void renderProjects();
+  };
+  trigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setOpen(menu.hidden);
+  });
+  menu.addEventListener("click", (event) => event.stopPropagation());
+  newButton?.addEventListener("click", () => {
+    void createProject(board).then(() => {
+      setOpen(false);
+      void renderProjects();
+    });
+  });
+  renameButton?.addEventListener("click", () => {
+    if (!activeProject) return;
+    renamingProjectId = activeProject.id;
+    setOpen(true);
+    void renderProjects();
+  });
+  exportJsonButton?.addEventListener("click", () => {
+    exportDocument(board);
+    setOpen(false);
+  });
+  cleanupAssetsButton?.addEventListener("click", () => {
+    void cleanupUnusedAssets(board).finally(() => setOpen(false));
+  });
+  clearStorageButton?.addEventListener("click", () => {
+    if (!window.confirm("清空浏览器中保存的所有媒体与画布？这个操作无法撤销。")) return;
+    void clearStorage(board, resyncMediaBadges).finally(() => {
+      setOpen(false);
+      void renderProjects();
+    });
+  });
+  deleteButton?.addEventListener("click", () => {
+    if (!activeProject) return;
+    const name = activeProject.name;
+    if (!window.confirm(`删除画布「${name}」？这个操作不会删除已导入资源。`)) return;
+    void deleteActiveProject(board).then(() => {
+      setOpen(false);
+      void renderProjects();
+    });
+  });
+  document.addEventListener("click", () => setOpen(false));
+  void renderProjects();
+}
+
+async function switchProject(board: PixiBoard, projectId: string): Promise<void> {
+  await persist(board);
+  const project = await projectStore.get(projectId);
+  if (!project) {
+    showToast("画布不存在或已被移除", "error");
+    return;
+  }
+  await projectStore.setActive(project.id);
+  activeProject = project;
+  await board.document.load(project.document, { replaceHistory: true });
+  board.selection.clear();
+  board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
+  document.querySelector<HTMLSpanElement>("[data-project-current]")!.textContent = project.name;
+  showToast(`已切换到 ${project.name}`, "success");
+}
+
+async function createProject(board: PixiBoard): Promise<void> {
+  await persist(board);
+  const project = await projectStore.create("未命名画布", seededDocument());
+  activeProject = project;
+  await board.document.load(project.document, { replaceHistory: true });
+  board.selection.clear();
+  board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
+  document.querySelector<HTMLSpanElement>("[data-project-current]")!.textContent = project.name;
+  showToast("已新建空白画布", "success");
+}
+
+async function deleteActiveProject(board: PixiBoard): Promise<void> {
+  if (!activeProject) return;
+  const deletedName = activeProject.name;
+  const deletedId = activeProject.id;
+  await projectStore.delete(deletedId);
+  const [nextProjectSummary] = await projectStore.list();
+  const nextProject = nextProjectSummary
+    ? await projectStore.get(nextProjectSummary.id)
+    : await projectStore.create("画布", seededDocument());
+  if (!nextProject) {
+    showToast("画布删除后恢复失败", "error");
+    return;
+  }
+  await projectStore.setActive(nextProject.id);
+  activeProject = nextProject;
+  await board.document.load(nextProject.document, { replaceHistory: true });
+  board.selection.clear();
+  board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
+  document.querySelector<HTMLSpanElement>("[data-project-current]")!.textContent = nextProject.name;
+  showToast(`已删除 ${deletedName}`, "success");
+}
+
+function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer, resyncMediaBadges: () => void): void {
+  let mode: "idle" | "select" | "drag-node" | "pan" = "idle";
   // Every selected node moves, so the drag carries one origin per node instead
   // of a single handle. Origins are accumulated in world units to keep the drag
   // exact under fractional zoom.
@@ -710,6 +2321,8 @@ function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer):
   // move collapses into a single undo step instead of one per frame.
   let dragCoalesceKey: string | undefined;
   let dragSequence = 0;
+  let spacePanning = false;
+  let panMoved = false;
 
   const beginNodeDrag = () => {
     dragOrigins = board.selection
@@ -722,6 +2335,16 @@ function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer):
   };
 
   host.addEventListener("pointerdown", (event) => {
+    const wantsPan = event.button === 1 || event.button === 2 || (event.button === 0 && spacePanning);
+    if (wantsPan) {
+      event.preventDefault();
+      board.focus();
+      host.setPointerCapture(event.pointerId);
+      lastScreen = toHostPoint(event);
+      mode = "pan";
+      panMoved = false;
+      return;
+    }
     if (event.button !== 0) return;
     // The handles stop propagation before this fires, so a resize normally
     // never reaches the canvas at all; this only guards a gesture already in
@@ -749,7 +2372,9 @@ function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer):
           event.preventDefault();
           window.requestAnimationFrame(() => beginTextEdit(board, hitId));
         } else {
-          toggleTaskCardStatus(board, hitId);
+          if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
+          event.preventDefault();
+          window.requestAnimationFrame(() => beginNodeRename(board, hitId, resyncMediaBadges));
         }
         lastTapNodeId = undefined;
         return;
@@ -780,7 +2405,10 @@ function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer):
     const deltaScreen = { x: screenPoint.x - lastScreen.x, y: screenPoint.y - lastScreen.y };
     lastScreen = screenPoint;
 
-    if (mode === "select") {
+    if (mode === "pan") {
+      if (deltaScreen.x !== 0 || deltaScreen.y !== 0) panMoved = true;
+      board.viewport.panBy(deltaScreen.x, deltaScreen.y);
+    } else if (mode === "select") {
       showSelectionBox(selectStart, screenPoint);
     } else if (mode === "drag-node" && dragOrigins.length > 0) {
       if (deltaScreen.x !== 0 || deltaScreen.y !== 0) movedDuringDrag = true;
@@ -803,7 +2431,9 @@ function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer):
 
   const endDrag = (event: PointerEvent) => {
     if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
-    if (mode === "select") {
+    if (mode === "pan") {
+      if (event.button === 2 && panMoved) host.dataset.suppressContextMenu = "true";
+    } else if (mode === "select") {
       const marqueeIds = nodesInScreenRect(board, selectStart, lastScreen);
       const additive = event.shiftKey || event.metaKey || event.ctrlKey;
       const ids = additive ? [...new Set([...board.selection.get(), ...marqueeIds])] : marqueeIds;
@@ -817,6 +2447,7 @@ function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer):
     collapseToOnRelease = undefined;
     movedDuringDrag = false;
     dragCoalesceKey = undefined;
+    panMoved = false;
   };
   host.addEventListener("pointerup", endDrag);
   host.addEventListener("pointercancel", endDrag);
@@ -838,6 +2469,25 @@ function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer):
     },
     { passive: false },
   );
+
+  window.addEventListener("keydown", (event) => {
+    if (isTypingTarget(event.target)) return;
+    if (event.code === "Space") {
+      event.preventDefault();
+      spacePanning = true;
+      host.classList.add("is-space-panning");
+    }
+  });
+  window.addEventListener("keyup", (event) => {
+    if (event.code === "Space") {
+      spacePanning = false;
+      host.classList.remove("is-space-panning");
+    }
+  });
+  window.addEventListener("blur", () => {
+    spacePanning = false;
+    host.classList.remove("is-space-panning");
+  });
 }
 
 function showSelectionBox(start: { x: number; y: number }, end: { x: number; y: number }): void {
@@ -870,18 +2520,73 @@ function nodesInScreenRect(board: PixiBoard, start: { x: number; y: number }, en
 }
 
 function handleKeyboard(event: KeyboardEvent): void {
-  if (event.key !== "Delete" && event.key !== "Backspace") return;
-  const target = event.target as HTMLElement | null;
-  if (target && ["INPUT", "TEXTAREA"].includes(target.tagName)) return;
+  if (isTypingTarget(event.target)) return;
   const boardInstance = activeBoard;
   if (!boardInstance) return;
-  for (const id of boardInstance.selection.get()) boardInstance.nodes.remove(id);
-}
+  const meta = event.metaKey || event.ctrlKey;
+  const key = event.key.toLowerCase();
 
-function toggleTaskCardStatus(board: PixiBoard, nodeId: string): void {
-  const node = board.nodes.get<TaskCardProps>(nodeId);
-  if (!node || node.type !== "demo.task-card") return;
-  board.nodes.update<TaskCardProps>(nodeId, { props: { ...node.props, status: NEXT_STATUS[node.props.status] } });
+  if (meta && key === "z") {
+    event.preventDefault();
+    if (event.shiftKey) boardInstance.history.redo();
+    else boardInstance.history.undo();
+    return;
+  }
+  if (meta && key === "y") {
+    event.preventDefault();
+    boardInstance.history.redo();
+    return;
+  }
+  if (meta && key === "d" && !event.shiftKey) {
+    event.preventDefault();
+    duplicateSelection(boardInstance);
+    return;
+  }
+  if (meta && event.key === "0") {
+    event.preventDefault();
+    resetZoom(boardInstance);
+    return;
+  }
+  if (meta && (event.key === "=" || event.key === "+")) {
+    event.preventDefault();
+    zoomAtCenter(boardInstance, 1.18);
+    return;
+  }
+  if (meta && event.key === "-") {
+    event.preventDefault();
+    zoomAtCenter(boardInstance, 1 / 1.18);
+    return;
+  }
+  if (event.key === "Home") {
+    event.preventDefault();
+    boardInstance.viewport.fitBounds(padBounds(computeContentBounds(boardInstance), 80));
+    return;
+  }
+  const nudgeStep = event.shiftKey ? ARROW_KEY_STEP_LARGE : ARROW_KEY_STEP;
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    nudgeSelection(boardInstance, -nudgeStep, 0);
+    return;
+  }
+  if (event.key === "ArrowRight") {
+    event.preventDefault();
+    nudgeSelection(boardInstance, nudgeStep, 0);
+    return;
+  }
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    nudgeSelection(boardInstance, 0, -nudgeStep);
+    return;
+  }
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    nudgeSelection(boardInstance, 0, nudgeStep);
+    return;
+  }
+  if (event.key === "Delete" || event.key === "Backspace") {
+    event.preventDefault();
+    deleteSelection(boardInstance);
+  }
 }
 
 function textNodeHeight(props: TextProps, width: number): number {
@@ -1058,49 +2763,20 @@ function hitTestTopmost(board: PixiBoard, worldPoint: { x: number; y: number }):
   return candidates[0]?.id;
 }
 
-function toHostPoint(event: PointerEvent | WheelEvent): { x: number; y: number } {
+function toHostPoint(event: MouseEvent | PointerEvent | WheelEvent): { x: number; y: number } {
   const rect = host.getBoundingClientRect();
   return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 }
 
-function wireHud(board: PixiBoard): void {
-  // board.find() deep-clones every node in the document; calling it on every
-  // "change" event would mean re-cloning the whole document once per drag
-  // frame. The node count only needs to move by the delta a changeSet
-  // reports, so it is tracked incrementally instead.
-  let nodeCount = board.find().length;
-  const refreshCount = () => {
-    hudNodes.textContent = String(nodeCount);
-  };
-  const refreshSelection = () => {
-    hudSelection.textContent = String(board.selection.get().length);
-  };
+function wireStatus(board: PixiBoard): void {
   const refreshScale = () => {
     hudScale.textContent = `${Math.round(board.viewport.get().scale * 100)}%`;
   };
-  board.on("change", (event) => {
-    nodeCount += event.changeSet.addedNodeIds.length - event.changeSet.removedNodeIds.length;
-    refreshCount();
+  board.on("selection:change", (event) => {
+    statusText.textContent = event.nodeIds.length > 0 ? `已选中 ${event.nodeIds.length} 个节点` : "已就绪";
   });
-  board.on("selection:change", refreshSelection);
   board.on("viewport:change", refreshScale);
-  refreshCount();
-  refreshSelection();
   refreshScale();
-
-  let frames = 0;
-  let lastSample = performance.now();
-  const tick = () => {
-    frames += 1;
-    const now = performance.now();
-    if (now - lastSample >= 1000) {
-      hudFps.textContent = String(frames);
-      frames = 0;
-      lastSample = now;
-    }
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
 }
 
 main()

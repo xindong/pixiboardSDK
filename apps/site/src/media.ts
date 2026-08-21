@@ -5,8 +5,10 @@ import {
   NativeOpfsPort,
 } from "@pixi-board/adapter-browser";
 import type { AssetRecord, BoardDocument } from "@pixi-board/core";
+import { renderModelPreview } from "./modelPreviewScene";
 
-export type MediaKind = "image" | "video" | "audio";
+export type MediaKind = "image" | "video" | "audio" | "model" | "html" | "markdown" | "text-file" | "file";
+export type ModelVertex = [number, number, number];
 
 /** Storage variants this demo writes; mirrors the core `AssetRef["variant"]`. */
 export type AssetVariant = "original" | "preview" | "waveform";
@@ -17,6 +19,7 @@ export type MediaImport = {
   name: string;
   mimeType: string;
   size: number;
+  duration?: number;
   /** Intrinsic media size, already clamped to a sane on-canvas footprint. */
   width: number;
   height: number;
@@ -29,6 +32,10 @@ const MAX_NODE_EDGE = 320;
 const AUDIO_NODE_WIDTH = 320;
 const AUDIO_NODE_HEIGHT = 96;
 const WAVEFORM_BARS = 96;
+const DOCUMENT_NODE_WIDTH = 320;
+const DOCUMENT_NODE_HEIGHT = 220;
+const MODEL_NODE_WIDTH = 320;
+const MODEL_NODE_HEIGHT = 240;
 /**
  * Longest edge, in device pixels, a generated image preview is allowed to
  * occupy. Nodes cap out at MAX_NODE_EDGE=320 world units and the demo
@@ -49,15 +56,21 @@ export class UnsupportedMediaError extends Error {
 
 export function classifyMedia(file: File): MediaKind | undefined {
   const type = (file.type || "").toLowerCase();
-  if (type.startsWith("image/")) return "image";
-  if (type.startsWith("video/")) return "video";
-  if (type.startsWith("audio/")) return "audio";
-  // Some platforms hand over an empty MIME type; fall back to the extension so
-  // a plainly-named file is not rejected for a browser quirk.
   const extension = file.name.toLowerCase().split(".").pop() ?? "";
   if (["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "svg"].includes(extension)) return "image";
   if (["mp4", "webm", "mov", "m4v", "ogv"].includes(extension)) return "video";
   if (["mp3", "wav", "ogg", "oga", "m4a", "flac", "aac"].includes(extension)) return "audio";
+  if (["glb", "gltf", "obj", "fbx", "stl", "ply", "dae", "3mf", "3ds", "vrml", "wrl", "zip"].includes(extension)) return "model";
+  if (["html", "htm"].includes(extension)) return "html";
+  if (["md", "markdown"].includes(extension)) return "markdown";
+  if (["txt", "log", "csv", "json", "xml", "yaml", "yml"].includes(extension)) return "text-file";
+
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type.startsWith("audio/")) return "audio";
+  if (type === "text/html") return "html";
+  if (["text/markdown", "text/x-markdown"].includes(type)) return "markdown";
+  if (type.startsWith("text/")) return "text-file";
   return undefined;
 }
 
@@ -135,19 +148,35 @@ export class MediaLibrary {
     if (kind === "video") {
       const poster = await videoPoster(file);
       await this.adapter.putDerivative(assetId, "preview", poster.blob);
-      return { assetId, kind, name: file.name, mimeType: file.type, size: file.size, ...fitNode(poster.width, poster.height) };
+      return { assetId, kind, name: file.name, mimeType: file.type, size: file.size, duration: poster.duration, ...fitNode(poster.width, poster.height) };
     }
 
-    const waveform = await audioWaveform(file);
-    await this.adapter.putDerivative(assetId, "waveform", waveform);
+    if (kind === "audio") {
+      const waveform = await audioWaveform(file);
+      await this.adapter.putDerivative(assetId, "waveform", waveform.blob);
+      return {
+        assetId,
+        kind,
+        name: file.name,
+        mimeType: file.type,
+        size: file.size,
+        duration: waveform.duration,
+        width: AUDIO_NODE_WIDTH,
+        height: AUDIO_NODE_HEIGHT,
+      };
+    }
+
+    const preview = kind === "model" ? await modelPreview(file) : await filePreview(file, kind);
+    await this.adapter.putDerivative(assetId, "preview", preview);
     return {
       assetId,
       kind,
       name: file.name,
       mimeType: file.type,
       size: file.size,
-      width: AUDIO_NODE_WIDTH,
-      height: AUDIO_NODE_HEIGHT,
+      width: kind === "model" ? MODEL_NODE_WIDTH : DOCUMENT_NODE_WIDTH,
+      height: kind === "model" ? MODEL_NODE_HEIGHT : DOCUMENT_NODE_HEIGHT,
+      hasPreview: true,
     };
   }
 
@@ -172,6 +201,83 @@ export class MediaLibrary {
     }
   }
 
+  async downloadUrl(assetId: string): Promise<string | undefined> {
+    return this.objectUrl(assetId, "original");
+  }
+
+  async originalBlob(assetId: string): Promise<Blob | undefined> {
+    const stored = await this.adapter.getAsset(assetId, { variant: "original" });
+    return stored?.blob;
+  }
+
+  async originalText(assetId: string): Promise<string | undefined> {
+    const blob = await this.originalBlob(assetId);
+    return blob?.text();
+  }
+
+  async assetIds(): Promise<string[]> {
+    const entries = await this.adapter.listAssets();
+    return entries.map((entry) => entry.id);
+  }
+
+  async deleteAsset(assetId: string): Promise<void> {
+    for (const variant of ["original", "preview", "waveform"] as const) this.revokeLease(assetId, variant);
+    await this.adapter.deleteAsset(assetId);
+  }
+
+  async refreshPreview(assetId: string, kind: MediaKind): Promise<boolean> {
+    const stored = await this.adapter.getAsset(assetId, { variant: "original" });
+    if (!stored) return false;
+
+    const metadata = stored.entry.record.metadata ?? {};
+    const name = typeof metadata.name === "string" ? metadata.name : `${kind}-${assetId}`;
+    const type = typeof metadata.mimeType === "string" ? metadata.mimeType : stored.blob.type;
+    const file = new File([stored.blob], name, { type });
+
+    if (kind === "image") {
+      const preview = await imagePreview(file);
+      if (!preview.previewBlob) return false;
+      await this.adapter.putDerivative(assetId, "preview", preview.previewBlob);
+      this.revokeLease(assetId, "preview");
+      return true;
+    }
+
+    if (kind === "video") {
+      const poster = await videoPoster(file);
+      await this.adapter.putDerivative(assetId, "preview", poster.blob);
+      this.revokeLease(assetId, "preview");
+      return true;
+    }
+
+    if (kind === "audio") {
+      const waveform = await audioWaveform(file);
+      await this.adapter.putDerivative(assetId, "waveform", waveform.blob);
+      this.revokeLease(assetId, "waveform");
+      return true;
+    }
+
+    const preview = kind === "model" ? await modelPreview(file) : await filePreview(file, kind);
+    await this.adapter.putDerivative(assetId, "preview", preview);
+    this.revokeLease(assetId, "preview");
+    return true;
+  }
+
+  async updateVideoPreviewFromElement(assetId: string, video: HTMLVideoElement): Promise<boolean> {
+    if (!video.videoWidth || !video.videoHeight) return false;
+
+    const { width, height } = previewSize(video.videoWidth, video.videoHeight);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) return false;
+
+    context.drawImage(video, 0, 0, width, height);
+    await this.adapter.putDerivative(assetId, "preview", await canvasBlob(canvas));
+    this.revokeLease(assetId, "preview");
+    return true;
+  }
+
   async clear(): Promise<void> {
     for (const lease of this.leases.values()) lease.revoke();
     this.leases.clear();
@@ -186,6 +292,14 @@ export class MediaLibrary {
     for (const lease of this.leases.values()) lease.revoke();
     this.leases.clear();
     await this.adapter.destroy();
+  }
+
+  private revokeLease(assetId: string, variant: AssetVariant): void {
+    const key = `${assetId}:${variant}`;
+    const lease = this.leases.get(key);
+    if (!lease) return;
+    lease.revoke();
+    this.leases.delete(key);
   }
 }
 
@@ -291,7 +405,7 @@ async function renderImagePreview(file: File, intrinsicSize: { width: number; he
  * Seeks a hidden video element just past the start and copies that frame into a
  * canvas. Seeking off zero avoids the black leader frame some encoders emit.
  */
-async function videoPoster(file: Blob): Promise<{ blob: Blob; width: number; height: number }> {
+async function videoPoster(file: Blob): Promise<{ blob: Blob; width: number; height: number; duration?: number }> {
   const url = URL.createObjectURL(file);
   const video = document.createElement("video");
   video.muted = true;
@@ -323,6 +437,7 @@ async function videoPoster(file: Blob): Promise<{ blob: Blob; width: number; hei
 
     const width = video.videoWidth || 320;
     const height = video.videoHeight || 180;
+    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : undefined;
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
@@ -330,7 +445,7 @@ async function videoPoster(file: Blob): Promise<{ blob: Blob; width: number; hei
     if (!context) throw new Error("无法创建画布上下文");
     context.drawImage(video, 0, 0, width, height);
     const blob = await canvasBlob(canvas);
-    return { blob, width, height };
+    return { blob, width, height, duration };
   } finally {
     video.removeAttribute("src");
     video.load();
@@ -342,7 +457,7 @@ async function videoPoster(file: Blob): Promise<{ blob: Blob; width: number; hei
  * Decodes the real samples and renders a symmetric peak-per-bucket waveform, so
  * the drawing reflects the actual audio rather than a decorative placeholder.
  */
-async function audioWaveform(file: Blob): Promise<Blob> {
+async function audioWaveform(file: Blob): Promise<{ blob: Blob; duration?: number }> {
   const canvas = document.createElement("canvas");
   canvas.width = AUDIO_NODE_WIDTH * 2;
   canvas.height = AUDIO_NODE_HEIGHT * 2;
@@ -353,12 +468,14 @@ async function audioWaveform(file: Blob): Promise<Blob> {
   context.fillRect(0, 0, canvas.width, canvas.height);
 
   let peaks: number[] = [];
+  let duration: number | undefined;
   const AudioContextCtor: typeof AudioContext | undefined =
     window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (AudioContextCtor) {
     const audioContext = new AudioContextCtor();
     try {
       const decoded = await audioContext.decodeAudioData(await file.arrayBuffer());
+      duration = Number.isFinite(decoded.duration) && decoded.duration > 0 ? decoded.duration : undefined;
       const samples = decoded.getChannelData(0);
       const bucket = Math.max(1, Math.floor(samples.length / WAVEFORM_BARS));
       for (let index = 0; index < WAVEFORM_BARS; index += 1) {
@@ -393,7 +510,287 @@ async function audioWaveform(file: Blob): Promise<Blob> {
       context.fillRect(index * barWidth + barWidth * 0.2, midY - barHeight / 2, barWidth * 0.6, barHeight);
     }
   }
+  return { blob: await canvasBlob(canvas), duration };
+}
+
+async function modelPreview(file: File): Promise<Blob> {
+  return renderModelPreview(file);
+}
+
+export async function modelVertices(file: File, extension: string): Promise<ModelVertex[]> {
+  if (["obj", "ply", "stl"].includes(extension)) {
+    const head = await file.slice(0, Math.min(file.size, 2_000_000)).text();
+    if (extension === "obj") return parseObjVertices(head);
+    if (extension === "ply") return parsePlyVertices(head);
+    if (extension === "stl") {
+      const ascii = head.trimStart().startsWith("solid") ? parseAsciiStlVertices(head) : [];
+      return ascii.length ? ascii : parseBinaryStlVertices(await file.arrayBuffer());
+    }
+  }
+  return [];
+}
+
+function parseObjVertices(text: string): ModelVertex[] {
+  const vertices: ModelVertex[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith("v ")) continue;
+    const [, x, y, z] = line.trim().split(/\s+/).map(Number);
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) vertices.push([x, y, z]);
+    if (vertices.length >= 5000) break;
+  }
+  return vertices;
+}
+
+function parseAsciiStlVertices(text: string): ModelVertex[] {
+  const vertices: ModelVertex[] = [];
+  for (const match of text.matchAll(/vertex\s+([-+\deE.]+)\s+([-+\deE.]+)\s+([-+\deE.]+)/g)) {
+    const x = Number(match[1]);
+    const y = Number(match[2]);
+    const z = Number(match[3]);
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) vertices.push([x, y, z]);
+    if (vertices.length >= 5000) break;
+  }
+  return vertices;
+}
+
+function parseBinaryStlVertices(buffer: ArrayBuffer): ModelVertex[] {
+  if (buffer.byteLength < 84) return [];
+  const view = new DataView(buffer);
+  const triangleCount = view.getUint32(80, true);
+  const expectedBytes = 84 + triangleCount * 50;
+  if (expectedBytes > buffer.byteLength) return [];
+  const vertices: ModelVertex[] = [];
+  const maxTriangles = Math.min(triangleCount, 1666);
+  for (let triangle = 0; triangle < maxTriangles; triangle += 1) {
+    const triangleOffset = 84 + triangle * 50 + 12;
+    for (let point = 0; point < 3; point += 1) {
+      const offset = triangleOffset + point * 12;
+      const x = view.getFloat32(offset, true);
+      const y = view.getFloat32(offset + 4, true);
+      const z = view.getFloat32(offset + 8, true);
+      if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) vertices.push([x, y, z]);
+    }
+  }
+  return vertices;
+}
+
+function parsePlyVertices(text: string): ModelVertex[] {
+  const headerEnd = text.indexOf("end_header");
+  if (headerEnd < 0) return [];
+  const header = text.slice(0, headerEnd);
+  const vertexCount = Number(header.match(/element\s+vertex\s+(\d+)/)?.[1] ?? 0);
+  if (!vertexCount) return [];
+  const body = text.slice(headerEnd + "end_header".length).trimStart().split(/\r?\n/);
+  const vertices: ModelVertex[] = [];
+  for (const line of body.slice(0, Math.min(vertexCount, 5000))) {
+    const [x, y, z] = line.trim().split(/\s+/).map(Number);
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) vertices.push([x, y, z]);
+  }
+  return vertices;
+}
+
+function drawProjectedModel(
+  context: CanvasRenderingContext2D,
+  vertices: ModelVertex[],
+  width: number,
+  height: number,
+): void {
+  const bounds = vertices.reduce(
+    (acc, [x, y, z]) => ({
+      minX: Math.min(acc.minX, x),
+      minY: Math.min(acc.minY, y),
+      minZ: Math.min(acc.minZ, z),
+      maxX: Math.max(acc.maxX, x),
+      maxY: Math.max(acc.maxY, y),
+      maxZ: Math.max(acc.maxZ, z),
+    }),
+    { minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity },
+  );
+  const center = {
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: (bounds.minY + bounds.maxY) / 2,
+    z: (bounds.minZ + bounds.maxZ) / 2,
+  };
+  const points = vertices.map(([x, y, z]) => {
+    const nx = x - center.x;
+    const ny = y - center.y;
+    const nz = z - center.z;
+    return {
+      x: (nx - nz) * 0.86,
+      y: ny * -1 + (nx + nz) * 0.32,
+      depth: nx + ny + nz,
+    };
+  });
+  const minX = Math.min(...points.map((point) => point.x));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const minY = Math.min(...points.map((point) => point.y));
+  const maxY = Math.max(...points.map((point) => point.y));
+  const scale = Math.min((width - 112) / Math.max(1, maxX - minX), (height - 210) / Math.max(1, maxY - minY));
+  const origin = { x: width / 2 - ((minX + maxX) / 2) * scale, y: height / 2 + 48 - ((minY + maxY) / 2) * scale };
+
+  context.save();
+  context.translate(origin.x, origin.y);
+  context.fillStyle = "rgba(79, 70, 229, 0.22)";
+  context.strokeStyle = "rgba(15, 23, 42, 0.36)";
+  context.lineWidth = 1.5;
+  for (const point of points.sort((a, b) => a.depth - b.depth).filter((_, index) => index % Math.ceil(points.length / 1800) === 0)) {
+    const x = point.x * scale;
+    const y = point.y * scale;
+    context.beginPath();
+    context.arc(x, y, 2.2, 0, Math.PI * 2);
+    context.fill();
+  }
+  drawBoundingWireframe(context, bounds, center, scale);
+  context.restore();
+}
+
+function drawBoundingWireframe(
+  context: CanvasRenderingContext2D,
+  bounds: { minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number },
+  center: { x: number; y: number; z: number },
+  scale: number,
+): void {
+  const corners: ModelVertex[] = [
+    [bounds.minX, bounds.minY, bounds.minZ], [bounds.maxX, bounds.minY, bounds.minZ],
+    [bounds.maxX, bounds.maxY, bounds.minZ], [bounds.minX, bounds.maxY, bounds.minZ],
+    [bounds.minX, bounds.minY, bounds.maxZ], [bounds.maxX, bounds.minY, bounds.maxZ],
+    [bounds.maxX, bounds.maxY, bounds.maxZ], [bounds.minX, bounds.maxY, bounds.maxZ],
+  ];
+  const project = ([x, y, z]: [number, number, number]) => {
+    const nx = x - center.x;
+    const ny = y - center.y;
+    const nz = z - center.z;
+    return { x: (nx - nz) * 0.86 * scale, y: (ny * -1 + (nx + nz) * 0.32) * scale };
+  };
+  const edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+  context.beginPath();
+  for (const [a, b] of edges) {
+    const startCorner = corners[a];
+    const endCorner = corners[b];
+    if (!startCorner || !endCorner) continue;
+    const start = project(startCorner);
+    const end = project(endCorner);
+    context.moveTo(start.x, start.y);
+    context.lineTo(end.x, end.y);
+  }
+  context.stroke();
+}
+
+function modelFallbackText(extension: string): string {
+  if (["glb", "gltf"].includes(extension)) return "GLTF/GLB 文件已保存。当前预览显示格式、大小和原始文件入口。";
+  if (["stl", "obj", "ply"].includes(extension)) return "模型几何读取失败，已保留原始文件；可以下载或打开原始文件继续检查。";
+  return "模型文件已保存为原始资源。当前格式还没有浏览器内几何预览。";
+}
+
+async function filePreview(file: File, kind: MediaKind): Promise<Blob> {
+  const canvas = document.createElement("canvas");
+  canvas.width = (kind === "model" ? MODEL_NODE_WIDTH : DOCUMENT_NODE_WIDTH) * 2;
+  canvas.height = (kind === "model" ? MODEL_NODE_HEIGHT : DOCUMENT_NODE_HEIGHT) * 2;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("无法创建画布上下文");
+
+  const width = canvas.width;
+  const height = canvas.height;
+  context.fillStyle = "#f7f8fb";
+  context.fillRect(0, 0, width, height);
+  context.strokeStyle = "#d8dee8";
+  context.lineWidth = 2;
+  roundedRect(context, 18, 18, width - 36, height - 36, 16);
+  context.stroke();
+
+  context.fillStyle = kindAccent(kind);
+  roundedRect(context, 44, 44, 88, 88, 18);
+  context.fill();
+  context.fillStyle = "#ffffff";
+  context.font = "700 46px Inter, Arial, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(kindGlyph(kind), 88, 88);
+
+  context.textAlign = "left";
+  context.textBaseline = "alphabetic";
+  context.fillStyle = "#111827";
+  context.font = "700 28px Inter, Arial, sans-serif";
+  drawClampedText(context, file.name || kindLabel(kind), 156, 76, width - 200);
+  context.fillStyle = "#6b7280";
+  context.font = "400 18px Inter, Arial, sans-serif";
+  context.fillText(`${kindLabel(kind)} · ${formatBytes(file.size)}`, 156, 112);
+
+  const snippet = await previewSnippet(file, kind);
+  context.fillStyle = "#384152";
+  context.font = "400 18px ui-monospace, SFMono-Regular, Menlo, monospace";
+  const lines = wrapText(context, snippet, width - 92, kind === "model" ? 5 : 7);
+  lines.forEach((line, index) => context.fillText(line, 46, 178 + index * 30));
+
   return canvasBlob(canvas);
+}
+
+async function previewSnippet(file: File, kind: MediaKind): Promise<string> {
+  if (kind === "model") return "3D 模型文件已保存为原始资源。下一步在 SDK 中接入 Three.js 运行时后，可在节点内直接预览和旋转。";
+  try {
+    const text = await file.slice(0, 3200).text();
+    return text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || kindLabel(kind);
+  } catch {
+    return kindLabel(kind);
+  }
+}
+
+function kindLabel(kind: MediaKind): string {
+  return ({ image: "图片", video: "视频", audio: "音频", model: "模型", html: "HTML", markdown: "Markdown", "text-file": "文本", file: "文件" })[kind];
+}
+
+function kindGlyph(kind: MediaKind): string {
+  return ({ image: "I", video: "V", audio: "A", model: "3D", html: "H", markdown: "M", "text-file": "T", file: "F" })[kind];
+}
+
+function kindAccent(kind: MediaKind): string {
+  return ({ image: "#4f7cff", video: "#f05272", audio: "#1aa36f", model: "#8b5cf6", html: "#f97316", markdown: "#2563eb", "text-file": "#64748b", file: "#475569" })[kind];
+}
+
+function formatBytes(size: number): string {
+  if (!Number.isFinite(size) || size <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const power = Math.min(units.length - 1, Math.floor(Math.log(size) / Math.log(1024)));
+  return `${(size / 1024 ** power).toFixed(power === 0 ? 0 : 1)} ${units[power]}`;
+}
+
+function drawClampedText(context: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number): void {
+  if (context.measureText(text).width <= maxWidth) {
+    context.fillText(text, x, y);
+    return;
+  }
+  let clipped = text;
+  while (clipped.length > 1 && context.measureText(`${clipped}...`).width > maxWidth) clipped = clipped.slice(0, -1);
+  context.fillText(`${clipped}...`, x, y);
+}
+
+function wrapText(context: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (context.measureText(next).width <= maxWidth) {
+      line = next;
+    } else {
+      if (line) lines.push(line);
+      line = word;
+    }
+    if (lines.length >= maxLines) break;
+  }
+  if (line && lines.length < maxLines) lines.push(line);
+  if (lines.length === 0) lines.push(text.slice(0, 80));
+  return lines;
+}
+
+function roundedRect(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.arcTo(x + width, y, x + width, y + height, radius);
+  context.arcTo(x + width, y + height, x, y + height, radius);
+  context.arcTo(x, y + height, x, y, radius);
+  context.arcTo(x, y, x + width, y, radius);
+  context.closePath();
 }
 
 async function canvasBlob(canvas: HTMLCanvasElement, mimeType = "image/png", quality?: number): Promise<Blob> {
