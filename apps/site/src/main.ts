@@ -1580,7 +1580,7 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
   let scrubbing = false;
   let rafHandle: number | undefined;
   let lastPersistedPlaybackTime = 0;
-  let pendingSeekTime: number | undefined;
+  let pendingSeek: { nodeId: string; time: number } | undefined;
 
   selectionActions.addEventListener("pointerdown", (event) => event.stopPropagation());
   selectionActions.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
@@ -1612,10 +1612,10 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
     if (!Number.isFinite(seconds) || seconds < 0) return;
     const max = Number.isFinite(element.duration) && element.duration > 0 ? Math.max(0, element.duration - 0.05) : seconds;
     const next = Math.min(seconds, max);
-    pendingSeekTime = next;
+    pendingSeek = { nodeId: node.id, time: next };
     try {
       element.currentTime = next;
-      pendingSeekTime = undefined;
+      pendingSeek = undefined;
       persistPlaybackTime(node.id, element);
       refreshVideoFramePreview(node.id, activeAssetId, element);
     } catch {
@@ -1660,6 +1660,7 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
     activeInlineElement = undefined;
     activeNodeId = undefined;
     activeAssetId = undefined;
+    pendingSeek = undefined;
     lastPersistedPlaybackTime = 0;
     selectionPlayback.hidden = true;
     playbackToggle.replaceChildren(createIcon("play", { size: 15 }));
@@ -1733,12 +1734,12 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
         element.src = url;
         element.className = node.type === "video" ? "inline-media-element inline-media-video" : "inline-media-element inline-media-audio";
         const restorePlaybackTime = () => {
-          const start = pendingSeekTime ?? node.props.playbackTime ?? 0;
+          const start = pendingSeek?.nodeId === node.id ? pendingSeek.time : node.props.playbackTime ?? 0;
           if (!Number.isFinite(start) || start <= 0) return;
           const max = Number.isFinite(element.duration) && element.duration > 0 ? Math.max(0, element.duration - 0.05) : start;
           try {
             element.currentTime = Math.min(start, max);
-            pendingSeekTime = undefined;
+            if (pendingSeek?.nodeId === node.id) pendingSeek = undefined;
           } catch {
             // Some browsers reject early seeks until more media data has loaded.
           }
@@ -1911,7 +1912,7 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
       playback.controls.seek(seekTime);
       return;
     }
-    pendingSeekTime = seekTime;
+    pendingSeek = { nodeId: node.id, time: seekTime };
     persistPlaybackTime(node.id, element);
   });
   const stopScrubbing = () => {
