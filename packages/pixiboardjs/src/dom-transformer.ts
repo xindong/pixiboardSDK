@@ -21,6 +21,8 @@ export type DomTransformerOptions = {
 export type DomTransformer = {
   /** Re-projects the handles. Call on selection, document and viewport change. */
   refresh(): void;
+  /** Enables or disables handle hit-testing without hiding the handles. */
+  setInteractive(interactive: boolean): void;
   /** True while a handle drag is in flight. */
   dragging(): boolean;
   destroy(): void;
@@ -54,10 +56,37 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
   let sessionPointerId: number | undefined;
   let captureElement: HTMLElement | undefined;
   let startScreen: Point = { x: 0, y: 0 };
+  let interactive = true;
+
+  const applyInteractivity = (): void => {
+    for (const element of elements.values()) element.style.pointerEvents = interactive ? "auto" : "none";
+  };
 
   const toSurfacePoint = (event: PointerEvent): Point => {
     const rect = surface.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
+
+  const forwardWheelToSurface = (event: WheelEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    surface.dispatchEvent(new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      screenX: event.screenX,
+      screenY: event.screenY,
+      deltaX: event.deltaX,
+      deltaY: event.deltaY,
+      deltaZ: event.deltaZ,
+      deltaMode: event.deltaMode,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      metaKey: event.metaKey,
+    }));
   };
 
   const endSession = (mode: "commit" | "cancel") => {
@@ -88,7 +117,7 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
     element.style.position = "absolute";
     element.style.width = `${size}px`;
     element.style.height = `${size}px`;
-    element.style.pointerEvents = "auto";
+    element.style.pointerEvents = interactive ? "auto" : "none";
     element.style.touchAction = "none";
     element.style.boxSizing = "border-box";
 
@@ -130,10 +159,12 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
     element.addEventListener("pointermove", onPointerMove);
     element.addEventListener("pointerup", onPointerUp);
     element.addEventListener("pointercancel", onPointerCancel);
+    element.addEventListener("wheel", forwardWheelToSurface, { passive: false });
     disposers.push(() => {
       element.removeEventListener("pointermove", onPointerMove);
       element.removeEventListener("pointerup", onPointerUp);
       element.removeEventListener("pointercancel", onPointerCancel);
+      element.removeEventListener("wheel", forwardWheelToSurface);
     });
 
     elements.set(handle, element);
@@ -174,6 +205,11 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
 
   return {
     refresh,
+    setInteractive(nextInteractive: boolean) {
+      if (interactive === nextInteractive) return;
+      interactive = nextInteractive;
+      applyInteractivity();
+    },
     dragging: () => session !== undefined,
     destroy() {
       endSession("commit");

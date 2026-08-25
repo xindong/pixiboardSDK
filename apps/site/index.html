@@ -22,21 +22,16 @@
           <div class="project-switcher" data-project-switcher>
             <button class="project-trigger" type="button" aria-haspopup="menu" aria-expanded="false" data-project-trigger>
               <span class="project-current-name" data-project-current>画布</span>
-              <span class="project-trigger-icon" aria-hidden="true"></span>
+              <span class="project-trigger-icon" aria-hidden="true" data-project-trigger-icon></span>
             </button>
             <div class="project-menu" hidden data-project-menu>
+              <div class="project-actions project-actions-top">
+                <button class="project-action" type="button" data-project-new>新建画布</button>
+              </div>
               <div class="project-list" role="menu" data-project-list>
                 <div class="project-item" data-active="true">
                   <button class="project-item-open" type="button" role="menuitem">画布</button>
                 </div>
-              </div>
-              <div class="project-actions">
-                <button class="project-action" type="button" data-project-rename>重命名</button>
-                <button class="project-action" type="button" data-project-new>新建画布</button>
-                <button class="project-action" type="button" data-project-export-json>导出 JSON</button>
-                <button class="project-action" type="button" data-project-cleanup-assets>清理未用资源</button>
-                <button class="project-action danger" type="button" data-project-clear-storage>清空本地存储</button>
-                <button class="project-action danger" type="button" data-project-delete>删除当前</button>
               </div>
             </div>
           </div>
@@ -56,8 +51,6 @@
         <div class="selection-actions-row">
           <button type="button" class="sp-button sp-download" data-selection-action="download" title="下载原始文件" aria-label="下载原始文件"></button>
           <button type="button" class="sp-button sp-open" data-selection-action="open" title="在新窗口打开原始文件" aria-label="在新窗口打开原始文件"></button>
-          <button type="button" class="sp-button sp-view" data-selection-action="view" title="查看文件内容" aria-label="查看文件内容"></button>
-          <button type="button" class="sp-button sp-play" data-selection-action="open-player" title="打开播放器" aria-label="打开播放器"></button>
           <button type="button" class="sp-button sp-frame" data-selection-action="restore-ratio" title="恢复导入尺寸" aria-label="恢复导入尺寸"></button>
           <button type="button" class="sp-button sp-refresh" data-selection-action="refresh-preview" title="重新生成预览" aria-label="重新生成预览"></button>
           <button type="button" class="sp-button sp-delete" data-selection-action="delete" title="删除节点" aria-label="删除节点"></button>
@@ -66,22 +59,6 @@
           <button type="button" class="sp-button playback-toggle" data-selection-action="toggle-playback" title="播放/暂停" aria-label="播放/暂停">▶</button>
           <input class="playback-progress sp-progress" id="playback-progress" type="range" min="0" max="1000" value="0" aria-label="播放进度" />
           <span class="playback-time sp-time" id="playback-time">0:00 / 0:00</span>
-        </div>
-      </div>
-      <div class="document-viewer" id="document-viewer" hidden role="dialog" aria-modal="true" aria-labelledby="document-viewer-title">
-        <div class="document-viewer-panel">
-          <header class="document-viewer-header">
-            <span class="viewer-title-group">
-              <strong id="document-viewer-title">文件内容</strong>
-              <span class="viewer-subtitle" data-document-viewer-meta></span>
-            </span>
-            <span class="viewer-actions">
-              <button class="viewer-action viewer-open" type="button" data-document-viewer-open title="打开原始文件" aria-label="打开原始文件"></button>
-              <button class="viewer-action viewer-download" type="button" data-document-viewer-download title="下载原始文件" aria-label="下载原始文件"></button>
-              <button class="viewer-action viewer-close" type="button" data-document-viewer-close title="关闭" aria-label="关闭"></button>
-            </span>
-          </header>
-          <div class="document-viewer-body" data-document-viewer-body></div>
         </div>
       </div>
       <div class="media-player-viewer" id="media-player-viewer" hidden role="dialog" aria-modal="true" aria-labelledby="media-player-title">

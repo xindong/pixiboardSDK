@@ -697,6 +697,7 @@ export class DocumentValidationError extends PixiBoardCoreError {
 // @public (undocumented)
 export type DomTransformer = {
     refresh(): void;
+    setInteractive(interactive: boolean): void;
     dragging(): boolean;
     destroy(): void;
 };
@@ -767,6 +768,7 @@ export type JsonValue = JsonPrimitive | JsonValue[] | {
 // @public (undocumented)
 export type LabelOverlayOptions = {
     container: HTMLElement;
+    wheelSurface?: HTMLElement;
     text?(node: Readonly<BoardNode<JsonValue>>): string | undefined;
     icon?(node: Readonly<BoardNode<JsonValue>>): string | undefined;
     classPrefix?: string;
@@ -1048,6 +1050,7 @@ export type OverlayLayerOptions = {
     render(context: OverlayRenderContext): void;
     itemClassName?: string;
     collapsedClassName?: string;
+    wheelSurface?: HTMLElement;
     candidates?(): Iterable<string> | undefined;
     onFlush?(): void;
     schedule?(callback: () => void): () => void;

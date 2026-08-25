@@ -1,7 +1,7 @@
 import {
   ArrowUpRight,
   Camera,
-  Eye,
+  ChevronDown,
   Download,
   ExternalLink,
   FilePlus,
@@ -14,8 +14,10 @@ import {
   Pause,
   Play,
   Pencil,
+  Plus,
   RefreshCw,
   Maximize,
+  Save,
   Trash2,
   Upload,
   X,
@@ -25,6 +27,7 @@ import {
 
 const ICONS = {
   camera: Camera,
+  chevronDown: ChevronDown,
   copy: Copy,
   delete: Trash2,
   download: Download,
@@ -39,10 +42,11 @@ const ICONS = {
   pencil: Pencil,
   play: Play,
   pause: Pause,
+  plus: Plus,
   refresh: RefreshCw,
   rename: Pencil,
+  save: Save,
   upload: Upload,
-  view: Eye,
   x: X,
   drag: GripHorizontal,
 } satisfies Record<string, IconNode>;

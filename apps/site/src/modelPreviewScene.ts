@@ -1,5 +1,6 @@
 type ModelObject = InstanceType<import("three")["Object3D"]>;
 type ModelCamera = InstanceType<import("three")["PerspectiveCamera"]>;
+type ModelGeometry = InstanceType<import("three")["BufferGeometry"]>;
 
 const MODEL_PREVIEW_BACKGROUND = 0xe8edf3;
 
@@ -104,32 +105,47 @@ async function loadModelObject(
       return normalizeLoadedModel(THREE, await new VRMLLoader().loadAsync(url));
     }
     default:
-      return createFallbackModel(THREE, extension);
+      return createFallbackModel(THREE);
   }
 }
 
 function normalizeLoadedModel(THREE: typeof import("three"), loaded: unknown): ModelObject {
+  if (loaded instanceof THREE.Object3D) return loaded;
+  if (loaded instanceof THREE.BufferGeometry) return meshFromGeometry(THREE, loaded);
+
   const maybeScene = loaded as { scene?: unknown };
   if (maybeScene.scene instanceof THREE.Object3D) return maybeScene.scene;
-  if (loaded instanceof THREE.Object3D) return loaded;
-  if (loaded instanceof THREE.BufferGeometry) return new THREE.Mesh(loaded, new THREE.MeshStandardMaterial({ color: 0xb7c0cc }));
+  if (maybeScene.scene instanceof THREE.BufferGeometry) return meshFromGeometry(THREE, maybeScene.scene);
+
   throw new Error("Loaded model result is not renderable");
 }
 
-function createFallbackModel(THREE: typeof import("three"), extension: string): ModelObject {
-  const group = new THREE.Group();
-  const material = new THREE.MeshStandardMaterial({ color: 0xb7c0cc, roughness: 0.82, metalness: 0.08 });
-  group.add(new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.2, 2.2), material));
-  group.userData.label = `${extension} model`;
-  return group;
+function meshFromGeometry(THREE: typeof import("three"), geometry: ModelGeometry): ModelObject {
+  if (!geometry.attributes.normal) {
+    geometry.computeVertexNormals();
+  }
+  return new THREE.Mesh(geometry, createModelMaterial(THREE));
+}
+
+function createFallbackModel(THREE: typeof import("three")): ModelObject {
+  const geometry = new THREE.BoxGeometry(2.2, 2.2, 2.2);
+  return meshFromGeometry(THREE, geometry);
 }
 
 function applyFallbackMaterials(THREE: typeof import("three"), object: ModelObject): void {
   object.traverse((child) => {
     const mesh = child as { isMesh?: boolean; material?: unknown };
     if (mesh.isMesh && !mesh.material) {
-      mesh.material = new THREE.MeshStandardMaterial({ color: 0xb7c0cc, roughness: 0.82, metalness: 0.08 });
+      mesh.material = createModelMaterial(THREE);
     }
+  });
+}
+
+function createModelMaterial(THREE: typeof import("three")) {
+  return new THREE.MeshStandardMaterial({
+    color: 0xb7c0cc,
+    roughness: 0.82,
+    metalness: 0.08,
   });
 }
 
@@ -138,9 +154,19 @@ function frameObject(THREE: typeof import("three"), object: ModelObject, camera:
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   const maxDimension = Math.max(size.x, size.y, size.z);
-  if (!Number.isFinite(maxDimension) || maxDimension <= 0) return;
+
+  if (
+    !Number.isFinite(center.x) ||
+    !Number.isFinite(center.y) ||
+    !Number.isFinite(center.z) ||
+    !Number.isFinite(maxDimension) ||
+    maxDimension <= 0
+  ) {
+    throw new Error("Loaded model has no finite bounds");
+  }
+
   object.position.sub(center);
-  camera.position.set(maxDimension * 1.25, maxDimension * 0.95, maxDimension * 1.85);
+  camera.position.set(maxDimension * 1.3, maxDimension * 1.05, maxDimension * 1.9);
   camera.lookAt(0, 0, 0);
   camera.near = Math.max(maxDimension / 1000, 0.01);
   camera.far = maxDimension * 20;
