@@ -2218,7 +2218,7 @@ async function deleteProject(board: PixiBoard, projectId: string): Promise<void>
   if (projectId === activeProject?.id) {
     await deleteActiveProject(board);
   } else {
-    await projectStore.delete(projectId);
+    await projectStore.delete(projectId, true);
     showToast(`已删除 ${project.name}`, "success");
   }
 }
