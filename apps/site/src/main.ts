@@ -2109,6 +2109,13 @@ function wireProjectMenu(board: PixiBoard): void {
     newButton,
   });
 
+  // Project changes share the board document and active-project pointer, so
+  // serialize transitions to keep autosave from observing an intermediate pair.
+  let projectOperationQueue = Promise.resolve();
+  const enqueueProjectOperation = (operation: () => Promise<void>): void => {
+    projectOperationQueue = projectOperationQueue.then(operation, operation);
+  };
+
   const renderProjects = async () => {
     const projects = await projectStore.list();
     controller.setProjects(projects, activeProject ?? null);
@@ -2116,18 +2123,21 @@ function wireProjectMenu(board: PixiBoard): void {
 
   controller.setActions({
     onOpenProject: (project) => {
-      void switchProject(board, project.id).then(async () => {
+      enqueueProjectOperation(async () => {
+        await switchProject(board, project.id);
         await renderProjects();
       });
     },
     onCreateProject: () => {
-      void createProject(board).then(async () => {
+      enqueueProjectOperation(async () => {
+        await createProject(board);
         controller.close();
         await renderProjects();
       });
     },
     onDeleteProject: (project) => {
-      void deleteProject(board, project.id).then(async () => {
+      enqueueProjectOperation(async () => {
+        await deleteProject(board, project.id);
         controller.close();
         await renderProjects();
       });
