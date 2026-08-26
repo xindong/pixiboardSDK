@@ -391,7 +391,7 @@ function wireSelectionOverlay(board: PixiBoard): DomTransformer {
   // Keep the group outline on the same bounds as the transform controller.
   // The overlay's default 6px padding would leave all eight handles visually
   // inset from the dashed multi-selection box.
-  attachSelectionOverlay(board, { container: selectionOverlay, groupBoxPadding: 0, nodeOutlines: false });
+  attachSelectionOverlay(board, { container: selectionOverlay, groupBoxPadding: 0, nodeOutlines: "single" });
   return attachDomTransformer(board, {
     overlay: handleOverlay,
     surface: host,
