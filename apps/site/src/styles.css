@@ -699,8 +699,8 @@ body {
   text-overflow: ellipsis;
 }
 
-/* The rename input is the only name layer during editing. */
-.media-overlay.is-editing-name .media-label {
+/* The rename input replaces only the name; the media type tag stays visible. */
+.media-overlay.is-editing-name .media-label-text {
   visibility: hidden;
 }
 
