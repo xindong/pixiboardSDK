@@ -191,7 +191,7 @@ export type PixiBoardOptions = {
   persistence?: DocumentPersistence;
   interactions?: { pointer?: boolean; keyboard?: boolean; clipboard?: boolean };
   /** Floor sizes a resize gesture may shrink a node to, in world units. */
-  transform?: { minWidth?: number; minHeight?: number };
+  transform?: { minWidth?: number; minHeight?: number; handles?: readonly ResizeHandle[] };
   ports?: BoardRuntimePorts;
   /**
    * Viewport virtualization. On by default: the renderer only keeps views for
@@ -254,7 +254,7 @@ export type TransformSession = {
    * Deltas are absolute rather than incremental so a gesture stays exact
    * under fractional zoom and dropped frames.
    */
-  update(deltaWorld: Point): void;
+  update(deltaWorld: Point, options?: { preserveAspectRatio?: boolean }): void;
   /** Ends the gesture. Further `update()` calls are ignored. */
   commit(): void;
   /** Ends the gesture and restores the geometry captured at `begin()`. */

@@ -15,7 +15,7 @@ function boxDefinition(type: string, resize?: ResizePolicy<BoxProps>): NodeTypeD
   };
 }
 
-async function board(): Promise<PixiBoard> {
+async function boardWithTransform(transform?: { handles?: readonly ("nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w")[] }): Promise<PixiBoard> {
   const nodeTypes = new NodeTypeRegistry();
   nodeTypes.register(boxDefinition("free.box"));
   nodeTypes.register(boxDefinition("fixed.box", { mode: "fixed" }));
@@ -23,10 +23,15 @@ async function board(): Promise<PixiBoard> {
   let id = 0;
   const instance = await createPixiBoard({
     headless: true,
+    transform,
     core: { nodeTypes, idFactory: () => `id-${++id}`, now: () => 1 },
   });
   await instance.ready;
   return instance;
+}
+
+async function board(): Promise<PixiBoard> {
+  return boardWithTransform();
 }
 
 function add(instance: PixiBoard, id: string, type: string, geometry: { x: number; y: number; width: number; height: number }) {
@@ -56,6 +61,15 @@ describe("board.transform", () => {
     await instance.destroy();
   });
 
+  it("supports a host selecting only corner handles", async () => {
+    const instance = await boardWithTransform({ handles: ["nw", "ne", "se", "sw"] });
+    await add(instance, "a", "free.box", { x: 100, y: 100, width: 200, height: 100 });
+    instance.selection.set(["a"]);
+
+    expect(instance.transform.handles().map((placement) => placement.handle)).toEqual(["nw", "ne", "se", "sw"]);
+    await instance.destroy();
+  });
+
   it("drives a gesture from absolute deltas and collapses it into one undo step", async () => {
     const instance = await board();
     await add(instance, "a", "free.box", { x: 100, y: 100, width: 200, height: 100 });
@@ -71,6 +85,19 @@ describe("board.transform", () => {
     expect(instance.nodes.get("a")).toMatchObject({ x: 100, y: 100, width: 260, height: 130 });
     instance.history.undo();
     expect(instance.nodes.get("a")).toMatchObject({ width: 200, height: 100 });
+    await instance.destroy();
+  });
+
+  it("preserves aspect ratio when requested by the host", async () => {
+    const instance = await board();
+    await add(instance, "a", "free.box", { x: 100, y: 100, width: 200, height: 100 });
+    instance.selection.set(["a"]);
+
+    const session = instance.transform.begin("se")!;
+    session.update({ x: 20, y: 80 }, { preserveAspectRatio: true });
+    session.commit();
+
+    expect(instance.nodes.get("a")).toMatchObject({ width: 360, height: 180 });
     await instance.destroy();
   });
 

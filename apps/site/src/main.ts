@@ -113,7 +113,9 @@ const textTypeDefinition: CustomNodeDefinition<TextProps> = {
   type: "text",
   version: 1,
   defaults: { text: "" },
-  resize: { mode: "custom", resize: ({ node, width }) => ({ width, height: textNodeHeight(node.props, width) }) },
+  // Site resizing is free by default; Command/Ctrl applies aspect locking
+  // during the gesture instead of forcing a node policy.
+  resize: { mode: "free" },
   validate(value): TextProps {
     const candidate = (value ?? {}) as Partial<TextProps>;
     return {
@@ -133,18 +135,15 @@ type MediaProps = { name: string; mimeType: string; size: number; duration?: num
  * `assetRefs`; core ships no node types at all, so the host declares the data
  * side of those three types here.
  *
- * Images and video keep their aspect ratio when resized so media never
- * stretches; audio is a fixed-height waveform strip that only grows sideways,
- * which the custom policy below enforces.
+ * The site keeps resizing free by default. Hosts that need locked media or
+ * content-specific sizing can provide an aspect-ratio or custom policy.
  */
 function mediaTypeDefinition(type: MediaKind): CustomNodeDefinition<MediaProps> {
   return {
     type,
     version: 1,
     defaults: { name: "", mimeType: "", size: 0 },
-    resize: type === "audio"
-      ? { mode: "custom", resize: ({ node, width }) => ({ width, height: node.height }) }
-      : { mode: "aspect-ratio" },
+    resize: { mode: "free" },
     validate(value): MediaProps {
       const candidate = (value ?? {}) as Partial<MediaProps>;
       return {
@@ -239,6 +238,7 @@ async function main(): Promise<void> {
     document: restored.document,
     core: { nodeTypes },
     interactions: { pointer: true, keyboard: true },
+    transform: { handles: ["nw", "ne", "se", "sw"] },
     ports: {
       events: window,
       onKeyboardEvent: (event) => handleKeyboard(event as KeyboardEvent),
@@ -391,10 +391,11 @@ function wireSelectionOverlay(board: PixiBoard): DomTransformer {
   // Keep the group outline on the same bounds as the transform controller.
   // The overlay's default 6px padding would leave all eight handles visually
   // inset from the dashed multi-selection box.
-  attachSelectionOverlay(board, { container: selectionOverlay, groupBoxPadding: 0 });
+  attachSelectionOverlay(board, { container: selectionOverlay, groupBoxPadding: 0, nodeOutlines: false });
   return attachDomTransformer(board, {
     overlay: handleOverlay,
     surface: host,
+    handles: ["nw", "ne", "se", "sw"],
   });
 }
 

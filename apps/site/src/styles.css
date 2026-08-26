@@ -61,8 +61,8 @@ body {
 
 .selection-box {
   position: absolute;
-  border: 1px solid var(--accent-strong);
-  background: var(--accent-soft);
+  border: 1px solid rgba(79, 124, 255, 0.55);
+  background: rgba(79, 124, 255, 0.045);
   pointer-events: none;
   z-index: 5;
 }
@@ -842,10 +842,10 @@ body {
 }
 
 .pixiboard-handle {
-  background: var(--bg-0);
-  border: 1.5px solid var(--accent-strong);
-  border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(10, 13, 18, 0.55);
+  background: #ffffff;
+  border: 1px solid var(--accent-strong);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
 }
 
 .pixiboard-handle:hover {
@@ -855,8 +855,9 @@ body {
 /* Shown only when more than one node is selected, so the group reads as one
    movable unit. */
 .pixiboard-selection-bbox {
-  border: 1px dashed rgba(154, 166, 255, 0.7);
-  border-radius: 3px;
+  border: 1px dashed rgba(79, 124, 255, 0.72);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
   pointer-events: none;
 }
 
@@ -1012,6 +1013,11 @@ body {
   border-radius: 5px;
 }
 
+.project-item:hover,
+.project-item:focus-within {
+  background: rgba(37, 99, 235, 0.07);
+}
+
 .project-item[data-active="true"] {
   background: rgba(37, 99, 235, 0.08);
 }
@@ -1037,7 +1043,7 @@ body {
 
 .project-item-open:hover {
   color: #172033;
-  background: rgba(15, 23, 42, 0.04);
+  background: transparent;
 }
 
 .project-item[data-active="true"] .project-item-open {

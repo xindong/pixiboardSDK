@@ -16,6 +16,8 @@ export type DomTransformerOptions = {
   size?: number;
   /** Prefix for the generated class names; see `attachDomTransformer` docs. */
   classPrefix?: string;
+  /** Control points rendered by this host. Defaults to all eight points. */
+  handles?: readonly ResizeHandle[];
 };
 
 export type DomTransformer = {
@@ -57,6 +59,7 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
   let captureElement: HTMLElement | undefined;
   let startScreen: Point = { x: 0, y: 0 };
   let interactive = true;
+  const allowedHandles = new Set(options.handles ?? ["nw", "n", "ne", "e", "se", "s", "sw", "w"]);
 
   const applyInteractivity = (): void => {
     for (const element of elements.values()) element.style.pointerEvents = interactive ? "auto" : "none";
@@ -145,7 +148,10 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
       // stays correct if the viewport pans mid-gesture.
       const from = board.viewport.toWorld(startScreen);
       const to = board.viewport.toWorld(screen);
-      session.update({ x: to.x - from.x, y: to.y - from.y });
+      session.update(
+        { x: to.x - from.x, y: to.y - from.y },
+        { preserveAspectRatio: event.metaKey || event.ctrlKey },
+      );
       refresh();
     };
     const onPointerUp = (event: PointerEvent) => {
@@ -173,7 +179,7 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
   };
 
   const refresh = () => {
-    const placements = board.transform.handles();
+    const placements = board.transform.handles().filter((placement) => allowedHandles.has(placement.handle));
     if (placements.length === 0) {
       for (const element of elements.values()) element.style.display = "none";
       return;
