@@ -60,6 +60,7 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
   let startScreen: Point = { x: 0, y: 0 };
   let interactive = true;
   const allowedHandles = new Set(options.handles ?? ["nw", "n", "ne", "e", "se", "s", "sw", "w"]);
+  let preserveAspectRatio = false;
 
   const applyInteractivity = (): void => {
     for (const element of elements.values()) element.style.pointerEvents = interactive ? "auto" : "none";
@@ -150,7 +151,7 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
       const to = board.viewport.toWorld(screen);
       session.update(
         { x: to.x - from.x, y: to.y - from.y },
-        { preserveAspectRatio: event.metaKey || event.ctrlKey },
+        { preserveAspectRatio: preserveAspectRatio || event.metaKey || event.ctrlKey },
       );
       refresh();
     };
@@ -196,13 +197,22 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
 
   // Escape aborts a gesture in flight, matching every other canvas editor.
   const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Meta" || event.key === "Control") preserveAspectRatio = true;
     if (event.key === "Escape" && session) {
       event.preventDefault();
       endSession("cancel");
     }
   };
+  const onKeyUp = (event: KeyboardEvent) => {
+    if (event.key === "Meta" || event.key === "Control") preserveAspectRatio = false;
+  };
+  const onWindowBlur = () => { preserveAspectRatio = false; };
   window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("keyup", onKeyUp);
+  window.addEventListener("blur", onWindowBlur);
   disposers.push(() => window.removeEventListener("keydown", onKeyDown));
+  disposers.push(() => window.removeEventListener("keyup", onKeyUp));
+  disposers.push(() => window.removeEventListener("blur", onWindowBlur));
 
   for (const event of ["selection:change", "change", "viewport:change"] as const) {
     disposers.push(board.on(event, refresh));
