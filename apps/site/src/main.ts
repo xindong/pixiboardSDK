@@ -1147,6 +1147,10 @@ function beginNodeRename(board: PixiBoard, nodeId: string, resyncMediaBadges: ()
   const currentName = nodeName(node);
   const existing = textEditorOverlay.querySelector<HTMLElement>("[data-node-rename]");
   existing?.remove();
+  // Keep the live media badge from rendering underneath the editor. Both
+  // layers contain the same name, which reads as a ghosted duplicate while
+  // the input is active.
+  mediaOverlay.classList.add("is-editing-name");
 
   const input = document.createElement("input");
   input.className = "node-name-editor";
@@ -1222,6 +1226,7 @@ function beginNodeRename(board: PixiBoard, nodeId: string, resyncMediaBadges: ()
   input.remove = () => {
     if (removed) return;
     removed = true;
+    mediaOverlay.classList.remove("is-editing-name");
     unsubscribeChange();
     unsubscribeViewport();
     window.removeEventListener("resize", reposition);

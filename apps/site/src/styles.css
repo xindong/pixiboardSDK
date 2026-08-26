@@ -699,6 +699,11 @@ body {
   text-overflow: ellipsis;
 }
 
+/* The rename input is the only name layer during editing. */
+.media-overlay.is-editing-name .media-label {
+  visibility: hidden;
+}
+
 /* Zoomed far enough out that names would overlap, the overlay drops the text
    and keeps just the icon, so a dense board stays readable. */
 .media-label-collapsed {
@@ -764,9 +769,8 @@ body {
 
 /* Drawn by attachSelectionOverlay; the SDK sets position and size, we style. */
 .pixiboard-selection-outline {
-  border: 1.5px solid var(--accent-strong);
+  border: 1px solid var(--accent-strong);
   border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(10, 13, 18, 0.55), 0 0 12px rgba(124, 140, 248, 0.35);
   pointer-events: none;
 }
 
