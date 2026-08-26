@@ -62,6 +62,10 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
   const allowedHandles = new Set(options.handles ?? ["nw", "n", "ne", "e", "se", "s", "sw", "w"]);
   let preserveAspectRatio = false;
 
+  const hasAspectModifier = (event: KeyboardEvent | PointerEvent): boolean => {
+    return event.metaKey || event.ctrlKey || event.getModifierState("Meta") || event.getModifierState("Control");
+  };
+
   const applyInteractivity = (): void => {
     for (const element of elements.values()) element.style.pointerEvents = interactive ? "auto" : "none";
   };
@@ -131,6 +135,9 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
       // drag under the handle.
       event.preventDefault();
       event.stopPropagation();
+      // Latch the modifier at gesture start as well as tracking it globally.
+      // Some WebKit pointermove events omit metaKey after pointer capture.
+      preserveAspectRatio = preserveAspectRatio || hasAspectModifier(event);
       const started = board.transform.begin(handle);
       if (!started) return;
       session = started;
@@ -151,7 +158,7 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
       const to = board.viewport.toWorld(screen);
       session.update(
         { x: to.x - from.x, y: to.y - from.y },
-        { preserveAspectRatio: preserveAspectRatio || event.metaKey || event.ctrlKey },
+        { preserveAspectRatio: preserveAspectRatio || hasAspectModifier(event) },
       );
       refresh();
     };
@@ -181,10 +188,11 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
 
   const refresh = () => {
     const placements = board.transform.handles().filter((placement) => allowedHandles.has(placement.handle));
-    if (placements.length === 0) {
-      for (const element of elements.values()) element.style.display = "none";
-      return;
-    }
+    // Handles are pooled. Hide every previously-created element first so a
+    // host changing its allowed handle set can never leave stale mid-edge
+    // points visible on the next projection.
+    for (const element of elements.values()) element.style.display = "none";
+    if (placements.length === 0) return;
     for (const placement of placements) {
       const element = handleFor(placement.handle);
       const screen = board.viewport.toScreen(placement.world);
@@ -197,14 +205,14 @@ export function attachDomTransformer(board: PixiBoard, options: DomTransformerOp
 
   // Escape aborts a gesture in flight, matching every other canvas editor.
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Meta" || event.key === "Control") preserveAspectRatio = true;
+    if (event.key === "Meta" || event.key === "Control" || event.code === "MetaLeft" || event.code === "MetaRight" || event.code === "ControlLeft" || event.code === "ControlRight") preserveAspectRatio = true;
     if (event.key === "Escape" && session) {
       event.preventDefault();
       endSession("cancel");
     }
   };
   const onKeyUp = (event: KeyboardEvent) => {
-    if (event.key === "Meta" || event.key === "Control") preserveAspectRatio = false;
+    if (event.key === "Meta" || event.key === "Control" || event.code === "MetaLeft" || event.code === "MetaRight" || event.code === "ControlLeft" || event.code === "ControlRight") preserveAspectRatio = false;
   };
   const onWindowBlur = () => { preserveAspectRatio = false; };
   window.addEventListener("keydown", onKeyDown);
