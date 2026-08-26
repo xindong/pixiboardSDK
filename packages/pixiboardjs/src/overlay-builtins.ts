@@ -110,6 +110,8 @@ export function attachSelectionOverlay(board: PixiBoard, options: SelectionOverl
 
 export type LabelOverlayOptions = {
   container: HTMLElement;
+  /** Surface that should keep receiving wheel zoom/pan when labels are interactive. */
+  wheelSurface?: HTMLElement;
   /**
    * The text for a node, or undefined for "no label here". Defaults to the
    * node's `name`, falling back to its type.
@@ -150,6 +152,7 @@ export function attachLabelOverlay(board: PixiBoard, options: LabelOverlayOption
     container: options.container,
     itemClassName: `${prefix}-label`,
     collapsedClassName: `${prefix}-label-collapsed`,
+    wheelSurface: options.wheelSurface,
     schedule: options.schedule,
     item: (node) => {
       const value = text(node);

@@ -25,6 +25,7 @@ import {
 } from "./media";
 import { createMediaPlaybackController, type MediaPlaybackController } from "./media-playback";
 import { SiteProjectStore, type SiteProject } from "./project-store";
+import { ProjectSwitcherController } from "./ui/project-switcher";
 
 const THREE_ORBIT_CONTROLS_URL = "three/examples/jsm/controls/OrbitControls.js";
 
@@ -45,13 +46,6 @@ const selectionPlayback = document.querySelector<HTMLDivElement>("#selection-pla
 const playbackToggle = selectionActions.querySelector<HTMLButtonElement>("[data-selection-action='toggle-playback']")!;
 const playbackProgress = document.querySelector<HTMLInputElement>("#playback-progress")!;
 const playbackTime = document.querySelector<HTMLSpanElement>("#playback-time")!;
-const documentViewer = document.querySelector<HTMLDivElement>("#document-viewer")!;
-const documentViewerTitle = document.querySelector<HTMLElement>("#document-viewer-title")!;
-const documentViewerMeta = document.querySelector<HTMLSpanElement>("[data-document-viewer-meta]")!;
-const documentViewerBody = document.querySelector<HTMLDivElement>("[data-document-viewer-body]")!;
-const documentViewerOpen = document.querySelector<HTMLButtonElement>("[data-document-viewer-open]")!;
-const documentViewerDownload = document.querySelector<HTMLButtonElement>("[data-document-viewer-download]")!;
-const documentViewerClose = document.querySelector<HTMLButtonElement>("[data-document-viewer-close]")!;
 const mediaPlayerViewer = document.querySelector<HTMLDivElement>("#media-player-viewer")!;
 const mediaPlayerTitle = document.querySelector<HTMLElement>("#media-player-title")!;
 const mediaPlayerMeta = document.querySelector<HTMLSpanElement>("[data-media-player-meta]")!;
@@ -64,9 +58,6 @@ const screenshotButton = document.querySelector<HTMLButtonElement>('button[data-
 
 uploadButton?.replaceChildren(createIcon("upload", { size: 17 }));
 screenshotButton?.replaceChildren(createIcon("camera", { size: 17 }));
-documentViewerOpen.replaceChildren(createIcon("open", { size: 15 }));
-documentViewerDownload.replaceChildren(createIcon("download", { size: 15 }));
-documentViewerClose.replaceChildren(createIcon("x", { size: 15 }));
 mediaPlayerOpen.replaceChildren(createIcon("open", { size: 15 }));
 mediaPlayerDownload.replaceChildren(createIcon("download", { size: 15 }));
 mediaPlayerClose.replaceChildren(createIcon("x", { size: 15 }));
@@ -279,14 +270,22 @@ async function main(): Promise<void> {
   await board.ready;
   if (application) host.appendChild(application.canvas);
 
+  await refreshModelPreviews(board);
+
   activeBoard = board;
   wireStageTransform(board, application);
+  let spacePanning = false;
   const transformer = wireSelectionOverlay(board);
   wireStatus(board);
   const resyncMediaBadges = wireMediaBadges(board);
-  wireProjectMenu(board, resyncMediaBadges);
-  wirePointerInteractions(board, transformer, resyncMediaBadges);
-  wireDocumentViewer();
+  wireProjectMenu(board);
+  wirePointerInteractions(board, transformer, resyncMediaBadges, {
+    isSpacePanning: () => spacePanning,
+    setSpacePanning: (value) => {
+      spacePanning = value;
+      transformer.setInteractive(!value);
+    },
+  });
   wireMediaPlayerViewer();
   wireSelectionActions(board, resyncMediaBadges);
   wireClipboardAndContextMenu(board, resyncMediaBadges);
@@ -393,7 +392,10 @@ function wireSelectionOverlay(board: PixiBoard): DomTransformer {
   // The overlay's default 6px padding would leave all eight handles visually
   // inset from the dashed multi-selection box.
   attachSelectionOverlay(board, { container: selectionOverlay, groupBoxPadding: 0 });
-  return attachDomTransformer(board, { overlay: handleOverlay, surface: host });
+  return attachDomTransformer(board, {
+    overlay: handleOverlay,
+    surface: host,
+  });
 }
 
 function computeContentBounds(board: PixiBoard) {
@@ -555,8 +557,6 @@ function wireClipboardAndContextMenu(board: PixiBoard, resyncMediaBadges: () => 
         ? [
             { label: "下载原始文件", icon: "download", action: () => downloadSelectedMedia(board) },
             { label: "打开原始文件", icon: "open", action: () => openSelectedMedia(board) },
-            ...(canViewMediaKind(selected.type) ? [{ label: "查看内容", icon: "view", action: () => viewSelectedMedia(board) }] : []),
-            ...(canPlayMediaKind(selected.type) ? [{ label: "打开播放器", icon: "play", action: () => openSelectedMediaPlayer(board) }] : []),
             { label: "恢复比例", icon: "frame", action: () => restoreSelectedMediaRatio(board) },
             { label: "刷新预览", icon: "refresh", action: () => refreshSelectedMediaPreview(board, resyncMediaBadges) },
           ]
@@ -781,69 +781,6 @@ async function openMediaAsset(assetId: string): Promise<void> {
     return;
   }
   window.open(url, "_blank", "noopener,noreferrer");
-}
-
-function viewSelectedMedia(board: PixiBoard): void {
-  const node = selectedMediaNode(board);
-  const assetId = selectedMediaAssetId(node);
-  if (!node || !assetId || !canViewMediaKind(node.type)) return;
-
-  documentViewerTitle.textContent = node.props.name || "文件内容";
-  documentViewerMeta.textContent = `${mediaKindLabel(node.type)} · ${formatBytes(node.props.size)}`;
-  documentViewerOpen.onclick = () => void openMediaAsset(assetId);
-  documentViewerDownload.onclick = () => void downloadMediaAsset(assetId, node.props.name || `${node.type}-${node.id}`);
-  documentViewerBody.replaceChildren();
-  documentViewerBody.replaceChildren(loadingView("正在载入文件…"));
-  documentViewer.hidden = false;
-
-  void (async () => {
-    if (node.type === "html") {
-      const text = await mediaLibrary.originalText(assetId);
-      if (text === undefined) throw new Error("原始文件不存在");
-      const frame = document.createElement("iframe");
-      frame.title = node.props.name || "HTML preview";
-      frame.setAttribute("sandbox", "");
-      frame.srcdoc = text;
-      documentViewerBody.replaceChildren(frame);
-      return;
-    }
-
-    if (node.type === "image") {
-      const url = await mediaLibrary.objectUrl(assetId, "original");
-      if (!url) throw new Error("原始文件不存在");
-      const image = document.createElement("img");
-      image.alt = node.props.name || "图片预览";
-      image.src = url;
-      documentViewerBody.replaceChildren(image);
-      return;
-    }
-
-    if (node.type === "model") {
-      const blob = await mediaLibrary.originalBlob(assetId);
-      if (!blob) throw new Error("原始文件不存在");
-      const file = new File([blob], node.props.name || `model-${assetId}`, { type: node.props.mimeType || blob.type });
-      documentViewerBody.replaceChildren(await createModelViewer(file));
-      return;
-    }
-
-    const text = await mediaLibrary.originalText(assetId);
-    if (text === undefined) throw new Error("原始文件不存在");
-    if (node.type === "markdown") {
-      const article = document.createElement("article");
-      article.className = "document-markdown";
-      article.innerHTML = renderSimpleMarkdown(text);
-      documentViewerBody.replaceChildren(article);
-    } else {
-      const source = document.createElement("pre");
-      source.className = "document-source";
-      source.textContent = text;
-      documentViewerBody.replaceChildren(source);
-    }
-  })().catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    documentViewerBody.replaceChildren(errorView(`查看失败：${message}`));
-    showToast(`查看失败：${message}`, "error");
-  });
 }
 
 async function createModelViewer(file: File): Promise<HTMLElement> {
@@ -1094,28 +1031,6 @@ function errorView(message: string): HTMLElement {
   shell.className = "viewer-state viewer-state-error";
   shell.textContent = message;
   return shell;
-}
-
-function wireDocumentViewer(): void {
-  const close = () => {
-    (window as Window & { __pixiboardModelViewerCleanup?: () => void }).__pixiboardModelViewerCleanup?.();
-    (window as Window & { __pixiboardModelViewerCleanup?: () => void }).__pixiboardModelViewerCleanup = undefined;
-    documentViewer.hidden = true;
-    documentViewerMeta.textContent = "";
-    documentViewerOpen.onclick = null;
-    documentViewerDownload.onclick = null;
-    documentViewerBody.replaceChildren();
-  };
-  documentViewerOpen.replaceChildren(createIcon("open", { size: 15 }));
-  documentViewerDownload.replaceChildren(createIcon("download", { size: 15 }));
-  documentViewerClose.replaceChildren(createIcon("x", { size: 15 }));
-  documentViewerClose.addEventListener("click", close);
-  documentViewer.addEventListener("pointerdown", (event) => {
-    if (event.target === documentViewer) close();
-  });
-  window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !documentViewer.hidden) close();
-  });
 }
 
 function openSelectedMediaPlayer(board: PixiBoard): void {
@@ -1487,10 +1402,6 @@ function isMediaKind(type: string): type is MediaKind {
   return ["image", "video", "audio", "model", "html", "markdown", "text-file", "file"].includes(type);
 }
 
-function canViewMediaKind(type: string): boolean {
-  return ["image", "model", "html", "markdown", "text-file", "file"].includes(type);
-}
-
 function canPlayMediaKind(type: string): boolean {
   return type === "video" || type === "audio";
 }
@@ -1583,7 +1494,7 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
   let pendingSeek: { nodeId: string; time: number } | undefined;
 
   selectionActions.addEventListener("pointerdown", (event) => event.stopPropagation());
-  selectionActions.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
+  selectionActions.addEventListener("wheel", forwardWheelToBoard, { passive: false });
 
   const videoFrameRefreshPatch = (node: BoardNode<MediaProps>, assetId: string): Pick<BoardNode<MediaProps>, "assetRefs"> => {
     const assetRefs = Object.fromEntries(
@@ -1755,6 +1666,7 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
         });
         element.addEventListener("ended", () => resetPlaybackTime(node.id));
         element.addEventListener("timeupdate", () => persistPlaybackTime(node.id, element));
+        element.addEventListener("wheel", forwardWheelToBoard, { passive: false });
         mediaOverlay.appendChild(element);
         activeInlineElement = element;
         positionInlineMediaElement(board, node, element);
@@ -1781,8 +1693,6 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
     const actions = [
       { id: "download", title: "下载原始文件", icon: "download" as const, hidden: false },
       { id: "open", title: "打开原始文件", icon: "open" as const, hidden: false },
-      { id: "view", title: "查看文件内容", icon: "view" as const, hidden: !canViewMediaKind(node.type) },
-      { id: "open-player", title: "打开播放器", icon: "play" as const, hidden: !canPlayMediaKind(node.type) },
       { id: "restore-ratio", title: "恢复导入尺寸", icon: "frame" as const, hidden: !node.props.intrinsicWidth || !node.props.intrinsicHeight },
       { id: "refresh-preview", title: "刷新预览", icon: "refresh" as const, hidden: !isMediaKind(node.type) },
       { id: "delete", title: "删除节点", icon: "delete" as const, hidden: false },
@@ -1836,10 +1746,6 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
       downloadSelectedMedia(board);
     } else if (action === "open") {
       openSelectedMedia(board);
-    } else if (action === "view") {
-      viewSelectedMedia(board);
-    } else if (action === "open-player") {
-      openSelectedMediaPlayer(board);
     } else if (action === "restore-ratio") {
       const width = node.props.intrinsicWidth;
       const height = node.props.intrinsicHeight;
@@ -1938,6 +1844,28 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
   refreshPanel();
 }
 
+function forwardWheelToBoard(event: WheelEvent): void {
+  event.preventDefault();
+  event.stopPropagation();
+  host.dispatchEvent(new WheelEvent("wheel", {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    screenX: event.screenX,
+    screenY: event.screenY,
+    deltaX: event.deltaX,
+    deltaY: event.deltaY,
+    deltaZ: event.deltaZ,
+    deltaMode: event.deltaMode,
+    ctrlKey: event.ctrlKey,
+    shiftKey: event.shiftKey,
+    altKey: event.altKey,
+    metaKey: event.metaKey,
+  }));
+}
+
 function positionInlineMediaElement(board: PixiBoard, node: BoardNode<MediaProps>, element: HTMLMediaElement): void {
   const viewport = board.viewport.get();
   const topLeft = board.viewport.toScreen({ x: node.x, y: node.y });
@@ -1989,6 +1917,7 @@ function formatTime(seconds: number): string {
 function wireMediaBadges(board: PixiBoard): () => void {
   const layer = attachLabelOverlay(board, {
     container: mediaOverlay,
+    wheelSurface: host,
     classPrefix: "media",
     anchor: "top-left",
     offset: { x: 0, y: -22 },
@@ -2054,6 +1983,51 @@ async function clearStorage(board: PixiBoard, resyncMediaBadges: () => void): Pr
   }
 }
 
+async function refreshModelPreviews(board: PixiBoard): Promise<void> {
+  const modelNodes = board.nodes.list().filter((node): node is BoardNode<MediaProps> => node.type === "model");
+  if (!modelNodes.length) return;
+
+  const grouped = new Map<string, BoardNode<MediaProps>[]>();
+  for (const node of modelNodes) {
+    const assetId = selectedMediaAssetId(node);
+    if (!assetId) continue;
+    const bucket = grouped.get(assetId) ?? [];
+    bucket.push(node);
+    grouped.set(assetId, bucket);
+  }
+  if (!grouped.size) return;
+
+  const refreshed = new Set<string>();
+  for (const assetId of grouped.keys()) {
+    const changed = await mediaLibrary.refreshPreview(assetId, "model").catch(() => false);
+    if (changed) refreshed.add(assetId);
+  }
+  if (!refreshed.size) return;
+
+  for (const assetId of refreshed) {
+    textureCache.delete(`${assetId}:preview`);
+  }
+
+  board.transaction("Refresh model previews", () => {
+    for (const assetId of refreshed) {
+      const nodes = grouped.get(assetId) ?? [];
+      for (const node of nodes) {
+        const current = board.nodes.get<MediaProps>(node.id);
+        if (!current) continue;
+        const assetRefs = Object.fromEntries(
+          Object.entries(current.assetRefs ?? {}).filter(([key]) => !key.startsWith("_refreshPreview")),
+        );
+        board.nodes.update<MediaProps>(node.id, {
+          assetRefs: {
+            ...assetRefs,
+            [`_refreshPreview${Date.now()}`]: { assetId, variant: "preview" },
+          },
+        });
+      }
+    }
+  }, { origin: "ui" });
+}
+
 async function cleanupUnusedAssets(board: PixiBoard): Promise<void> {
   try {
     if (board.history.canUndo() && !window.confirm("清理未用资源会永久删除当前所有画布都不再引用的本地文件；如果随后撤销已删除的媒体节点，文件可能无法恢复。继续清理？")) {
@@ -2115,168 +2089,74 @@ async function exportCanvasImage(board: PixiBoard): Promise<void> {
   }
 }
 
-function wireProjectMenu(board: PixiBoard, resyncMediaBadges: () => void): void {
+function wireProjectMenu(board: PixiBoard): void {
+  const root = document.querySelector<HTMLElement>("[data-project-switcher]");
   const trigger = document.querySelector<HTMLButtonElement>("[data-project-trigger]");
+  const triggerIcon = document.querySelector<HTMLElement>("[data-project-trigger-icon]");
   const menu = document.querySelector<HTMLDivElement>("[data-project-menu]");
   const list = document.querySelector<HTMLDivElement>("[data-project-list]");
   const newButton = document.querySelector<HTMLButtonElement>("[data-project-new]");
-  const renameButton = document.querySelector<HTMLButtonElement>("[data-project-rename]");
-  const exportJsonButton = document.querySelector<HTMLButtonElement>("[data-project-export-json]");
-  const cleanupAssetsButton = document.querySelector<HTMLButtonElement>("[data-project-cleanup-assets]");
-  const clearStorageButton = document.querySelector<HTMLButtonElement>("[data-project-clear-storage]");
-  const deleteButton = document.querySelector<HTMLButtonElement>("[data-project-delete]");
   const currentName = document.querySelector<HTMLSpanElement>("[data-project-current]");
-  if (!trigger || !menu || !list) return;
-  if (currentName) currentName.textContent = activeProject?.name ?? "画布";
-  let renamingProjectId: string | undefined;
+  if (!root || !trigger || !triggerIcon || !menu || !list || !newButton || !currentName) return;
 
-  const finishRename = async (projectId: string, name: string) => {
-    const nextName = name.trim();
-    if (!nextName) {
-      renamingProjectId = undefined;
-      await renderProjects();
-      return;
-    }
-    const project = await projectStore.rename(projectId, nextName);
-    renamingProjectId = undefined;
-    if (!project) return;
-    if (project.id === activeProject?.id) {
-      activeProject = project;
-      if (currentName) currentName.textContent = project.name;
-    }
-    await renderProjects();
-    showToast("画布已重命名", "success");
+  const controller = new ProjectSwitcherController({
+    root,
+    trigger,
+    triggerIcon,
+    current: currentName,
+    menu,
+    list,
+    newButton,
+  });
+
+  // Project changes share the board document and active-project pointer, so
+  // serialize transitions to keep autosave from observing an intermediate pair.
+  let projectOperationQueue = Promise.resolve();
+  const enqueueProjectOperation = (operation: () => Promise<void>): void => {
+    projectOperationQueue = projectOperationQueue.then(operation, operation);
   };
 
   const renderProjects = async () => {
     const projects = await projectStore.list();
-    list.replaceChildren(...projects.map((project) => {
-      const active = project.id === activeProject?.id;
-      const item = document.createElement("div");
-      item.className = "project-item";
-      item.dataset.active = String(active);
+    controller.setProjects(projects, activeProject ?? null);
+  };
 
-      if (active && renamingProjectId === project.id) {
-        const form = document.createElement("form");
-        form.className = "project-item-rename";
-        const input = document.createElement("input");
-        input.className = "project-item-input";
-        input.value = project.name;
-        input.maxLength = 64;
-        input.setAttribute("aria-label", "画布名称");
-        const save = document.createElement("button");
-        save.type = "submit";
-        save.className = "project-item-action project-item-save";
-        save.title = "保存";
-        save.setAttribute("aria-label", "保存画布名称");
-        const saveIcon = document.createElement("span");
-        saveIcon.className = "project-icon project-icon-save";
-        saveIcon.setAttribute("aria-hidden", "true");
-        save.replaceChildren(saveIcon);
-        form.addEventListener("submit", (event) => {
-          event.preventDefault();
-          void finishRename(project.id, input.value);
-        });
-        input.addEventListener("keydown", (event) => {
-          if (event.key !== "Escape") return;
-          event.preventDefault();
-          renamingProjectId = undefined;
-          void renderProjects();
-        });
-        form.replaceChildren(input, save);
-        item.append(form);
-        window.requestAnimationFrame(() => {
-          input.focus();
-          input.select();
-        });
-        return item;
-      }
-
-      const openButton = document.createElement("button");
-      openButton.className = "project-item-open";
-      openButton.type = "button";
-      openButton.role = "menuitem";
-      openButton.textContent = project.name;
-      openButton.title = project.name;
-      openButton.addEventListener("click", () => {
-        if (project.id === activeProject?.id) {
-          setOpen(false);
-          return;
-        }
-        void switchProject(board, project.id).then(() => {
-          setOpen(false);
-          void renderProjects();
-        });
+  controller.setActions({
+    onOpenProject: (project) => {
+      enqueueProjectOperation(async () => {
+        await switchProject(board, project.id);
+        await renderProjects();
       });
-
-      item.append(openButton);
-      if (active) {
-        const editButton = document.createElement("button");
-        editButton.type = "button";
-        editButton.className = "project-item-edit";
-        editButton.title = "重命名";
-        editButton.setAttribute("aria-label", "重命名当前画布");
-        const editIcon = document.createElement("span");
-        editIcon.className = "project-icon project-icon-pencil";
-        editIcon.setAttribute("aria-hidden", "true");
-        editButton.replaceChildren(editIcon);
-        editButton.addEventListener("click", (event) => {
-          event.stopPropagation();
-          renamingProjectId = project.id;
-          void renderProjects();
-        });
-        item.append(editButton);
+    },
+    onCreateProject: () => {
+      enqueueProjectOperation(async () => {
+        await createProject(board);
+        controller.close();
+        await renderProjects();
+      });
+    },
+    onDeleteProject: (project) => {
+      enqueueProjectOperation(async () => {
+        await deleteProject(board, project.id);
+        controller.close();
+        await renderProjects();
+      });
+    },
+    onRenameProject: async (project, name) => {
+      if (!name || name === project.name) {
+        await renderProjects();
+        return;
       }
-      return item;
-    }));
-  };
+      const renamed = await projectStore.rename(project.id, name);
+      if (!renamed) return;
+      if (renamed.id === activeProject?.id) {
+        activeProject = renamed;
+      }
+      await renderProjects();
+      showToast("画布已重命名", "success");
+    },
+  });
 
-  const setOpen = (open: boolean) => {
-    menu.hidden = !open;
-    trigger.setAttribute("aria-expanded", String(open));
-    if (open) void renderProjects();
-  };
-  trigger.addEventListener("click", (event) => {
-    event.stopPropagation();
-    setOpen(menu.hidden);
-  });
-  menu.addEventListener("click", (event) => event.stopPropagation());
-  newButton?.addEventListener("click", () => {
-    void createProject(board).then(() => {
-      setOpen(false);
-      void renderProjects();
-    });
-  });
-  renameButton?.addEventListener("click", () => {
-    if (!activeProject) return;
-    renamingProjectId = activeProject.id;
-    setOpen(true);
-    void renderProjects();
-  });
-  exportJsonButton?.addEventListener("click", () => {
-    exportDocument(board);
-    setOpen(false);
-  });
-  cleanupAssetsButton?.addEventListener("click", () => {
-    void cleanupUnusedAssets(board).finally(() => setOpen(false));
-  });
-  clearStorageButton?.addEventListener("click", () => {
-    if (!window.confirm("清空浏览器中保存的所有媒体与画布？这个操作无法撤销。")) return;
-    void clearStorage(board, resyncMediaBadges).finally(() => {
-      setOpen(false);
-      void renderProjects();
-    });
-  });
-  deleteButton?.addEventListener("click", () => {
-    if (!activeProject) return;
-    const name = activeProject.name;
-    if (!window.confirm(`删除画布「${name}」？这个操作不会删除已导入资源。`)) return;
-    void deleteActiveProject(board).then(() => {
-      setOpen(false);
-      void renderProjects();
-    });
-  });
-  document.addEventListener("click", () => setOpen(false));
   void renderProjects();
 }
 
@@ -2290,6 +2170,7 @@ async function switchProject(board: PixiBoard, projectId: string): Promise<void>
   await projectStore.setActive(project.id);
   activeProject = project;
   await board.document.load(project.document, { replaceHistory: true });
+  await refreshModelPreviews(board);
   board.selection.clear();
   board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
   document.querySelector<HTMLSpanElement>("[data-project-current]")!.textContent = project.name;
@@ -2301,6 +2182,7 @@ async function createProject(board: PixiBoard): Promise<void> {
   const project = await projectStore.create("未命名画布", seededDocument());
   activeProject = project;
   await board.document.load(project.document, { replaceHistory: true });
+  await refreshModelPreviews(board);
   board.selection.clear();
   board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
   document.querySelector<HTMLSpanElement>("[data-project-current]")!.textContent = project.name;
@@ -2323,13 +2205,30 @@ async function deleteActiveProject(board: PixiBoard): Promise<void> {
   await projectStore.setActive(nextProject.id);
   activeProject = nextProject;
   await board.document.load(nextProject.document, { replaceHistory: true });
+  await refreshModelPreviews(board);
   board.selection.clear();
   board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
   document.querySelector<HTMLSpanElement>("[data-project-current]")!.textContent = nextProject.name;
   showToast(`已删除 ${deletedName}`, "success");
 }
 
-function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer, resyncMediaBadges: () => void): void {
+async function deleteProject(board: PixiBoard, projectId: string): Promise<void> {
+  const project = await projectStore.get(projectId);
+  if (!project) return;
+  if (projectId === activeProject?.id) {
+    await deleteActiveProject(board);
+  } else {
+    await projectStore.delete(projectId, true);
+    showToast(`已删除 ${project.name}`, "success");
+  }
+}
+
+function wirePointerInteractions(
+  board: PixiBoard,
+  transformer: DomTransformer,
+  resyncMediaBadges: () => void,
+  panModifier: { isSpacePanning(): boolean; setSpacePanning(value: boolean): void },
+): void {
   let mode: "idle" | "select" | "drag-node" | "pan" = "idle";
   // Every selected node moves, so the drag carries one origin per node instead
   // of a single handle. Origins are accumulated in world units to keep the drag
@@ -2348,8 +2247,31 @@ function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer, 
   // move collapses into a single undo step instead of one per frame.
   let dragCoalesceKey: string | undefined;
   let dragSequence = 0;
-  let spacePanning = false;
   let panMoved = false;
+
+  const isOverlayPanTarget = (target: EventTarget | null): target is Element => {
+    return target instanceof Element && Boolean(target.closest("#selection-actions, .pixiboard-handle, .inline-media-audio"));
+  };
+
+  const isInsideHost = (event: PointerEvent): boolean => {
+    const rect = host.getBoundingClientRect();
+    return event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+  };
+
+  const beginPan = (event: PointerEvent, capture: boolean) => {
+    event.preventDefault();
+    board.focus();
+    if (capture) {
+      try {
+        host.setPointerCapture(event.pointerId);
+      } catch {
+        // Forwarded overlay gestures are still tracked by the window listeners.
+      }
+    }
+    lastScreen = toHostPoint(event);
+    mode = "pan";
+    panMoved = false;
+  };
 
   const beginNodeDrag = () => {
     dragOrigins = board.selection
@@ -2361,15 +2283,18 @@ function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer, 
     dragCoalesceKey = `move:${++dragSequence}`;
   };
 
+  document.addEventListener("pointerdown", (event) => {
+    if (mode !== "idle" || !isOverlayPanTarget(event.target) || !isInsideHost(event)) return;
+    const wantsPan = event.button === 1 || event.button === 2 || (event.button === 0 && panModifier.isSpacePanning());
+    if (!wantsPan) return;
+    beginPan(event, false);
+    event.stopImmediatePropagation();
+  }, { capture: true });
+
   host.addEventListener("pointerdown", (event) => {
-    const wantsPan = event.button === 1 || event.button === 2 || (event.button === 0 && spacePanning);
+    const wantsPan = event.button === 1 || event.button === 2 || (event.button === 0 && panModifier.isSpacePanning());
     if (wantsPan) {
-      event.preventDefault();
-      board.focus();
-      host.setPointerCapture(event.pointerId);
-      lastScreen = toHostPoint(event);
-      mode = "pan";
-      panMoved = false;
+      beginPan(event, true);
       return;
     }
     if (event.button !== 0) return;
@@ -2426,7 +2351,7 @@ function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer, 
     }
   });
 
-  host.addEventListener("pointermove", (event) => {
+  window.addEventListener("pointermove", (event) => {
     if (mode === "idle") return;
     const screenPoint = toHostPoint(event);
     const deltaScreen = { x: screenPoint.x - lastScreen.x, y: screenPoint.y - lastScreen.y };
@@ -2476,8 +2401,8 @@ function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer, 
     dragCoalesceKey = undefined;
     panMoved = false;
   };
-  host.addEventListener("pointerup", endDrag);
-  host.addEventListener("pointercancel", endDrag);
+  window.addEventListener("pointerup", endDrag);
+  window.addEventListener("pointercancel", endDrag);
 
   host.addEventListener(
     "wheel",
@@ -2501,18 +2426,18 @@ function wirePointerInteractions(board: PixiBoard, transformer: DomTransformer, 
     if (isTypingTarget(event.target)) return;
     if (event.code === "Space") {
       event.preventDefault();
-      spacePanning = true;
+      panModifier.setSpacePanning(true);
       host.classList.add("is-space-panning");
     }
   });
   window.addEventListener("keyup", (event) => {
     if (event.code === "Space") {
-      spacePanning = false;
+      panModifier.setSpacePanning(false);
       host.classList.remove("is-space-panning");
     }
   });
   window.addEventListener("blur", () => {
-    spacePanning = false;
+    panModifier.setSpacePanning(false);
     host.classList.remove("is-space-panning");
   });
 }

@@ -88,11 +88,11 @@ export class SiteProjectStore {
     return next;
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, preserveActive = false): Promise<void> {
     const database = await this.database();
     await transactionDone(database.transaction([PROJECT_STORE, META_STORE], "readwrite"), (transaction) => {
       transaction.objectStore(PROJECT_STORE).delete(id);
-      transaction.objectStore(META_STORE).delete(ACTIVE_PROJECT_KEY);
+      if (!preserveActive) transaction.objectStore(META_STORE).delete(ACTIVE_PROJECT_KEY);
     });
   }
 

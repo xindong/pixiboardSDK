@@ -29,6 +29,11 @@ export type OverlayLayerOptions = {
   /** Class applied while an item is collapsed by declutter rules. */
   collapsedClassName?: string;
   /**
+   * For interactive overlay items, forwards wheel gestures back to this board
+   * surface so zooming and panning do not get trapped in the DOM layer.
+   */
+  wheelSurface?: HTMLElement;
+  /**
    * Restricts the layer to a set of candidate nodes. Defaults to the board's
    * visible set, so overlay cost tracks what is on screen rather than document
    * size — the whole point of pairing an overlay with a virtualized renderer.
@@ -100,6 +105,30 @@ export function attachOverlayLayer(board: PixiBoard, options: OverlayLayerOption
   let cancelScheduled: (() => void) | undefined;
   let destroyed = false;
 
+  const forwardWheel = options.wheelSurface
+    ? (event: WheelEvent): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        options.wheelSurface?.dispatchEvent(new WheelEvent("wheel", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          screenX: event.screenX,
+          screenY: event.screenY,
+          deltaX: event.deltaX,
+          deltaY: event.deltaY,
+          deltaZ: event.deltaZ,
+          deltaMode: event.deltaMode,
+          ctrlKey: event.ctrlKey,
+          shiftKey: event.shiftKey,
+          altKey: event.altKey,
+          metaKey: event.metaKey,
+        }));
+      }
+    : undefined;
+
   const boundsOf = (node: Readonly<BoardNode<JsonValue>>): WorldBounds =>
     resolveOverlayBounds(node, board.nodeTypes);
 
@@ -133,6 +162,7 @@ export function attachOverlayLayer(board: PixiBoard, options: OverlayLayerOption
     // Transform origin has to be the anchor point itself, otherwise a scaled
     // item drifts away from the node it belongs to as the zoom changes.
     element.style.transformOrigin = "0 0";
+    if (forwardWheel) element.addEventListener("wheel", forwardWheel, { passive: false });
     options.container.appendChild(element);
     active.set(key, element);
     return element;
@@ -141,6 +171,7 @@ export function attachOverlayLayer(board: PixiBoard, options: OverlayLayerOption
   const release = (key: string, element: HTMLElement): void => {
     active.delete(key);
     element.remove();
+    if (forwardWheel) element.removeEventListener("wheel", forwardWheel);
     element.removeAttribute("style");
     element.textContent = "";
     applied.delete(element);

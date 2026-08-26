@@ -7,6 +7,11 @@ export function registerBuiltinRenderers(registry: NodeRendererRegistry): void {
   registerTextureNode(registry, "image", ["preview", "image", "primary", "source"]);
   registerTextureNode(registry, "video", ["preview", "poster", "video", "primary", "source"]);
   registerTextureNode(registry, "audio", ["waveform", "preview", "audio", "primary", "source"]);
+  registerTextureNode(registry, "model", ["preview", "model", "primary", "source"]);
+  registerTextureNode(registry, "html", ["preview", "html", "primary", "source"]);
+  registerTextureNode(registry, "markdown", ["preview", "markdown", "primary", "source"]);
+  registerTextureNode(registry, "text-file", ["preview", "text-file", "primary", "source"]);
+  registerTextureNode(registry, "file", ["preview", "file", "primary", "source"]);
   if (!registry.has("text")) registry.register("text", {
     create(node, ctx) {
       const displayObject = ctx.display.createContainer();
