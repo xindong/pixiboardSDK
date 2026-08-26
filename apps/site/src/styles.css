@@ -770,7 +770,7 @@ body {
   pointer-events: none;
 }
 
-/* The eight resize handles are created and positioned by the SDK's DOM
+/* The corner resize handles are created and positioned by the SDK's DOM
    transformer (attachDomTransformer), which sets only position, size, cursor
    and pointer-events inline — everything visual is ours. They must be real
    elements, not ::before/::after: a pseudo-element is never an event.target,
@@ -782,6 +782,16 @@ body {
      for its own 9px box so the rest of the canvas stays interactive. */
   pointer-events: none;
   z-index: 6;
+}
+
+/* The site intentionally exposes corner resizing only. Keep this host-level
+   rule as a visual guard if a cached SDK bundle briefly contains pooled edge
+   handles; edge handles must never be part of this site's UI. */
+.handle-overlay > .pixiboard-handle-n,
+.handle-overlay > .pixiboard-handle-e,
+.handle-overlay > .pixiboard-handle-s,
+.handle-overlay > .pixiboard-handle-w {
+  display: none !important;
 }
 
 .text-editor-overlay {
