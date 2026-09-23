@@ -263,7 +263,7 @@ class ActiveSession implements TransformSession {
         box.width > 0 ? this.limits.minWidth / box.width : 1,
         box.height > 0 ? this.limits.minHeight / box.height : 1,
       );
-      for (const { id, type, geometry } of this.origins) {
+      for (const { type, geometry } of this.origins) {
         const policy = this.host.resizePolicy(type);
         if (policy && policy.mode !== "free") continue;
         // Degenerate geometry has no aspect ratio and cannot impose a finite
