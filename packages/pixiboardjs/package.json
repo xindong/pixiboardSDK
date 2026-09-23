@@ -1,6 +1,6 @@
 {
   "name": "pixiboardjs",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "High-performance infinite canvas SDK for large, media-heavy, AI-native boards — flat document model, PixiJS rendering, custom nodes.",
   "keywords": [
     "canvas",

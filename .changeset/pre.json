@@ -1,0 +1,28 @@
+{
+  "mode": "pre",
+  "tag": "alpha",
+  "initialVersions": {
+    "pixiboardjs-benchmark": "0.1.0",
+    "pixiboardjs-example-custom-node": "0.1.0",
+    "pixiboardjs-example-desktop-sdk": "0.1.0",
+    "pixiboardjs-example-vanilla": "0.1.0",
+    "pixiboardjs-site": "0.1.0",
+    "@pixi-board/adapter-browser": "0.0.0",
+    "@pixi-board/adapter-contract-tests": "0.0.0",
+    "@pixi-board/adapter-tauri": "0.0.0",
+    "@pixi-board/agent-tools": "0.1.0-alpha.0",
+    "@pixi-board/capabilities": "0.1.0-alpha.0",
+    "@pixi-board/core": "0.1.0-alpha.0",
+    "pixiboardjs": "0.1.0-alpha.0",
+    "@pixi-board/plugin-api-v3": "0.0.0",
+    "@pixi-board/plugin-sdk": "0.1.0-alpha.0",
+    "@pixi-board/renderer-pixi": "0.0.0"
+  },
+  "changesets": [
+    "bright-trees-smile",
+    "p6-publishability",
+    "public-capabilities-agent-tools",
+    "resize-policy-transformer",
+    "viewport-virtualization-lod"
+  ]
+}

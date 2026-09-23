@@ -1,6 +1,6 @@
 {
   "name": "@pixi-board/agent-tools",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "canvas.read / canvas.write agent tool contract over PixiBoardJS capabilities, transport-agnostic",
   "private": false,
   "type": "module",
