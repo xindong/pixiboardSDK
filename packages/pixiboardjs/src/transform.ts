@@ -266,6 +266,9 @@ class ActiveSession implements TransformSession {
       for (const { id, type, geometry } of this.origins) {
         const policy = this.host.resizePolicy(type);
         if (policy && policy.mode !== "free") continue;
+        // Degenerate geometry has no aspect ratio and cannot impose a finite
+        // shared scale floor. Its own resize resolution still applies limits.
+        if (geometry.width <= 0 || geometry.height <= 0) continue;
         const minimums = proportionalMinimums(geometry, this.limits);
         minimumScale = Math.max(
           minimumScale,

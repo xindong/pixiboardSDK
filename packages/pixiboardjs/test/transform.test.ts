@@ -143,6 +143,24 @@ describe("board.transform", () => {
     await instance.destroy();
   });
 
+  it("keeps proportional group resize finite with zero-size nodes", async () => {
+    const instance = await board();
+    await add(instance, "empty", "free.box", { x: 0, y: 0, width: 0, height: 0 });
+    await add(instance, "square", "free.box", { x: 0, y: 0, width: 100, height: 100 });
+    instance.selection.set(["empty", "square"]);
+
+    const session = instance.transform.begin("se")!;
+    expect(() => session.update({ x: -20, y: -20 }, { preserveAspectRatio: true })).not.toThrow();
+    session.commit();
+
+    for (const id of ["empty", "square"]) {
+      const node = instance.nodes.get(id)!;
+      expect(Number.isFinite(node.width)).toBe(true);
+      expect(Number.isFinite(node.height)).toBe(true);
+    }
+    await instance.destroy();
+  });
+
   it("constrains proportional group shrink before laying out adjacent nodes", async () => {
     const instance = await board();
     await add(instance, "wide", "free.box", { x: 0, y: 0, width: 100, height: 10 });
