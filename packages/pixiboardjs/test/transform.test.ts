@@ -153,7 +153,7 @@ describe("board.transform", () => {
     expect(() => session.update({ x: -20, y: -20 }, { preserveAspectRatio: true })).not.toThrow();
     session.commit();
 
-    expect(instance.nodes.get("empty")).toMatchObject({ width: 0, height: 0 });
+    expect(instance.nodes.get("empty")).toMatchObject({ x: 80, y: 80, width: 0, height: 0 });
     for (const id of ["empty", "square"]) {
       const node = instance.nodes.get(id)!;
       expect(Number.isFinite(node.width)).toBe(true);
@@ -173,7 +173,7 @@ describe("board.transform", () => {
     session.commit();
 
     expect(instance.nodes.get("line")!.width).toBe(0);
-    expect(instance.nodes.get("line")!.height).toBeGreaterThanOrEqual(8);
+    expect(instance.nodes.get("line")).toMatchObject({ width: 0, height: 8 });
     await instance.destroy();
   });
 

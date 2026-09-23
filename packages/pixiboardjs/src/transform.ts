@@ -271,8 +271,8 @@ class ActiveSession implements TransformSession {
           // still contribute to the shared scale floor.
           minimumScale = Math.max(
             minimumScale,
-            geometry.width > 0 ? this.limits.minWidth / geometry.width : 1,
-            geometry.height > 0 ? this.limits.minHeight / geometry.height : 1,
+            geometry.width > 0 ? this.limits.minWidth / geometry.width : 0,
+            geometry.height > 0 ? this.limits.minHeight / geometry.height : 0,
           );
           continue;
         }
