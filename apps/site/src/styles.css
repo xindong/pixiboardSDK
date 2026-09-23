@@ -61,8 +61,8 @@ body {
 
 .selection-box {
   position: absolute;
-  border: 1px solid var(--accent-strong);
-  background: var(--accent-soft);
+  border: 1px solid rgba(79, 124, 255, 0.55);
+  background: rgba(79, 124, 255, 0.045);
   pointer-events: none;
   z-index: 5;
 }
@@ -699,6 +699,11 @@ body {
   text-overflow: ellipsis;
 }
 
+/* The rename input replaces only the name; the media type tag stays visible. */
+.media-overlay.is-editing-name .media-label-text {
+  visibility: hidden;
+}
+
 /* Zoomed far enough out that names would overlap, the overlay drops the text
    and keeps just the icon, so a dense board stays readable. */
 .media-label-collapsed {
@@ -764,13 +769,12 @@ body {
 
 /* Drawn by attachSelectionOverlay; the SDK sets position and size, we style. */
 .pixiboard-selection-outline {
-  border: 1.5px solid var(--accent-strong);
+  border: 1px solid var(--accent-strong);
   border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(10, 13, 18, 0.55), 0 0 12px rgba(124, 140, 248, 0.35);
   pointer-events: none;
 }
 
-/* The eight resize handles are created and positioned by the SDK's DOM
+/* The corner resize handles are created and positioned by the SDK's DOM
    transformer (attachDomTransformer), which sets only position, size, cursor
    and pointer-events inline — everything visual is ours. They must be real
    elements, not ::before/::after: a pseudo-element is never an event.target,
@@ -782,6 +786,16 @@ body {
      for its own 9px box so the rest of the canvas stays interactive. */
   pointer-events: none;
   z-index: 6;
+}
+
+/* The site intentionally exposes corner resizing only. Keep this host-level
+   rule as a visual guard if a cached SDK bundle briefly contains pooled edge
+   handles; edge handles must never be part of this site's UI. */
+.handle-overlay > .pixiboard-handle-n,
+.handle-overlay > .pixiboard-handle-e,
+.handle-overlay > .pixiboard-handle-s,
+.handle-overlay > .pixiboard-handle-w {
+  display: none !important;
 }
 
 .text-editor-overlay {
@@ -842,10 +856,10 @@ body {
 }
 
 .pixiboard-handle {
-  background: var(--bg-0);
-  border: 1.5px solid var(--accent-strong);
-  border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(10, 13, 18, 0.55);
+  background: #ffffff;
+  border: 1px solid var(--accent-strong);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
 }
 
 .pixiboard-handle:hover {
@@ -855,8 +869,9 @@ body {
 /* Shown only when more than one node is selected, so the group reads as one
    movable unit. */
 .pixiboard-selection-bbox {
-  border: 1px dashed rgba(154, 166, 255, 0.7);
-  border-radius: 3px;
+  border: 1px dashed rgba(79, 124, 255, 0.72);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
   pointer-events: none;
 }
 
@@ -1012,6 +1027,11 @@ body {
   border-radius: 5px;
 }
 
+.project-item:hover,
+.project-item:focus-within {
+  background: rgba(37, 99, 235, 0.07);
+}
+
 .project-item[data-active="true"] {
   background: rgba(37, 99, 235, 0.08);
 }
@@ -1037,7 +1057,7 @@ body {
 
 .project-item-open:hover {
   color: #172033;
-  background: rgba(15, 23, 42, 0.04);
+  background: transparent;
 }
 
 .project-item[data-active="true"] .project-item-open {

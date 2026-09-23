@@ -113,7 +113,9 @@ const textTypeDefinition: CustomNodeDefinition<TextProps> = {
   type: "text",
   version: 1,
   defaults: { text: "" },
-  resize: { mode: "custom", resize: ({ node, width }) => ({ width, height: textNodeHeight(node.props, width) }) },
+  // Resizing is proportional by default; Command/Ctrl temporarily unlocks
+  // freeform sizing during the gesture.
+  resize: { mode: "free" },
   validate(value): TextProps {
     const candidate = (value ?? {}) as Partial<TextProps>;
     return {
@@ -133,18 +135,15 @@ type MediaProps = { name: string; mimeType: string; size: number; duration?: num
  * `assetRefs`; core ships no node types at all, so the host declares the data
  * side of those three types here.
  *
- * Images and video keep their aspect ratio when resized so media never
- * stretches; audio is a fixed-height waveform strip that only grows sideways,
- * which the custom policy below enforces.
+ * The site uses gesture-level proportional resizing by default; hosts can still
+ * provide content-specific resize policies.
  */
 function mediaTypeDefinition(type: MediaKind): CustomNodeDefinition<MediaProps> {
   return {
     type,
     version: 1,
     defaults: { name: "", mimeType: "", size: 0 },
-    resize: type === "audio"
-      ? { mode: "custom", resize: ({ node, width }) => ({ width, height: node.height }) }
-      : { mode: "aspect-ratio" },
+    resize: { mode: "free" },
     validate(value): MediaProps {
       const candidate = (value ?? {}) as Partial<MediaProps>;
       return {
@@ -239,6 +238,7 @@ async function main(): Promise<void> {
     document: restored.document,
     core: { nodeTypes },
     interactions: { pointer: true, keyboard: true },
+    transform: { handles: ["nw", "ne", "se", "sw"] },
     ports: {
       events: window,
       onKeyboardEvent: (event) => handleKeyboard(event as KeyboardEvent),
@@ -391,10 +391,11 @@ function wireSelectionOverlay(board: PixiBoard): DomTransformer {
   // Keep the group outline on the same bounds as the transform controller.
   // The overlay's default 6px padding would leave all eight handles visually
   // inset from the dashed multi-selection box.
-  attachSelectionOverlay(board, { container: selectionOverlay, groupBoxPadding: 0 });
+  attachSelectionOverlay(board, { container: selectionOverlay, groupBoxPadding: 0, nodeOutlines: "single" });
   return attachDomTransformer(board, {
     overlay: handleOverlay,
     surface: host,
+    handles: ["nw", "ne", "se", "sw"],
   });
 }
 
@@ -557,7 +558,7 @@ function wireClipboardAndContextMenu(board: PixiBoard, resyncMediaBadges: () => 
         ? [
             { label: "下载原始文件", icon: "download", action: () => downloadSelectedMedia(board) },
             { label: "打开原始文件", icon: "open", action: () => openSelectedMedia(board) },
-            { label: "恢复比例", icon: "frame", action: () => restoreSelectedMediaRatio(board) },
+            { label: "恢复导入时的宽高比", icon: "frame", action: () => restoreSelectedMediaRatio(board) },
             { label: "刷新预览", icon: "refresh", action: () => refreshSelectedMediaPreview(board, resyncMediaBadges) },
           ]
         : []),
@@ -1092,13 +1093,33 @@ function wireMediaPlayerViewer(): void {
 
 function restoreSelectedMediaRatio(board: PixiBoard): void {
   const node = selectedMediaNode(board);
-  const width = node?.props.intrinsicWidth;
-  const height = node?.props.intrinsicHeight;
-  if (!node || !width || !height) {
+  if (node) restoreMediaAspectRatio(board, node);
+}
+
+function restoreMediaAspectRatio(board: PixiBoard, node: BoardNode<MediaProps>): void {
+  const intrinsicWidth = node.props.intrinsicWidth;
+  const intrinsicHeight = node.props.intrinsicHeight;
+  if (!intrinsicWidth || !intrinsicHeight) {
     showToast("这个节点没有记录导入尺寸", "error");
     return;
   }
-  board.transaction("Restore media ratio", () => board.nodes.update<MediaProps>(node.id, { width, height }), { origin: "ui" });
+  // Keep the current width scale, then derive the height from the imported ratio.
+  const scale = node.width / intrinsicWidth;
+  const width = intrinsicWidth * scale;
+  const height = intrinsicHeight * scale;
+  // Node rotation is around its top-left, so keep its rotated visual center fixed.
+  const cos = Math.cos(node.rotation);
+  const sin = Math.sin(node.rotation);
+  const centerX = node.x + (cos * node.width - sin * node.height) / 2;
+  const centerY = node.y + (sin * node.width + cos * node.height) / 2;
+  const nextOffsetX = (cos * width - sin * height) / 2;
+  const nextOffsetY = (sin * width + cos * height) / 2;
+  board.transaction("Restore imported aspect ratio", () => board.nodes.update<MediaProps>(node.id, {
+    width,
+    height,
+    x: centerX - nextOffsetX,
+    y: centerY - nextOffsetY,
+  }), { origin: "ui" });
 }
 
 function refreshSelectedMediaPreview(board: PixiBoard, resyncMediaBadges: () => void): void {
@@ -1146,6 +1167,10 @@ function beginNodeRename(board: PixiBoard, nodeId: string, resyncMediaBadges: ()
   const currentName = nodeName(node);
   const existing = textEditorOverlay.querySelector<HTMLElement>("[data-node-rename]");
   existing?.remove();
+  // Keep the live media badge from rendering underneath the editor. Both
+  // layers contain the same name, which reads as a ghosted duplicate while
+  // the input is active.
+  mediaOverlay.classList.add("is-editing-name");
 
   const input = document.createElement("input");
   input.className = "node-name-editor";
@@ -1221,6 +1246,7 @@ function beginNodeRename(board: PixiBoard, nodeId: string, resyncMediaBadges: ()
   input.remove = () => {
     if (removed) return;
     removed = true;
+    mediaOverlay.classList.remove("is-editing-name");
     unsubscribeChange();
     unsubscribeViewport();
     window.removeEventListener("resize", reposition);
@@ -1692,8 +1718,7 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
   const renderToolbar = (node: BoardNode<MediaProps>) => {
     const actions = [
       { id: "download", title: "下载原始文件", icon: "download" as const, hidden: false },
-      { id: "open", title: "打开原始文件", icon: "open" as const, hidden: false },
-      { id: "restore-ratio", title: "恢复导入尺寸", icon: "frame" as const, hidden: !node.props.intrinsicWidth || !node.props.intrinsicHeight },
+      { id: "restore-ratio", title: "恢复导入时的宽高比", icon: "frame" as const, hidden: !node.props.intrinsicWidth || !node.props.intrinsicHeight },
       { id: "refresh-preview", title: "刷新预览", icon: "refresh" as const, hidden: !isMediaKind(node.type) },
       { id: "delete", title: "删除节点", icon: "delete" as const, hidden: false },
     ];
@@ -1744,16 +1769,8 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
 
     if (action === "download") {
       downloadSelectedMedia(board);
-    } else if (action === "open") {
-      openSelectedMedia(board);
     } else if (action === "restore-ratio") {
-      const width = node.props.intrinsicWidth;
-      const height = node.props.intrinsicHeight;
-      if (!width || !height) {
-        showToast("这个节点没有记录导入尺寸", "error");
-        return;
-      }
-      board.transaction("Restore media ratio", () => board.nodes.update<MediaProps>(node.id, { width, height }), { origin: "ui" });
+      restoreMediaAspectRatio(board, node);
     } else if (action === "refresh-preview") {
       const assetId = node.assetRefs?.primary?.assetId ?? node.assetRefs?.preview?.assetId ?? node.assetRefs?.poster?.assetId ?? node.assetRefs?.waveform?.assetId;
       if (!assetId || !isMediaKind(node.type)) return;

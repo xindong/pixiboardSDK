@@ -15,7 +15,7 @@ function boxDefinition(type: string, resize?: ResizePolicy<BoxProps>): NodeTypeD
   };
 }
 
-async function board(): Promise<PixiBoard> {
+async function boardWithTransform(transform?: { handles?: readonly ("nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w")[] }): Promise<PixiBoard> {
   const nodeTypes = new NodeTypeRegistry();
   nodeTypes.register(boxDefinition("free.box"));
   nodeTypes.register(boxDefinition("fixed.box", { mode: "fixed" }));
@@ -23,10 +23,15 @@ async function board(): Promise<PixiBoard> {
   let id = 0;
   const instance = await createPixiBoard({
     headless: true,
+    transform,
     core: { nodeTypes, idFactory: () => `id-${++id}`, now: () => 1 },
   });
   await instance.ready;
   return instance;
+}
+
+async function board(): Promise<PixiBoard> {
+  return boardWithTransform();
 }
 
 function add(instance: PixiBoard, id: string, type: string, geometry: { x: number; y: number; width: number; height: number }) {
@@ -56,6 +61,15 @@ describe("board.transform", () => {
     await instance.destroy();
   });
 
+  it("supports a host selecting only corner handles", async () => {
+    const instance = await boardWithTransform({ handles: ["nw", "ne", "se", "sw"] });
+    await add(instance, "a", "free.box", { x: 100, y: 100, width: 200, height: 100 });
+    instance.selection.set(["a"]);
+
+    expect(instance.transform.handles().map((placement) => placement.handle)).toEqual(["nw", "ne", "se", "sw"]);
+    await instance.destroy();
+  });
+
   it("drives a gesture from absolute deltas and collapses it into one undo step", async () => {
     const instance = await board();
     await add(instance, "a", "free.box", { x: 100, y: 100, width: 200, height: 100 });
@@ -71,6 +85,112 @@ describe("board.transform", () => {
     expect(instance.nodes.get("a")).toMatchObject({ x: 100, y: 100, width: 260, height: 130 });
     instance.history.undo();
     expect(instance.nodes.get("a")).toMatchObject({ width: 200, height: 100 });
+    await instance.destroy();
+  });
+
+  it("preserves aspect ratio when requested by the host", async () => {
+    const instance = await board();
+    await add(instance, "a", "free.box", { x: 100, y: 100, width: 200, height: 100 });
+    instance.selection.set(["a"]);
+
+    const session = instance.transform.begin("se")!;
+    session.update({ x: 20, y: 80 }, { preserveAspectRatio: true });
+    session.commit();
+
+    expect(instance.nodes.get("a")).toMatchObject({ width: 360, height: 180 });
+    await instance.destroy();
+  });
+
+  it("allows freeform geometry when the host explicitly disables aspect preservation", async () => {
+    const instance = await board();
+    await add(instance, "a", "free.box", { x: 100, y: 100, width: 200, height: 100 });
+    instance.selection.set(["a"]);
+
+    const session = instance.transform.begin("se")!;
+    session.update({ x: 20, y: 80 }, { preserveAspectRatio: false });
+    session.commit();
+
+    expect(instance.nodes.get("a")).toMatchObject({ width: 220, height: 180 });
+    await instance.destroy();
+  });
+
+  it("uses the dominant shrinking axis for proportional group resize", async () => {
+    const instance = await board();
+    await add(instance, "a", "free.box", { x: 0, y: 0, width: 100, height: 100 });
+    await add(instance, "b", "free.box", { x: 100, y: 0, width: 100, height: 100 });
+    instance.selection.set(["a", "b"]);
+
+    const session = instance.transform.begin("se")!;
+    session.update({ x: -100, y: -10 }, { preserveAspectRatio: true });
+    session.commit();
+
+    expect(instance.nodes.get("a")).toMatchObject({ x: 0, y: 0, width: 50, height: 50 });
+    expect(instance.nodes.get("b")).toMatchObject({ x: 50, y: 0, width: 50, height: 50 });
+    await instance.destroy();
+  });
+
+  it("keeps a very wide node proportional when the minimum size is reached", async () => {
+    const instance = await board();
+    await add(instance, "wide", "free.box", { x: 0, y: 0, width: 100, height: 10 });
+    instance.selection.set(["wide"]);
+
+    const session = instance.transform.begin("se")!;
+    session.update({ x: -50, y: -5 }, { preserveAspectRatio: true });
+    session.commit();
+
+    expect(instance.nodes.get("wide")).toMatchObject({ width: 80, height: 8 });
+    expect(instance.nodes.get("wide")!.width / instance.nodes.get("wide")!.height).toBeCloseTo(10);
+    await instance.destroy();
+  });
+
+  it("keeps proportional group resize finite with zero-size nodes", async () => {
+    const instance = await board();
+    await add(instance, "empty", "free.box", { x: 100, y: 100, width: 0, height: 0 });
+    await add(instance, "square", "free.box", { x: 0, y: 0, width: 100, height: 100 });
+    instance.selection.set(["empty", "square"]);
+
+    const session = instance.transform.begin("se")!;
+    expect(() => session.update({ x: -20, y: -20 }, { preserveAspectRatio: true })).not.toThrow();
+    session.commit();
+
+    expect(instance.nodes.get("empty")).toMatchObject({ x: 80, y: 80, width: 0, height: 0 });
+    for (const id of ["empty", "square"]) {
+      const node = instance.nodes.get(id)!;
+      expect(Number.isFinite(node.width)).toBe(true);
+      expect(Number.isFinite(node.height)).toBe(true);
+    }
+    await instance.destroy();
+  });
+
+  it("keeps the nonzero axis minimum for degenerate group nodes", async () => {
+    const instance = await board();
+    await add(instance, "line", "free.box", { x: 0, y: 0, width: 0, height: 10 });
+    await add(instance, "square", "free.box", { x: 0, y: 0, width: 100, height: 100 });
+    instance.selection.set(["line", "square"]);
+
+    const session = instance.transform.begin("se")!;
+    session.update({ x: -99, y: -99 }, { preserveAspectRatio: true });
+    session.commit();
+
+    expect(instance.nodes.get("line")!.width).toBe(0);
+    expect(instance.nodes.get("line")).toMatchObject({ width: 0, height: 8 });
+    await instance.destroy();
+  });
+
+  it("constrains proportional group shrink before laying out adjacent nodes", async () => {
+    const instance = await board();
+    await add(instance, "wide", "free.box", { x: 0, y: 0, width: 100, height: 10 });
+    await add(instance, "square", "free.box", { x: 100, y: 0, width: 100, height: 100 });
+    instance.selection.set(["wide", "square"]);
+
+    const session = instance.transform.begin("se")!;
+    session.update({ x: -100, y: -50 }, { preserveAspectRatio: true });
+    session.commit();
+
+    expect(instance.nodes.get("wide")).toMatchObject({ width: 80, height: 8 });
+    expect(instance.nodes.get("square")).toMatchObject({ x: 80, width: 80, height: 80 });
+    expect(instance.nodes.get("wide")!.x + instance.nodes.get("wide")!.width)
+      .toBeLessThanOrEqual(instance.nodes.get("square")!.x);
     await instance.destroy();
   });
 

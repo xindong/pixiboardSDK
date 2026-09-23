@@ -41,7 +41,7 @@
       </main>
       <div class="media-overlay" id="media-overlay" aria-hidden="true"></div>
       <div class="selection-overlay" id="selection-overlay" aria-hidden="true"></div>
-      <!-- The SDK's DOM transformer appends its eight interactive resize
+      <!-- The SDK's DOM transformer appends the four corner resize
            handles here. It sits above the outline overlay so a handle stays
            grabbable where the two would otherwise overlap. -->
       <div class="handle-overlay" id="handle-overlay" aria-hidden="true"></div>
@@ -50,8 +50,7 @@
       <div class="selection-actions" id="selection-actions" hidden aria-label="选中资源操作">
         <div class="selection-actions-row">
           <button type="button" class="sp-button sp-download" data-selection-action="download" title="下载原始文件" aria-label="下载原始文件"></button>
-          <button type="button" class="sp-button sp-open" data-selection-action="open" title="在新窗口打开原始文件" aria-label="在新窗口打开原始文件"></button>
-          <button type="button" class="sp-button sp-frame" data-selection-action="restore-ratio" title="恢复导入尺寸" aria-label="恢复导入尺寸"></button>
+          <button type="button" class="sp-button sp-frame" data-selection-action="restore-ratio" title="恢复导入时的宽高比" aria-label="恢复导入时的宽高比"></button>
           <button type="button" class="sp-button sp-refresh" data-selection-action="refresh-preview" title="重新生成预览" aria-label="重新生成预览"></button>
           <button type="button" class="sp-button sp-delete" data-selection-action="delete" title="删除节点" aria-label="删除节点"></button>
         </div>

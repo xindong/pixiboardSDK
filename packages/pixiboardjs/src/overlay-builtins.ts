@@ -15,6 +15,12 @@ export type SelectionOverlayOptions = {
   groupBox?: boolean;
   /** Padding in CSS pixels between the group box and the selection. */
   groupBoxPadding?: number;
+  /**
+   * Draw individual node outlines. Use `"single"` to retain the outline for
+   * a single-node selection while a multi-selection only shows its group box.
+   * Defaults to true.
+   */
+  nodeOutlines?: boolean | "single";
   schedule?(callback: () => void): () => void;
 };
 
@@ -31,6 +37,7 @@ export function attachSelectionOverlay(board: PixiBoard, options: SelectionOverl
   const prefix = options.classPrefix ?? "pixiboard";
   const padding = options.groupBoxPadding ?? 6;
   const groupBox = options.groupBox ?? true;
+  const nodeOutlines = options.nodeOutlines ?? true;
   const outlineClass = `${prefix}-selection-outline`;
   const groupClass = `${prefix}-selection-bbox`;
 
@@ -84,7 +91,12 @@ export function attachSelectionOverlay(board: PixiBoard, options: SelectionOverl
     // Selection outlines follow the selection, not the viewport: a selected
     // node scrolled just off screen must keep its outline, so this
     // deliberately opts out of visible-set culling.
-    candidates: () => board.selection.get(),
+    candidates: () => {
+      const selected = board.selection.get();
+      return nodeOutlines === true || (nodeOutlines === "single" && selected.length === 1)
+        ? selected
+        : [];
+    },
     item: () => ({ anchor: "top-left" }),
     render: ({ element, node }) => {
       const size = screenSize(board, node);
