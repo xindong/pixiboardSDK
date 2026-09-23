@@ -32,7 +32,3 @@
 - 9415656: Prepare reproducible JavaScript and declaration artifacts, formal package exports, API reporting, and release-size gates for the P6 publishability workflow.
 
 All notable changes to `@pixi-board/plugin-sdk` will be documented here.
-
-## Unreleased
-
-- Prepared the public Plugin API v3 facade; packaged host implementation remains internal.

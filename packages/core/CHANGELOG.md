@@ -45,7 +45,3 @@
 - 9415656: Prepare reproducible JavaScript and declaration artifacts, formal package exports, API reporting, and release-size gates for the P6 publishability workflow.
 
 All notable changes to `@pixi-board/core` will be documented here.
-
-## Unreleased
-
-- Added publishable JavaScript and declaration artifact configuration for the public beta.
