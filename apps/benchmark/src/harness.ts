@@ -234,16 +234,21 @@ async function runCoreTransactionBenchmarks(
   let batchChangeCount = 0;
   let batchRevision = batchCore.document.snapshot().revision;
   batchCore.on("change", (event) => { batchChange = event; batchChangeCount += 1; });
-  const batchIds = document.nodes.slice(0, 1_000).map((node) => node.id);
+  const batchNodes = document.nodes.slice(0, 1_000);
+  const batchIds = batchNodes.map((node) => node.id);
+  // Keep the update payload deterministic without doing 1,000 deep-cloning
+  // nodes.get() reads inside the timed transaction. This target measures the
+  // core's batch mutation/commit path, not read-modify-write lookup overhead.
+  const batchBaseYById = new Map(batchNodes.map((node) => [node.id, node.y]));
   const batchOperation = (iteration: number) => {
     const beforeRevision = batchRevision;
     const beforeChanges = batchChangeCount;
     batchChange = undefined;
     const coreTransactionLatencyMs = duration(() => {
       batchCore.transaction("Benchmark update 1000", () => {
+        const offset = iteration % 2 === 0 ? 1 : -1;
         for (const id of batchIds) {
-          const node = batchCore.nodes.get(id)!;
-          batchCore.nodes.update(id, { y: node.y + (iteration % 2 === 0 ? 1 : -1) });
+          batchCore.nodes.update(id, { y: batchBaseYById.get(id)! + offset });
         }
       });
     });
