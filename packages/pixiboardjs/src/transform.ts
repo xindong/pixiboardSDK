@@ -253,8 +253,30 @@ class ActiveSession implements TransformSession {
     // A group with no extent on an axis (every node stacked on one line) has
     // no meaningful scale factor there; leave that axis alone instead of
     // dividing by zero.
-    const scaleX = box.width > 0 ? width / box.width : 1;
-    const scaleY = box.height > 0 ? height / box.height : 1;
+    let scaleX = box.width > 0 ? width / box.width : 1;
+    let scaleY = box.height > 0 ? height / box.height : 1;
+    if (preserveAspectRatio && axes.horizontal !== 0 && axes.vertical !== 0) {
+      // A group shares one scale, so constrain that scale before both node
+      // dimensions and placements are calculated; clamping nodes individually
+      // after placement would make adjacent nodes overlap.
+      let minimumScale = Math.max(
+        box.width > 0 ? this.limits.minWidth / box.width : 1,
+        box.height > 0 ? this.limits.minHeight / box.height : 1,
+      );
+      for (const { id, type, geometry } of this.origins) {
+        const policy = this.host.resizePolicy(type);
+        if (policy && policy.mode !== "free") continue;
+        const minimums = proportionalMinimums(geometry, this.limits);
+        minimumScale = Math.max(
+          minimumScale,
+          minimums.minWidth / geometry.width,
+          minimums.minHeight / geometry.height,
+        );
+      }
+      const scale = Math.max(scaleX, scaleY, minimumScale);
+      scaleX = scale;
+      scaleY = scale;
+    }
     // The handle drags one side; the opposite side is what everything is
     // measured from. A mid-edge handle leaves its cross axis anchored at the
     // box origin, which is the same as not scaling that axis at all.

@@ -143,6 +143,23 @@ describe("board.transform", () => {
     await instance.destroy();
   });
 
+  it("constrains proportional group shrink before laying out adjacent nodes", async () => {
+    const instance = await board();
+    await add(instance, "wide", "free.box", { x: 0, y: 0, width: 100, height: 10 });
+    await add(instance, "square", "free.box", { x: 100, y: 0, width: 100, height: 100 });
+    instance.selection.set(["wide", "square"]);
+
+    const session = instance.transform.begin("se")!;
+    session.update({ x: -100, y: -50 }, { preserveAspectRatio: true });
+    session.commit();
+
+    expect(instance.nodes.get("wide")).toMatchObject({ width: 80, height: 8 });
+    expect(instance.nodes.get("square")).toMatchObject({ x: 80, width: 80, height: 80 });
+    expect(instance.nodes.get("wide")!.x + instance.nodes.get("wide")!.width)
+      .toBeLessThanOrEqual(instance.nodes.get("square")!.x);
+    await instance.destroy();
+  });
+
   it("cancel() restores the geometry captured at begin()", async () => {
     const instance = await board();
     await add(instance, "a", "free.box", { x: 100, y: 100, width: 200, height: 100 });
