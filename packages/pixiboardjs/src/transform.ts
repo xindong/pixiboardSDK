@@ -291,7 +291,11 @@ class ActiveSession implements TransformSession {
       if (!node) continue;
       const policy = this.host.resizePolicy(type);
       const limits = preserveAspectRatio && (!policy || policy.mode === "free")
-        ? proportionalMinimums(geometry, this.limits)
+        ? geometry.width <= 0 || geometry.height <= 0
+          // Degenerate nodes have no aspect ratio; preserve their zero axis
+          // rather than expanding them to a minimum and breaking group layout.
+          ? { minWidth: 0, minHeight: 0 }
+          : proportionalMinimums(geometry, this.limits)
         : this.limits;
       const resolved = resolveResizeSize(node, policy, {
         handle: this.handle,
