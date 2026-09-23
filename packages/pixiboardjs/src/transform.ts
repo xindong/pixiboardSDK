@@ -179,15 +179,19 @@ class ActiveSession implements TransformSession {
           const [only] = this.origins;
           // A lone node resizes in its own rotated frame, which is exactly
           // what nodes.resize() already does.
+          const policy = this.host.resizePolicy(only.type);
           const adjustedDelta = options.preserveAspectRatio
             ? preserveAspectDelta(deltaWorld, this.handle, only.geometry)
             : deltaWorld;
+          const limits = options.preserveAspectRatio && (!policy || policy.mode === "free")
+            ? proportionalMinimums(only.geometry, this.limits)
+            : this.limits;
           this.host.resize(only.id, {
             handle: this.handle,
             deltaWorld: adjustedDelta,
             origin: only.geometry,
-            minWidth: this.limits.minWidth,
-            minHeight: this.limits.minHeight,
+            minWidth: limits.minWidth,
+            minHeight: limits.minHeight,
           });
           return;
         }
@@ -241,18 +245,16 @@ class ActiveSession implements TransformSession {
   private scaleGroup(deltaWorld: Point, preserveAspectRatio: boolean): void {
     const box = this.groupOrigin;
     const axes = resizeHandleAxes(this.handle);
-    const width = Math.max(box.width + axes.horizontal * deltaWorld.x, this.limits.minWidth);
-    const height = Math.max(box.height + axes.vertical * deltaWorld.y, this.limits.minHeight);
+    const gestureDelta = preserveAspectRatio
+      ? preserveAspectDelta(deltaWorld, this.handle, { x: box.x, y: box.y, width: box.width, height: box.height, rotation: 0 })
+      : deltaWorld;
+    const width = Math.max(box.width + axes.horizontal * gestureDelta.x, this.limits.minWidth);
+    const height = Math.max(box.height + axes.vertical * gestureDelta.y, this.limits.minHeight);
     // A group with no extent on an axis (every node stacked on one line) has
     // no meaningful scale factor there; leave that axis alone instead of
     // dividing by zero.
-    let scaleX = box.width > 0 ? width / box.width : 1;
-    let scaleY = box.height > 0 ? height / box.height : 1;
-    if (preserveAspectRatio && axes.horizontal !== 0 && axes.vertical !== 0) {
-      const scale = Math.max(scaleX, scaleY);
-      scaleX = scale;
-      scaleY = scale;
-    }
+    const scaleX = box.width > 0 ? width / box.width : 1;
+    const scaleY = box.height > 0 ? height / box.height : 1;
     // The handle drags one side; the opposite side is what everything is
     // measured from. A mid-edge handle leaves its cross axis anchored at the
     // box origin, which is the same as not scaling that axis at all.
@@ -262,13 +264,17 @@ class ActiveSession implements TransformSession {
     for (const { id, type, geometry } of this.origins) {
       const node = this.host.getNode(id);
       if (!node) continue;
-      const resolved = resolveResizeSize(node, this.host.resizePolicy(type), {
+      const policy = this.host.resizePolicy(type);
+      const limits = preserveAspectRatio && (!policy || policy.mode === "free")
+        ? proportionalMinimums(geometry, this.limits)
+        : this.limits;
+      const resolved = resolveResizeSize(node, policy, {
         handle: this.handle,
         width: geometry.width * scaleX,
         height: geometry.height * scaleY,
         origin: geometry,
-        minWidth: this.limits.minWidth,
-        minHeight: this.limits.minHeight,
+        minWidth: limits.minWidth,
+        minHeight: limits.minHeight,
       });
       // The policy refused this node; it keeps both its size and its original
       // place so a fixed node does not drift under the group gesture.
@@ -282,6 +288,18 @@ class ActiveSession implements TransformSession {
       });
     }
   }
+}
+
+function proportionalMinimums(
+  geometry: Pick<NodeGeometry, "width" | "height">,
+  limits: { minWidth: number; minHeight: number },
+): { minWidth: number; minHeight: number } {
+  const ratio = geometry.width / geometry.height;
+  if (!Number.isFinite(ratio) || ratio <= 0) return limits;
+  return {
+    minWidth: Math.max(limits.minWidth, limits.minHeight * ratio),
+    minHeight: Math.max(limits.minHeight, limits.minWidth / ratio),
+  };
 }
 
 function preserveAspectDelta(deltaWorld: Point, handle: ResizeHandle, origin: NodeGeometry): Point {

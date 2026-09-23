@@ -1107,13 +1107,18 @@ function restoreMediaAspectRatio(board: PixiBoard, node: BoardNode<MediaProps>):
   const scale = node.width / intrinsicWidth;
   const width = intrinsicWidth * scale;
   const height = intrinsicHeight * scale;
-  const centerX = node.x + node.width / 2;
-  const centerY = node.y + node.height / 2;
+  // Node rotation is around its top-left, so keep its rotated visual center fixed.
+  const cos = Math.cos(node.rotation);
+  const sin = Math.sin(node.rotation);
+  const centerX = node.x + (cos * node.width - sin * node.height) / 2;
+  const centerY = node.y + (sin * node.width + cos * node.height) / 2;
+  const nextOffsetX = (cos * width - sin * height) / 2;
+  const nextOffsetY = (sin * width + cos * height) / 2;
   board.transaction("Restore imported aspect ratio", () => board.nodes.update<MediaProps>(node.id, {
     width,
     height,
-    x: centerX - width / 2,
-    y: centerY - height / 2,
+    x: centerX - nextOffsetX,
+    y: centerY - nextOffsetY,
   }), { origin: "ui" });
 }
 

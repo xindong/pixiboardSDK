@@ -101,6 +101,48 @@ describe("board.transform", () => {
     await instance.destroy();
   });
 
+  it("allows freeform geometry when the host explicitly disables aspect preservation", async () => {
+    const instance = await board();
+    await add(instance, "a", "free.box", { x: 100, y: 100, width: 200, height: 100 });
+    instance.selection.set(["a"]);
+
+    const session = instance.transform.begin("se")!;
+    session.update({ x: 20, y: 80 }, { preserveAspectRatio: false });
+    session.commit();
+
+    expect(instance.nodes.get("a")).toMatchObject({ width: 220, height: 180 });
+    await instance.destroy();
+  });
+
+  it("uses the dominant shrinking axis for proportional group resize", async () => {
+    const instance = await board();
+    await add(instance, "a", "free.box", { x: 0, y: 0, width: 100, height: 100 });
+    await add(instance, "b", "free.box", { x: 100, y: 0, width: 100, height: 100 });
+    instance.selection.set(["a", "b"]);
+
+    const session = instance.transform.begin("se")!;
+    session.update({ x: -100, y: -10 }, { preserveAspectRatio: true });
+    session.commit();
+
+    expect(instance.nodes.get("a")).toMatchObject({ x: 0, y: 0, width: 50, height: 50 });
+    expect(instance.nodes.get("b")).toMatchObject({ x: 50, y: 0, width: 50, height: 50 });
+    await instance.destroy();
+  });
+
+  it("keeps a very wide node proportional when the minimum size is reached", async () => {
+    const instance = await board();
+    await add(instance, "wide", "free.box", { x: 0, y: 0, width: 100, height: 10 });
+    instance.selection.set(["wide"]);
+
+    const session = instance.transform.begin("se")!;
+    session.update({ x: -50, y: -5 }, { preserveAspectRatio: true });
+    session.commit();
+
+    expect(instance.nodes.get("wide")).toMatchObject({ width: 80, height: 8 });
+    expect(instance.nodes.get("wide")!.width / instance.nodes.get("wide")!.height).toBeCloseTo(10);
+    await instance.destroy();
+  });
+
   it("cancel() restores the geometry captured at begin()", async () => {
     const instance = await board();
     await add(instance, "a", "free.box", { x: 100, y: 100, width: 200, height: 100 });
