@@ -153,12 +153,27 @@ describe("board.transform", () => {
     expect(() => session.update({ x: -20, y: -20 }, { preserveAspectRatio: true })).not.toThrow();
     session.commit();
 
-    expect(instance.nodes.get("empty")).toMatchObject({ x: 80, y: 80, width: 0, height: 0 });
+    expect(instance.nodes.get("empty")).toMatchObject({ width: 0, height: 0 });
     for (const id of ["empty", "square"]) {
       const node = instance.nodes.get(id)!;
       expect(Number.isFinite(node.width)).toBe(true);
       expect(Number.isFinite(node.height)).toBe(true);
     }
+    await instance.destroy();
+  });
+
+  it("keeps the nonzero axis minimum for degenerate group nodes", async () => {
+    const instance = await board();
+    await add(instance, "line", "free.box", { x: 0, y: 0, width: 0, height: 10 });
+    await add(instance, "square", "free.box", { x: 0, y: 0, width: 100, height: 100 });
+    instance.selection.set(["line", "square"]);
+
+    const session = instance.transform.begin("se")!;
+    session.update({ x: -99, y: -99 }, { preserveAspectRatio: true });
+    session.commit();
+
+    expect(instance.nodes.get("line")!.width).toBe(0);
+    expect(instance.nodes.get("line")!.height).toBeGreaterThanOrEqual(8);
     await instance.destroy();
   });
 

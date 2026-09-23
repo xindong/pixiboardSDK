@@ -266,9 +266,16 @@ class ActiveSession implements TransformSession {
       for (const { type, geometry } of this.origins) {
         const policy = this.host.resizePolicy(type);
         if (policy && policy.mode !== "free") continue;
-        // Degenerate geometry has no aspect ratio and cannot impose a finite
-        // shared scale floor. Its own resize resolution still applies limits.
-        if (geometry.width <= 0 || geometry.height <= 0) continue;
+        if (geometry.width <= 0 || geometry.height <= 0) {
+          // A degenerate node has no aspect ratio, but its nonzero axis must
+          // still contribute to the shared scale floor.
+          minimumScale = Math.max(
+            minimumScale,
+            geometry.width > 0 ? this.limits.minWidth / geometry.width : 1,
+            geometry.height > 0 ? this.limits.minHeight / geometry.height : 1,
+          );
+          continue;
+        }
         const minimums = proportionalMinimums(geometry, this.limits);
         minimumScale = Math.max(
           minimumScale,
@@ -294,7 +301,10 @@ class ActiveSession implements TransformSession {
         ? geometry.width <= 0 || geometry.height <= 0
           // Degenerate nodes have no aspect ratio; preserve their zero axis
           // rather than expanding them to a minimum and breaking group layout.
-          ? { minWidth: 0, minHeight: 0 }
+          ? {
+            minWidth: geometry.width > 0 ? this.limits.minWidth : 0,
+            minHeight: geometry.height > 0 ? this.limits.minHeight : 0,
+          }
           : proportionalMinimums(geometry, this.limits)
         : this.limits;
       const resolved = resolveResizeSize(node, policy, {
