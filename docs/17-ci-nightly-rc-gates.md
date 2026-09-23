@@ -2,7 +2,7 @@
 
 ## 证据原则
 
-- 对外发布包固定为 `pixiboardjs`、`@pixi-board/core`、`@pixi-board/plugin-sdk`。RC 必须同时上传三份 tarball 和三份 API report，并执行已合入的 API、外部消费与 bundle budget 检查。
+- 对外发布包固定为 `pixiboardjs`、`@pixi-board/core`、`@pixi-board/plugin-sdk`、`@pixi-board/capabilities`、`@pixi-board/agent-tools`。RC 必须同时上传五份 tarball 和九份 API report，并执行已合入的 API、外部消费与 bundle budget 检查。
 - SDK 只接受当前 `BoardDocument` 与 Plugin API v3。PR 与 RC 都执行 `scripts/check-current-document-only.mjs`，扫描 Core、facade、plugin-sdk、plugin-api-v3 的公开源码和 manifest；`sourceVersion`/`schemaVersion` 只允许已审查位置，所有 BoardDocument 或 plugin version 比较必须在 AST 上直接终止为明确拒绝（例如 `DocumentValidationError`），normalize/upgrade/old-manifest helper 与仅改写版本号的分支都会失败关闭。
 - Chromium job 设置 `PIXIBOARD_REQUIRE_BROWSER=1` 并显式安装 Chromium，缺少浏览器时失败而不是 skip。
 - 文件存在性不是测试证据；contract、浏览器、benchmark、Cargo 和打包命令必须真实执行。
@@ -18,7 +18,7 @@
 - Performance regression：在同一 Linux runner 先对目标分支 SHA、再对 candidate SHA 执行 `check-performance-gate.mjs pr`，并用 `check-regression.mjs --tolerance 0.5` 比较两份 Node report。快速 PR harness 使用明确记录的 50% 粗粒度阈值；环境 fingerprint 不一致、报告缺失或 observed 指标消失都会失败关闭，不使用 `--allow-environment-mismatch`。
 - Desktop Tauri gate：macOS 执行 locked Cargo tests 与真实 `--smoke`，Windows 执行 locked Cargo tests 与 native release build。
 
-PR 不执行完整 release staging、三包 pack 或全量 browser benchmark。Core gate 只为真实 MCP/package export 需要构建 Core，不执行普通前端 release build/typecheck。
+PR 不执行完整 release staging、五包 pack 或全量 browser benchmark。Core gate 只为真实 MCP/package export 需要构建 Core，不执行普通前端 release build/typecheck。
 
 ## Nightly
 
@@ -40,8 +40,8 @@ PR 不执行完整 release staging、三包 pack 或全量 browser benchmark。C
 `.github/workflows/release-candidate.yml` 校验完整 40 位 `candidate_sha`，查找该 SHA 成功的 `CI gates` run，并确认 static、Core/integration、required Chromium、真实性能回归、macOS Desktop 和 Windows Desktop jobs 均成功，然后对同一 SHA 执行：
 
 1. 固定 Node/pnpm 与 `pnpm install --frozen-lockfile`。
-2. 三个公开包的 release build、current-document-only、API Extractor production compare、bundle budgets、外部 Node/TypeScript/Vite consumer，以及三次真实 pack。
-3. 从 release gate 指定输出目录上传三份 tarball、三个正确的 `*.api.md`、逐文件 bundle JSON report 和 release manifest。
+2. 五个公开包的 release build、current-document-only、API Extractor production compare、bundle budgets、外部 Node/TypeScript/Vite consumer，以及五次真实 pack。
+3. 从 release gate 指定输出目录上传五份 tarball、九个正确的 `*.api.md`、逐文件 bundle JSON report 和 release manifest。
 4. required Chromium browser contracts；不把这些契约误称为 media-heavy benchmark。
 5. Core benchmark 阈值，以及 candidate-bound canonical Chromium WebGL/Konva evidence；浏览器数值仍为 evidence-only/non-blocking。
 6. adapter contract suites。

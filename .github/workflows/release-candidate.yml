@@ -78,8 +78,8 @@ jobs:
       - name: Verify persisted public release evidence
         shell: bash
         run: |
-          test "$(find .artifacts/release/tarballs -maxdepth 1 -name '*.tgz' | wc -l | tr -d ' ')" = 3
-          test "$(find .artifacts/release/api-reports -maxdepth 1 -name '*.api.md' | wc -l | tr -d ' ')" = 3
+          test "$(find .artifacts/release/tarballs -maxdepth 1 -name '*.tgz' | wc -l | tr -d ' ')" = 5
+          test "$(find .artifacts/release/api-reports -maxdepth 1 -name '*.api.md' | wc -l | tr -d ' ')" = 9
           test -s .artifacts/release/bundle-report.json
           test -s .artifacts/release/release-manifest.json
       - uses: actions/upload-artifact@v4

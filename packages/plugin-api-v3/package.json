@@ -12,7 +12,9 @@
     "@pixi-board/agent-tools": "workspace:*",
     "vitest": "^3.2.4"
   },
-  "scripts": { "test": "vitest run --config vitest.config.ts" },
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts"
+  },
   "exports": {
     ".": "./src/index.ts",
     "./fixture": "./src/fixture.ts",

@@ -1,6 +1,6 @@
 {
   "name": "@pixi-board/capabilities",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "Permissioned read/write surface over a PixiBoardJS document for UI, plugins and agents",
   "private": false,
   "type": "module",

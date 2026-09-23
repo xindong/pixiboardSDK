@@ -1,11 +1,15 @@
 {
   "name": "@pixi-board/plugin-sdk",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "Public PixiBoardJS Plugin API v3 contract",
   "type": "module",
   "private": false,
   "sideEffects": false,
-  "files": ["dist", "etc", "CHANGELOG.md"],
+  "files": [
+    "dist",
+    "etc",
+    "CHANGELOG.md"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -25,5 +29,7 @@
     "api:report": "api-extractor run --local --verbose",
     "test": "vitest run --config vitest.config.ts"
   },
-  "publishConfig": { "access": "public" }
+  "publishConfig": {
+    "access": "public"
+  }
 }
