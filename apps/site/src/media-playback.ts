@@ -4,7 +4,7 @@ export type MediaPlayback = {
   duration(): number;
   currentTime(): number;
   toggle(): Promise<void>;
-  seek(seconds: number): void;
+  seek(seconds: number): Promise<void>;
   subscribe(listener: () => void): () => void;
 };
 
@@ -17,23 +17,20 @@ type MediaPlaybackControllerOptions = {
   createElement: () => Promise<HTMLMediaElement | undefined>;
   destroyElement: (element: HTMLMediaElement) => void;
   durationFallback?: number;
+  initialTime?: number;
 };
 
 const MEDIA_EVENTS = [
-  "canplay",
-  "durationchange",
-  "ended",
-  "loadedmetadata",
-  "pause",
-  "play",
-  "seeked",
-  "timeupdate",
+  "canplay", "durationchange", "ended", "loadedmetadata", "pause", "play", "seeked", "timeupdate",
 ] as const;
 
 export function createMediaPlaybackController(options: MediaPlaybackControllerOptions): MediaPlaybackController {
   const listeners = new Set<() => void>();
+  const cancelWaits = new Set<() => void>();
   let element: HTMLMediaElement | undefined;
   let loading: Promise<HTMLMediaElement | undefined> | undefined;
+  let seeking: Promise<void> | undefined;
+  let targetTime: number | undefined = Math.max(0, options.initialTime ?? 0);
   let requestedPlaying = false;
   let destroyed = false;
 
@@ -41,48 +38,104 @@ export function createMediaPlaybackController(options: MediaPlaybackControllerOp
     for (const listener of listeners) listener();
   };
   const onMediaEvent = (event: Event) => {
-    if (event.type === "ended") requestedPlaying = false;
+    if (event.type === "ended") {
+      requestedPlaying = false;
+      targetTime = undefined;
+    }
     notify();
   };
-  const bind = (next: HTMLMediaElement) => {
-    if (destroyed) {
-      options.destroyElement(next);
-      return;
-    }
-    element = next;
-    for (const eventName of MEDIA_EVENTS) next.addEventListener(eventName, onMediaEvent);
-  };
-  const unbind = () => {
-    if (!element) return;
-    for (const eventName of MEDIA_EVENTS) element.removeEventListener(eventName, onMediaEvent);
-    options.destroyElement(element);
-    element = undefined;
+  // Register before load/currentTime so even a fast media event cannot be missed.
+  const waitFor = (next: HTMLMediaElement, eventName: string) => {
+    let cancel: () => void;
+    const promise = new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        next.removeEventListener(eventName, done);
+        next.removeEventListener("error", fail);
+        cancelWaits.delete(cancel);
+      };
+      const done = () => { cleanup(); resolve(); };
+      const fail = () => { cleanup(); reject(new Error(next.error?.message || "媒体加载失败")); };
+      cancel = done;
+      cancelWaits.add(cancel);
+      next.addEventListener(eventName, done);
+      next.addEventListener("error", fail);
+    });
+    return { promise, cancel: () => cancel() };
   };
   const ensureElement = async () => {
     if (destroyed) return undefined;
+    if (loading) return loading;
     if (element) return element;
-    if (!loading) {
-      loading = options.createElement().then((next) => {
-        if (destroyed) {
-          if (next) options.destroyElement(next);
-          return undefined;
-        }
-        if (next) bind(next);
-        return next;
-      }).finally(() => {
-        loading = undefined;
-        notify();
-      });
+    loading = (async () => {
+      const next = await options.createElement();
+      if (!next) return undefined;
+      if (destroyed) {
+        options.destroyElement(next);
+        return undefined;
+      }
+      element = next;
+      for (const eventName of MEDIA_EVENTS) next.addEventListener(eventName, onMediaEvent);
+      if (next.readyState < 1) {
+        const ready = waitFor(next, "loadedmetadata");
+        next.load();
+        await ready.promise;
+      }
+      return destroyed ? undefined : next;
+    })().catch((error) => {
+      if (element) {
+        const failed = element;
+        element = undefined;
+        for (const eventName of MEDIA_EVENTS) failed.removeEventListener(eventName, onMediaEvent);
+        options.destroyElement(failed);
+      }
+      throw error;
+    }).finally(() => {
+      loading = undefined;
       notify();
-    }
+    });
+    notify();
     return loading;
+  };
+  const applyTarget = async () => {
+    if (seeking) return seeking;
+    seeking = Promise.resolve().then(async () => {
+      const next = await ensureElement();
+      if (!next) return;
+      while (!destroyed && targetTime !== undefined) {
+        const requested = targetTime;
+        const max = Number.isFinite(next.duration) && next.duration > 0 ? next.duration : requested;
+        const seconds = Math.min(requested, max);
+        if (next.currentTime !== seconds || next.seeking) {
+          const settled = waitFor(next, "seeked");
+          try {
+            next.currentTime = seconds;
+          } catch (error) {
+            settled.cancel();
+            throw error;
+          }
+          await settled.promise;
+        }
+        // A drag may have queued a newer target while the previous frame loaded.
+        if (targetTime === requested) targetTime = undefined;
+      }
+    }).finally(() => {
+      seeking = undefined;
+      notify();
+    });
+    return seeking;
+  };
+
+  const settleTarget = async () => {
+    do {
+      await applyTarget();
+    } while (!destroyed && element && (seeking || targetTime !== undefined));
   };
 
   const controls: MediaPlayback = {
     isLoading: () => Boolean(loading),
     isPlaying: () => Boolean(element && !element.paused && !element.ended),
     duration: () => element && Number.isFinite(element.duration) && element.duration > 0 ? element.duration : options.durationFallback ?? 0,
-    currentTime: () => element?.currentTime ?? 0,
+    currentTime: () => targetTime ?? (element?.ended ? 0 : element?.currentTime ?? 0),
     toggle: async () => {
       if (destroyed) return;
       if (requestedPlaying || controls.isPlaying()) {
@@ -93,11 +146,19 @@ export function createMediaPlaybackController(options: MediaPlaybackControllerOp
       }
       requestedPlaying = true;
       notify();
-      const next = await ensureElement();
-      if (!next || !requestedPlaying) return;
-      if (next.ended) next.currentTime = 0;
       try {
-        await next.play();
+        await settleTarget();
+        if (destroyed || !element || !requestedPlaying) {
+          requestedPlaying = false;
+          return;
+        }
+        if (element.ended) {
+          targetTime = 0;
+          await settleTarget();
+        }
+        if (destroyed || !requestedPlaying) return;
+        await element.play();
+        if (!requestedPlaying || destroyed) element?.pause();
       } catch (error) {
         requestedPlaying = false;
         throw error;
@@ -105,9 +166,12 @@ export function createMediaPlaybackController(options: MediaPlaybackControllerOp
         notify();
       }
     },
-    seek: (seconds) => {
-      if (destroyed) return;
-      if (element) element.currentTime = seconds;
+    seek: async (seconds) => {
+      if (destroyed || !Number.isFinite(seconds)) return;
+      const duration = controls.duration();
+      targetTime = Math.max(0, duration > 0 ? Math.min(seconds, duration) : seconds);
+      notify();
+      await applyTarget();
     },
     subscribe: (listener) => {
       listeners.add(listener);
@@ -120,8 +184,13 @@ export function createMediaPlaybackController(options: MediaPlaybackControllerOp
     destroy: () => {
       destroyed = true;
       requestedPlaying = false;
-      loading = undefined;
-      unbind();
+      for (const cancel of cancelWaits) cancel();
+      if (element) {
+        const previous = element;
+        element = undefined;
+        for (const eventName of MEDIA_EVENTS) previous.removeEventListener(eventName, onMediaEvent);
+        options.destroyElement(previous);
+      }
       listeners.clear();
     },
   };
