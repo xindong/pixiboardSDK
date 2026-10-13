@@ -36,6 +36,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-sdk
       - run: node scripts/run-core-gate.mjs
+      - run: pnpm --filter pixiboardjs-site test
 
   browser-chromium:
     name: Browser required Chromium contracts

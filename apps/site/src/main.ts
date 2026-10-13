@@ -1517,7 +1517,6 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
   let scrubbing = false;
   let rafHandle: number | undefined;
   let lastPersistedPlaybackTime = 0;
-  let pendingSeek: { nodeId: string; time: number } | undefined;
 
   selectionActions.addEventListener("pointerdown", (event) => event.stopPropagation());
   selectionActions.addEventListener("wheel", forwardWheelToBoard, { passive: false });
@@ -1534,30 +1533,14 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
     };
   };
 
-  const persistPlaybackTime = (nodeId: string | undefined, element: HTMLMediaElement | undefined): void => {
-    if (!nodeId || !element) return;
-    const seconds = element.currentTime;
+  const persistPlaybackTime = (nodeId: string | undefined, seconds: number | undefined, force = false): void => {
+    if (!nodeId || seconds === undefined) return;
     if (!Number.isFinite(seconds) || seconds < 0) return;
-    if (Math.abs(seconds - lastPersistedPlaybackTime) < 0.2) return;
+    if (!force && Math.abs(seconds - lastPersistedPlaybackTime) < 0.2) return;
     const node = board.nodes.get<MediaProps>(nodeId);
     if (!node || !canPlayMediaKind(node.type)) return;
     lastPersistedPlaybackTime = seconds;
     board.nodes.update<MediaProps>(node.id, { props: { ...node.props, playbackTime: seconds } });
-  };
-
-  const applySeekTime = (node: BoardNode<MediaProps>, element: HTMLMediaElement, seconds: number): void => {
-    if (!Number.isFinite(seconds) || seconds < 0) return;
-    const max = Number.isFinite(element.duration) && element.duration > 0 ? Math.max(0, element.duration - 0.05) : seconds;
-    const next = Math.min(seconds, max);
-    pendingSeek = { nodeId: node.id, time: next };
-    try {
-      element.currentTime = next;
-      pendingSeek = undefined;
-      persistPlaybackTime(node.id, element);
-      refreshVideoFramePreview(node.id, activeAssetId, element);
-    } catch {
-      // If the element is not ready yet, keep the target queued for metadata.
-    }
   };
 
   const resetPlaybackTime = (nodeId: string): void => {
@@ -1582,27 +1565,30 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
     }).catch(() => undefined);
   };
 
-  const stopPlayback = () => {
+  const stopPlayback = (keepScrubbing = false) => {
+    if (!keepScrubbing) scrubbing = false;
     const nodeId = activeNodeId;
     const assetId = activeAssetId;
     const element = activeInlineElement;
-    persistPlaybackTime(nodeId, element);
-    refreshVideoFramePreview(nodeId, assetId, element);
-    if (rafHandle !== undefined) {
-      cancelAnimationFrame(rafHandle);
-      rafHandle = undefined;
-    }
-    activePlayback?.destroy();
+    const playback = activePlayback;
+    const seconds = playback?.controls.currentTime();
+    // Clear identity before updates emit change events and re-enter panel sync.
     activePlayback = undefined;
     activeInlineElement = undefined;
     activeNodeId = undefined;
     activeAssetId = undefined;
-    pendingSeek = undefined;
+    persistPlaybackTime(nodeId, seconds, true);
+    if (element && !element.seeking && element.readyState >= 2) refreshVideoFramePreview(nodeId, assetId, element);
+    if (rafHandle !== undefined) {
+      cancelAnimationFrame(rafHandle);
+      rafHandle = undefined;
+    }
+    playback?.destroy();
     lastPersistedPlaybackTime = 0;
     selectionPlayback.hidden = true;
     playbackToggle.replaceChildren(createIcon("play", { size: 15 }));
     playbackToggle.disabled = false;
-    playbackProgress.value = "0";
+    if (!scrubbing) playbackProgress.value = "0";
     playbackTime.textContent = "0:00 / 0:00";
   };
 
@@ -1620,8 +1606,8 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
       selectionPlayback.hidden = false;
     }
     const playback = activePlayback?.controls;
-    const duration = playback?.duration() ?? 0;
-    const current = playback?.currentTime() ?? 0;
+    const duration = playback?.duration() ?? node.props.duration ?? 0;
+    const current = playback?.currentTime() ?? node.props.playbackTime ?? 0;
     const loading = playback?.isLoading() ?? false;
     playbackToggle.replaceChildren(createIcon(loading ? "loading" : playback?.isPlaying() ? "pause" : "play", { className: loading ? "sp-spin" : undefined, size: 15 }));
     playbackToggle.disabled = loading;
@@ -1653,45 +1639,48 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
     const assetId = node?.assetRefs?.primary?.assetId ?? node?.assetRefs?.poster?.assetId ?? node?.assetRefs?.waveform?.assetId;
     if (!node || !assetId) return undefined;
     if (activePlayback && activeNodeId === node.id) return activePlayback;
-    stopPlayback();
+    stopPlayback(true);
     const playback = createMediaPlaybackController({
       durationFallback: node.props.duration,
+      initialTime: node.props.playbackTime,
       createElement: async () => {
         const url = await mediaLibrary.objectUrl(assetId, "original");
-        if (!url) return undefined;
+        if (!url || activePlayback !== playback) return undefined;
         const element = document.createElement(node.type === "video" ? "video" : "audio");
         element.preload = "metadata";
         element.crossOrigin = "anonymous";
         if (node.type === "video") {
           (element as HTMLVideoElement).playsInline = true;
           element.muted = false;
+          element.style.visibility = "hidden";
         } else {
           element.controls = true;
         }
         element.src = url;
         element.className = node.type === "video" ? "inline-media-element inline-media-video" : "inline-media-element inline-media-audio";
-        const restorePlaybackTime = () => {
-          const start = pendingSeek?.nodeId === node.id ? pendingSeek.time : node.props.playbackTime ?? 0;
-          if (!Number.isFinite(start) || start <= 0) return;
-          const max = Number.isFinite(element.duration) && element.duration > 0 ? Math.max(0, element.duration - 0.05) : start;
-          try {
-            element.currentTime = Math.min(start, max);
-            if (pendingSeek?.nodeId === node.id) pendingSeek = undefined;
-          } catch {
-            // Some browsers reject early seeks until more media data has loaded.
-          }
+        const persistCurrentTime = () => {
+          if (activeInlineElement !== element || activeNodeId !== node.id) return;
+          persistPlaybackTime(node.id, playback.controls.currentTime());
         };
-        element.addEventListener("loadedmetadata", restorePlaybackTime, { once: true });
-        element.addEventListener("pause", () => {
-          persistPlaybackTime(node.id, element);
+        const refreshCurrentFrame = () => {
+          if (activeInlineElement !== element || activeNodeId !== node.id || element.seeking || element.readyState < 2) return;
+          if (Math.abs(element.currentTime - playback.controls.currentTime()) > 0.05) return;
+          element.style.visibility = "";
           refreshVideoFramePreview(node.id, assetId, element);
+        };
+        element.addEventListener("loadeddata", refreshCurrentFrame);
+        element.addEventListener("pause", () => {
+          persistCurrentTime();
+          refreshCurrentFrame();
         });
         element.addEventListener("seeked", () => {
-          persistPlaybackTime(node.id, element);
-          refreshVideoFramePreview(node.id, assetId, element);
+          persistCurrentTime();
+          refreshCurrentFrame();
         });
-        element.addEventListener("ended", () => resetPlaybackTime(node.id));
-        element.addEventListener("timeupdate", () => persistPlaybackTime(node.id, element));
+        element.addEventListener("ended", () => {
+          if (activeInlineElement === element) resetPlaybackTime(node.id);
+        });
+        element.addEventListener("timeupdate", persistCurrentTime);
         element.addEventListener("wheel", forwardWheelToBoard, { passive: false });
         mediaOverlay.appendChild(element);
         activeInlineElement = element;
@@ -1824,25 +1813,21 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
     scrubbing = true;
   });
   playbackProgress.addEventListener("input", () => {
-    const node = selectedMediaNode(board);
-    if (!node) return;
+    const ratio = Number(playbackProgress.value) / 1000;
     const playback = ensurePlayback();
-    const duration = playback?.controls.duration() ?? 0;
-    const seekTime = duration > 0 ? (Number(playbackProgress.value) / 1000) * duration : 0;
-    const element = activeInlineElement;
-    if (playback && element) {
-      applySeekTime(node, element, seekTime);
-      playback.controls.seek(seekTime);
-      return;
-    }
-    pendingSeek = { nodeId: node.id, time: seekTime };
-    persistPlaybackTime(node.id, element);
+    if (!playback) return;
+    const seekTime = ratio * playback.controls.duration();
+    void playback.controls.seek(seekTime)
+      .catch((error) => showToast(`跳转失败：${error instanceof Error ? error.message : String(error)}`, "error"))
+      .finally(syncPlayback);
   });
   const stopScrubbing = () => {
     scrubbing = false;
     syncPlayback();
   };
-  playbackProgress.addEventListener("pointerup", stopScrubbing);
+  window.addEventListener("pointerup", stopScrubbing);
+  playbackProgress.addEventListener("pointercancel", stopScrubbing);
+  playbackProgress.addEventListener("blur", stopScrubbing);
   playbackProgress.addEventListener("change", stopScrubbing);
 
   board.on("selection:change", refreshPanel);

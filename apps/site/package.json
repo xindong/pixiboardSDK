@@ -6,6 +6,7 @@
   "description": "Interactive PixiBoardJS SDK feature showcase, published to GitHub Pages",
   "scripts": {
     "dev": "vite",
+    "test": "node --experimental-strip-types --test test/*.test.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },
