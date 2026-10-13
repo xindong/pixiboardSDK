@@ -224,3 +224,48 @@ test('play waits for a new seek started by the previous seek completion notifica
   assert.deepEqual(f.media.playTimes, [20]);
   f.destroy();
 });
+
+test('failure after metadata during a seek releases the failed element and retries with a new one', async () => {
+  const first = new FakeMedia();
+  const second = new FakeMedia();
+  const elements = [first, second];
+  let destroyed = 0;
+  const f = fixture({
+    createElement: async () => elements.shift(),
+    destroyElement: () => { destroyed++; },
+  });
+  const failed = f.controls.seek(20);
+  const rejection = assert.rejects(failed, /媒体加载失败/);
+  await flush();
+  first.metadata();
+  await flush();
+  first.dispatchEvent(new Event('error'));
+  await rejection;
+  assert.equal(destroyed, 1);
+  const retry = f.controls.toggle();
+  await flush();
+  second.metadata();
+  await flush();
+  second.settleSeek();
+  await retry;
+  assert.deepEqual(second.playTimes, [20]);
+  f.destroy();
+});
+
+test('saved duration longer than actual media clamps the displayed target before seeked listeners run', async () => {
+  const f = fixture({ durationFallback: 200 });
+  f.media.duration = 60;
+  let displayedAtSeeked;
+  f.media.addEventListener('seeked', () => { displayedAtSeeked = f.controls.currentTime(); });
+  const seeking = f.controls.seek(180);
+  await flush();
+  f.media.metadata();
+  await flush();
+  assert.equal(f.media.time, 59.95);
+  f.media.settleSeek();
+  await seeking;
+  assert.equal(displayedAtSeeked, f.media.time);
+  assert.equal(f.controls.currentTime(), 59.95);
+  assert.equal(f.controls.isPlaying(), false);
+  f.destroy();
+});

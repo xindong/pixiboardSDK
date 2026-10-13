@@ -62,6 +62,14 @@ export function createMediaPlaybackController(options: MediaPlaybackControllerOp
     });
     return { promise, cancel: () => cancel() };
   };
+  const releaseElement = () => {
+    for (const cancel of cancelWaits) cancel();
+    if (!element) return;
+    const previous = element;
+    element = undefined;
+    for (const eventName of MEDIA_EVENTS) previous.removeEventListener(eventName, onMediaEvent);
+    options.destroyElement(previous);
+  };
   const ensureElement = async () => {
     if (destroyed) return undefined;
     if (loading) return loading;
@@ -82,12 +90,7 @@ export function createMediaPlaybackController(options: MediaPlaybackControllerOp
       }
       return destroyed ? undefined : next;
     })().catch((error) => {
-      if (element) {
-        const failed = element;
-        element = undefined;
-        for (const eventName of MEDIA_EVENTS) failed.removeEventListener(eventName, onMediaEvent);
-        options.destroyElement(failed);
-      }
+      releaseElement();
       throw error;
     }).finally(() => {
       loading = undefined;
@@ -103,8 +106,10 @@ export function createMediaPlaybackController(options: MediaPlaybackControllerOp
       if (!next) return;
       while (!destroyed && targetTime !== undefined) {
         const requested = targetTime;
-        const max = Number.isFinite(next.duration) && next.duration > 0 ? next.duration : requested;
+        // Keep a paused seek just before the end so it previews instead of firing ended.
+        const max = Number.isFinite(next.duration) && next.duration > 0 ? Math.max(0, next.duration - 0.05) : requested;
         const seconds = Math.min(requested, max);
+        targetTime = seconds;
         if (next.currentTime !== seconds || next.seeking) {
           const settled = waitFor(next, "seeked");
           try {
@@ -116,8 +121,11 @@ export function createMediaPlaybackController(options: MediaPlaybackControllerOp
           await settled.promise;
         }
         // A drag may have queued a newer target while the previous frame loaded.
-        if (targetTime === requested) targetTime = undefined;
+        if (targetTime === seconds) targetTime = undefined;
       }
+    }).catch((error) => {
+      releaseElement();
+      throw error;
     }).finally(() => {
       seeking = undefined;
       notify();
@@ -184,13 +192,7 @@ export function createMediaPlaybackController(options: MediaPlaybackControllerOp
     destroy: () => {
       destroyed = true;
       requestedPlaying = false;
-      for (const cancel of cancelWaits) cancel();
-      if (element) {
-        const previous = element;
-        element = undefined;
-        for (const eventName of MEDIA_EVENTS) previous.removeEventListener(eventName, onMediaEvent);
-        options.destroyElement(previous);
-      }
+      releaseElement();
       listeners.clear();
     },
   };
