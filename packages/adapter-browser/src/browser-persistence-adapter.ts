@@ -132,6 +132,7 @@ export class BrowserPersistenceAdapter {
   readonly #onCleanupError: (record: BrowserCleanupError) => void;
   readonly #abortController = new AbortController();
   readonly #leasesByAsset = new Map<string, Set<LeaseState>>();
+  readonly #assetWrites = new Map<string, Promise<void>>();
   readonly #cleanupErrors: BrowserCleanupError[] = [];
   #destroyed = false;
   #destroyPromise?: Promise<void>;
@@ -380,6 +381,10 @@ export class BrowserPersistenceAdapter {
   }
 
   async putAsset(record: AssetRecord, blob: Blob, options: PutAssetOptions = {}): Promise<StoredAssetEntry> {
+    return this.#serializeAsset(record.id, () => this.#putAsset(record, blob, options));
+  }
+
+  async #putAsset(record: AssetRecord, blob: Blob, options: PutAssetOptions): Promise<StoredAssetEntry> {
     return this.#run(options.signal, async (signal) => {
       const variant = options.variant === undefined ? "original" : options.variant;
       assertAssetVariant(variant);
@@ -443,9 +448,11 @@ export class BrowserPersistenceAdapter {
     options: Omit<PutAssetOptions, "variant"> = {},
   ): Promise<StoredAssetEntry> {
     assertAssetVariant(variant);
-    const entry = await this.#run(options.signal, (signal) => this.#indexedDb.getAssetEntry(assetId, signal));
-    if (entry === undefined) throw new BrowserAssetNotFoundError(assetId);
-    return this.putAsset(entry.record, blob, { ...options, variant });
+    return this.#serializeAsset(assetId, () => this.#run(options.signal, async (signal) => {
+      const entry = await this.#indexedDb.getAssetEntry(assetId, signal);
+      if (entry === undefined) throw new BrowserAssetNotFoundError(assetId);
+      return this.#putAsset(entry.record, blob, { ...options, variant, signal });
+    }));
   }
 
   async getAsset(id: string, options: GetAssetOptions = {}): Promise<BrowserAsset | null> {
@@ -484,6 +491,10 @@ export class BrowserPersistenceAdapter {
   }
 
   async deleteAsset(id: string, options: AdapterOperationOptions = {}): Promise<boolean> {
+    return this.#serializeAsset(id, () => this.#deleteAsset(id, options));
+  }
+
+  async #deleteAsset(id: string, options: AdapterOperationOptions): Promise<boolean> {
     return this.#run(options.signal, async (signal) => {
       const entry = await this.#indexedDb.getAssetEntry(id, signal);
       this.#throwIfAborted(signal);
@@ -731,6 +742,17 @@ export class BrowserPersistenceAdapter {
       },
     };
     return { sourceType, asset, blob, fileName };
+  }
+
+  #serializeAsset<T>(id: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.#assetWrites.get(id) ?? Promise.resolve();
+    const result = previous.then(operation);
+    const settled = result.then(() => undefined, () => undefined);
+    this.#assetWrites.set(id, settled);
+    void settled.then(() => {
+      if (this.#assetWrites.get(id) === settled) this.#assetWrites.delete(id);
+    });
+    return result;
   }
 
   async #run<T>(externalSignal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {

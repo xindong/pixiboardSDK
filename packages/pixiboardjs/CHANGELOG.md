@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0-alpha.4
+
+### Patch Changes
+
+- Fix lost variant index entries during concurrent BrowserPersistenceAdapter writes by serializing writes for the same asset.
+
+  Merge NativeIndexedDB variant updates within a transaction so concurrent writes preserve all variant index entries.
+
 ## 0.1.0-alpha.3
 
 ### Patch Changes
