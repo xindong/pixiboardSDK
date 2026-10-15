@@ -1,4 +1,5 @@
 import type { AssetRecord, BoardDocument } from "@pixi-board/core";
+import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_OPFS_THRESHOLD_BYTES,
@@ -435,6 +436,69 @@ describe("BrowserPersistenceAdapter contract", () => {
       .toBe("first preview");
     expect(await (await adapter.resolveAsset("concurrent", secondVariant))?.blob.text())
       .toBe("second preview");
+  });
+
+  it.each([
+    { storage: "IndexedDB blob", preferOpfs: false },
+    { storage: "OPFS pointer", preferOpfs: true },
+  ])("merges concurrent derivatives from separate native connections using $storage", async ({ preferOpfs }) => {
+    const factory = new IDBFactory();
+    const ports = [0, 1].map(() => new NativeIndexedDbPort({
+      indexedDb: factory,
+      databaseName: "concurrent-derivatives",
+    }));
+    const opfs = new MemoryOpfsPort();
+    const adapters = ports.map((indexedDb, index) => new BrowserPersistenceAdapter({
+      indexedDb,
+      opfs,
+      objectUrls: new MemoryObjectUrlPort(),
+      storageKeyFactory: (id, variant) => `${id}-${variant}-${index}`,
+    }));
+    const firstVariant = `preview-${"a".repeat(64)}` as const;
+    const secondVariant = `preview-${"b".repeat(64)}` as const;
+    try {
+      await adapters[0].putAsset(asset("concurrent"), new Blob(["original"]), { preferOpfs });
+
+      // putDerivative reads once to find the record and again to prepare its write.
+      // Gate both rounds so both connections prepare writes from the original entry.
+      const releases: (() => void)[] = [];
+      const barriers = [0, 1].map((round) => new Promise<void>((resolve) => {
+        releases[round] = resolve;
+      }));
+      const arrivals = [0, 0];
+      for (const port of ports) {
+        const getAssetEntry = port.getAssetEntry.bind(port);
+        let reads = 0;
+        port.getAssetEntry = async (id, signal) => {
+          const entry = await getAssetEntry(id, signal);
+          const round = reads++;
+          if (round < barriers.length) {
+            expect(Object.keys(entry!.binaries)).toEqual(["original"]);
+            if (++arrivals[round] === ports.length) releases[round]();
+            await barriers[round];
+          }
+          return entry;
+        };
+      }
+
+      await Promise.all([
+        adapters[0].putDerivative("concurrent", firstVariant, new Blob(["first preview"]), { preferOpfs }),
+        adapters[1].putDerivative("concurrent", secondVariant, new Blob(["second preview"]), { preferOpfs }),
+      ]);
+
+      for (const adapter of adapters) {
+        const [entry] = await adapter.listAssets();
+        expect(Object.keys(entry.binaries).sort()).toEqual(["original", firstVariant, secondVariant].sort());
+        for (const binary of Object.values(entry.binaries)) {
+          expect(binary.storage.kind).toBe(preferOpfs ? "opfs" : "indexeddb");
+        }
+        expect(await (await adapter.getAsset("concurrent"))?.blob.text()).toBe("original");
+        expect(await (await adapter.resolveAsset("concurrent", firstVariant))?.blob.text()).toBe("first preview");
+        expect(await (await adapter.resolveAsset("concurrent", secondVariant))?.blob.text()).toBe("second preview");
+      }
+    } finally {
+      await Promise.all(adapters.map((adapter) => adapter.destroy()));
+    }
   });
 
   it("allows another asset to finish writing while one asset write is blocked", async () => {
