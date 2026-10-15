@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0-alpha.3
+
+### Patch Changes
+
+- Fix the official site generic host import dispatch so imported assets are routed through the configured host preview flow.
+
+  Keep local model content-addressed variants in isolated copies so preview variant updates do not mutate shared asset data.
+
 ## 0.1.0-alpha.2
 
 ### Minor Changes

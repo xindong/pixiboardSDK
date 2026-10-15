@@ -1,5 +1,11 @@
 # @pixi-board/adapter-tauri
 
+## 0.0.1-alpha.2
+
+### Patch Changes
+
+- @pixi-board/core@0.1.0-alpha.3
+
 ## 0.0.1-alpha.1
 
 ### Patch Changes

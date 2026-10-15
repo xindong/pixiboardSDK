@@ -361,18 +361,16 @@ configureLocalPreviewRenderer(async (board, node, spec) => {
   if (!assetId || !isMediaKind(node.type)) throw new Error("找不到原始资源，暂无预览。");
   const requestId = (board.nodes.get(node.id)?.props as PreviewImportState | undefined)?.previewRequestId;
   const isCurrent = () => (board.nodes.get(node.id)?.props as PreviewImportState | undefined)?.previewRequestId === requestId;
-  try {
-    const changed = await mediaLibrary.refreshPreview(assetId, node.type, spec, isCurrent);
-    if (!changed && isCurrent()) throw new Error("找不到原始资源，暂无预览。");
-  } finally {
-    if (isCurrent()) {
-      textureCache.delete(`${assetId}:preview`);
-      const current = board.nodes.get(node.id);
-      if (current) {
-        const assetRefs = Object.fromEntries(Object.entries(current.assetRefs ?? {}).filter(([key]) => !key.startsWith("_refreshPreview")));
-        board.nodes.update(node.id, { assetRefs: { ...assetRefs, preview: { assetId, variant: "preview" }, [`_refreshPreview${Date.now()}`]: { assetId, variant: "preview" } } });
-      }
-    }
+  const changed = await mediaLibrary.refreshPreview(assetId, node.type, spec, isCurrent);
+  if (!changed && isCurrent()) throw new Error("找不到原始资源，暂无预览。");
+  if (!changed || !isCurrent()) return;
+  const variant: AssetVariant = typeof changed === "string" ? changed : "preview";
+  if (variant === "preview") textureCache.delete(`${assetId}:preview`);
+  const current = board.nodes.get(node.id);
+  if (current) {
+    const assetRefs = Object.fromEntries(Object.entries(current.assetRefs ?? {}).filter(([key]) => !key.startsWith("_refreshPreview")));
+    board.nodes.update(node.id, { assetRefs: { ...assetRefs, preview: { assetId, variant },
+      [`_refreshPreview${Date.now()}`]: { assetId, variant } } });
   }
 });
 
@@ -1362,6 +1360,7 @@ async function importFiles(
   statusText.textContent = `正在导入 ${supported.length} 个资源`;
   showToast(`正在处理 ${supported.length} 个文件…`);
   const created: MediaImport[] = [];
+  const previewNodeIds: string[] = [];
   let cursor = { x: anchor.x, y: anchor.y };
   let rowHeight = 0;
   let rowWidth = 0;
@@ -1377,7 +1376,7 @@ async function importFiles(
           rowWidth = 0;
           rowHeight = 0;
         }
-        await board.nodes.create<MediaProps>({
+        const createdNode = await board.nodes.create<MediaProps>({
           type: media.kind,
           x: cursor.x + rowWidth,
           y: cursor.y,
@@ -1397,6 +1396,7 @@ async function importFiles(
         rowWidth += media.width + 16;
         rowHeight = Math.max(rowHeight, media.height);
         created.push(media);
+        if (media.previewStatus === "pending") previewNodeIds.push(createdNode.id);
       } catch (error) {
         const message = error instanceof UnsupportedMediaError
           ? error.message
@@ -1414,6 +1414,11 @@ async function importFiles(
     showToast(`已添加 ${created.length} 个资源节点`, "success");
     resyncMediaBadges();
     void persist(board);
+    // Dispatch after the entire import batch exists, including companion files.
+    for (const nodeId of previewNodeIds) {
+      void requestDocumentPreview(board, nodeId, { reason: "import" })
+        .catch((error) => console.warn("Failed to start imported preview", error));
+    }
   }
 }
 

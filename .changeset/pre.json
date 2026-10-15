@@ -24,6 +24,7 @@
     "p6-publishability",
     "public-capabilities-agent-tools",
     "resize-policy-transformer",
+    "site-import-model-preview-fixes",
     "viewport-virtualization-lod"
   ]
 }

@@ -242,7 +242,7 @@ export class MediaLibrary {
     await this.adapter.deleteAsset(assetId);
   }
 
-  async refreshPreview(assetId: string, kind: MediaKind, spec?: PreviewSpec, isCurrent: () => boolean = () => true): Promise<boolean> {
+  async refreshPreview(assetId: string, kind: MediaKind, spec?: PreviewSpec, isCurrent: () => boolean = () => true): Promise<boolean | AssetVariant> {
     const stored = await this.adapter.getAsset(assetId, { variant: "original" });
     if (!stored) return false;
 
@@ -273,19 +273,15 @@ export class MediaLibrary {
       return true;
     }
 
-    let preview: Blob;
-    let failure: unknown;
-    try {
-      preview = kind === "model" ? await modelPreview(file, spec) : await filePreview(file, kind);
-    } catch (error) {
-      failure = error;
-      preview = await filePreview(file, kind);
-    }
+    const preview = kind === "model" ? await modelPreview(file, spec) : await filePreview(file, kind);
     if (!isCurrent()) return false;
-    await this.adapter.putDerivative(assetId, "preview", preview);
-    this.revokeLease(assetId, "preview");
-    if (failure) throw failure;
-    return true;
+    // Each requesting node retains its own result; another copy may have a
+    // different aspect ratio while still referencing the same original asset.
+    const digest = await crypto.subtle.digest("SHA-256", await preview.arrayBuffer());
+    const variant: AssetVariant = `preview-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+    if (!isCurrent()) return false;
+    await this.adapter.putDerivative(assetId, variant, preview);
+    return isCurrent() ? variant : false;
   }
 
   async updateVideoPreviewFromElement(assetId: string, video: HTMLVideoElement): Promise<boolean> {

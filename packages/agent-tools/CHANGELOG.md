@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0-alpha.3
+
+### Patch Changes
+
+- @pixi-board/core@0.1.0-alpha.3
+- @pixi-board/capabilities@0.1.0-alpha.3
+
 ## 0.1.0-alpha.2
 
 ### Patch Changes
