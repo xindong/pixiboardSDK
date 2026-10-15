@@ -14,7 +14,6 @@ import { NodeTypeRegistry, type AssetRef, type BoardDocument, type BoardNode } f
 import { createPixiApplicationFactory, loadPixiRuntime, PixiBoardRenderer } from "@pixi-board/renderer-pixi";
 import { createIcon } from "./ui/icons";
 import {
-  classifyMedia,
   MediaLibrary,
   UnsupportedMediaError,
   modelVertices,
@@ -26,6 +25,7 @@ import {
 import { createMediaPlaybackController, type MediaPlaybackController } from "./media-playback";
 import { SiteProjectStore, type SiteProject } from "./project-store";
 import { ProjectSwitcherController } from "./ui/project-switcher";
+import { isDocumentNode, isPreviewNode, requestDocumentPreview, previewTypeLabel, reportPreviewTextureReady, getPreviewTextureEpoch, previewProperties, configureLocalPreviewRenderer, hasSitePreviewRenderer, type PreviewImportState } from "./preview";
 
 const THREE_ORBIT_CONTROLS_URL = "three/examples/jsm/controls/OrbitControls.js";
 
@@ -37,6 +37,7 @@ const selectionBox = document.querySelector<HTMLDivElement>("#selection-box")!;
 const selectionOverlay = document.querySelector<HTMLDivElement>("#selection-overlay")!;
 const handleOverlay = document.querySelector<HTMLDivElement>("#handle-overlay")!;
 const mediaInput = document.querySelector<HTMLInputElement>("#media-input")!;
+mediaInput.removeAttribute("accept");
 const mediaOverlay = document.querySelector<HTMLDivElement>("#media-overlay")!;
 const dropHint = document.querySelector<HTMLDivElement>("#drop-hint")!;
 const importLock = document.querySelector<HTMLDivElement>("#import-lock")!;
@@ -128,7 +129,7 @@ const textTypeDefinition: CustomNodeDefinition<TextProps> = {
   },
 };
 
-type MediaProps = { name: string; mimeType: string; size: number; duration?: number; playbackTime?: number; intrinsicWidth?: number; intrinsicHeight?: number };
+type MediaProps = PreviewImportState & { name: string; mimeType: string; size: number; duration?: number; playbackTime?: number; intrinsicWidth?: number; intrinsicHeight?: number };
 
 /**
  * The Pixi renderer already ships image/video/audio renderers that resolve
@@ -154,6 +155,7 @@ function mediaTypeDefinition(type: MediaKind): CustomNodeDefinition<MediaProps> 
         ...(typeof candidate.playbackTime === "number" && Number.isFinite(candidate.playbackTime) && candidate.playbackTime > 0 ? { playbackTime: candidate.playbackTime } : {}),
         ...(typeof candidate.intrinsicWidth === "number" ? { intrinsicWidth: candidate.intrinsicWidth } : {}),
         ...(typeof candidate.intrinsicHeight === "number" ? { intrinsicHeight: candidate.intrinsicHeight } : {}),
+        ...previewProperties(candidate),
       };
     },
     getBounds(node) {
@@ -319,8 +321,12 @@ async function acquireMediaTexture(ref: AssetRef): Promise<{ texture?: unknown; 
   // to the image decoder.
   const variant = (ref.variant ?? "original") as AssetVariant;
   const cacheKey = `${ref.assetId}:${variant}`;
+  const previewEpoch = variant === "preview" ? getPreviewTextureEpoch(ref.assetId) : 0;
   const cached = textureCache.get(cacheKey);
-  if (cached) return { texture: cached };
+  if (cached) {
+    if (variant === "preview" || variant.startsWith("preview-")) reportPreviewTextureReady(ref.assetId, variant);
+    return { texture: cached };
+  }
 
   const url = await mediaLibrary.objectUrl(ref.assetId, variant);
   if (!url) return {};
@@ -330,9 +336,14 @@ async function acquireMediaTexture(ref: AssetRef): Promise<{ texture?: unknown; 
     // pixels have loaded, which yields an empty sprite on first paint.
     const pixi = await loadPixiRuntime();
     const source = await decodeToBitmap(url);
+    if (variant === "preview" && previewEpoch !== getPreviewTextureEpoch(ref.assetId)) {
+      (source as { close?: () => void }).close?.();
+      return {};
+    }
     const texture = pixi.Texture?.from(source);
     if (texture === undefined) return {};
     textureCache.set(cacheKey, texture);
+    if (variant === "preview" || variant.startsWith("preview-")) reportPreviewTextureReady(ref.assetId, variant);
     return { texture };
   } catch (error) {
     // One unreadable asset must degrade to a placeholder node, never reject the
@@ -344,6 +355,26 @@ async function acquireMediaTexture(ref: AssetRef): Promise<{ texture?: unknown; 
 
 /** One GPU texture per asset variant; released wholesale when storage clears. */
 const textureCache = new Map<string, unknown>();
+
+configureLocalPreviewRenderer(async (board, node, spec) => {
+  const assetId = node.assetRefs?.primary?.assetId ?? node.assetRefs?.preview?.assetId;
+  if (!assetId || !isMediaKind(node.type)) throw new Error("找不到原始资源，暂无预览。");
+  const requestId = (board.nodes.get(node.id)?.props as PreviewImportState | undefined)?.previewRequestId;
+  const isCurrent = () => (board.nodes.get(node.id)?.props as PreviewImportState | undefined)?.previewRequestId === requestId;
+  try {
+    const changed = await mediaLibrary.refreshPreview(assetId, node.type, spec, isCurrent);
+    if (!changed && isCurrent()) throw new Error("找不到原始资源，暂无预览。");
+  } finally {
+    if (isCurrent()) {
+      textureCache.delete(`${assetId}:preview`);
+      const current = board.nodes.get(node.id);
+      if (current) {
+        const assetRefs = Object.fromEntries(Object.entries(current.assetRefs ?? {}).filter(([key]) => !key.startsWith("_refreshPreview")));
+        board.nodes.update(node.id, { assetRefs: { ...assetRefs, preview: { assetId, variant: "preview" }, [`_refreshPreview${Date.now()}`]: { assetId, variant: "preview" } } });
+      }
+    }
+  }
+});
 
 async function decodeToBitmap(url: string): Promise<ImageBitmap | HTMLImageElement> {
   const image = new Image();
@@ -558,8 +589,8 @@ function wireClipboardAndContextMenu(board: PixiBoard, resyncMediaBadges: () => 
         ? [
             { label: "下载原始文件", icon: "download", action: () => downloadSelectedMedia(board) },
             { label: "打开原始文件", icon: "open", action: () => openSelectedMedia(board) },
-            { label: "恢复导入时的宽高比", icon: "frame", action: () => restoreSelectedMediaRatio(board) },
-            { label: "刷新预览", icon: "refresh", action: () => refreshSelectedMediaPreview(board, resyncMediaBadges) },
+            ...(isDocumentNode(selected) ? [] : [{ label: "恢复导入时的宽高比", icon: "frame" as const, action: () => restoreSelectedMediaRatio(board) }]),
+            { label: isPreviewNode(selected) ? "重置预览" : "刷新预览", icon: "refresh", action: () => refreshSelectedMediaPreview(board, resyncMediaBadges) },
           ]
         : []),
       { label: "适配全部", icon: "fit", action: () => board.viewport.fitBounds(padBounds(computeContentBounds(board), 80)) },
@@ -934,10 +965,8 @@ function createFallbackModel(
   extension: string,
   vertices: ModelVertex[],
 ): InstanceType<typeof THREE.Object3D> {
+  if (vertices.length < 3) throw new Error("此模型格式暂不支持本地查看，原文件已保存。");
   const group = new THREE.Group();
-  const material = new THREE.MeshStandardMaterial({ color: 0xb7c0cc, roughness: 0.82, metalness: 0.08 });
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.2, 2.2), material);
-  group.add(mesh);
   if (vertices.length >= 3) {
     const geometry = new THREE.BufferGeometry();
     const flat = new Float32Array(vertices.flat());
@@ -1126,6 +1155,12 @@ function refreshSelectedMediaPreview(board: PixiBoard, resyncMediaBadges: () => 
   const node = selectedMediaNode(board);
   const assetId = selectedMediaAssetId(node);
   if (!node || !assetId || !isMediaKind(node.type)) return;
+  if (isPreviewNode(node)) {
+    void requestDocumentPreview(board, node.id, { reason: "refresh" })
+      .catch((error) => showToast(`刷新失败：${error instanceof Error ? error.message : String(error)}`, "error"));
+    showToast("正在重置预览...");
+    return;
+  }
   showToast("正在刷新预览...");
   void mediaLibrary.refreshPreview(assetId, node.type).then((changed) => {
     if (!changed) {
@@ -1287,7 +1322,7 @@ function positionNodeRenameEditor(board: PixiBoard, node: BoardNode, form: HTMLE
 
 function mediaTagScreenWidth(node: BoardNode): number {
   if (!isMediaKind(node.type)) return 0;
-  return Math.ceil(mediaTag(node).length * 6 + 12);
+  return Math.ceil([...mediaTag(node)].reduce((width, character) => width + (character.charCodeAt(0) > 127 ? 10 : 6), 12));
 }
 
 function nodeName(node: BoardNode): string {
@@ -1319,11 +1354,7 @@ async function importFiles(
   anchor: { x: number; y: number },
   resyncMediaBadges: () => void,
 ): Promise<void> {
-  const supported = files.filter((file) => classifyMedia(file) !== undefined);
-  const rejected = files.filter((file) => classifyMedia(file) === undefined);
-  for (const file of rejected) {
-    showToast(`不支持的文件类型：${file.name || file.type || "未知文件"}`, "error");
-  }
+  const supported = files;
   if (!supported.length) return;
 
   importLock.hidden = false;
@@ -1360,6 +1391,7 @@ async function importFiles(
             ...(media.duration ? { duration: media.duration } : {}),
             intrinsicWidth: media.width,
             intrinsicHeight: media.height,
+            ...previewProperties(media),
           },
         });
         rowWidth += media.width + 16;
@@ -1381,9 +1413,6 @@ async function importFiles(
   if (created.length) {
     showToast(`已添加 ${created.length} 个资源节点`, "success");
     resyncMediaBadges();
-    // New media may land outside the current view; bring it into frame so the
-    // upload visibly did something.
-    board.viewport.fitBounds(padBounds(computeContentBounds(board), 80));
     void persist(board);
   }
 }
@@ -1397,7 +1426,6 @@ async function importFiles(
 function mediaAssetRefs(media: MediaImport): Record<string, AssetRef> {
   if (media.kind === "video") return { poster: { assetId: media.assetId, variant: "preview" } };
   if (media.kind === "audio") return { waveform: { assetId: media.assetId, variant: "waveform" } };
-  if (["model", "html", "markdown", "text-file", "file"].includes(media.kind)) return { preview: { assetId: media.assetId, variant: "preview" } };
   return {
     primary: { assetId: media.assetId, variant: "original" },
     ...(media.hasPreview ? { preview: { assetId: media.assetId, variant: "preview" } } : {}),
@@ -1415,6 +1443,8 @@ function freeSpaceAnchor(board: PixiBoard): { x: number; y: number } {
 }
 
 function mediaTag(node: Readonly<BoardNode>): string {
+  const previewLabel = previewTypeLabel(node, KIND_ICON[node.type as MediaKind] ?? node.type.toUpperCase());
+  if (previewLabel) return previewLabel;
   if (node.type === "video" || node.type === "audio") {
     const duration = (node.props as Partial<MediaProps>).duration;
     if (typeof duration === "number" && Number.isFinite(duration) && duration > 0) return formatTime(duration);
@@ -1707,8 +1737,8 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
   const renderToolbar = (node: BoardNode<MediaProps>) => {
     const actions = [
       { id: "download", title: "下载原始文件", icon: "download" as const, hidden: false },
-      { id: "restore-ratio", title: "恢复导入时的宽高比", icon: "frame" as const, hidden: !node.props.intrinsicWidth || !node.props.intrinsicHeight },
-      { id: "refresh-preview", title: "刷新预览", icon: "refresh" as const, hidden: !isMediaKind(node.type) },
+      { id: "restore-ratio", title: "恢复导入时的宽高比", icon: "frame" as const, hidden: isDocumentNode(node) || !node.props.intrinsicWidth || !node.props.intrinsicHeight },
+      { id: "refresh-preview", title: isPreviewNode(node) ? "重置预览" : "刷新预览", icon: "refresh" as const, hidden: !isMediaKind(node.type) },
       { id: "delete", title: "删除节点", icon: "delete" as const, hidden: false },
     ];
 
@@ -1761,6 +1791,12 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
     } else if (action === "restore-ratio") {
       restoreMediaAspectRatio(board, node);
     } else if (action === "refresh-preview") {
+      if (isPreviewNode(node)) {
+        void requestDocumentPreview(board, node.id, { reason: "reset" })
+          .catch((error) => showToast(`重置失败：${error instanceof Error ? error.message : String(error)}`, "error"));
+        showToast("正在重置预览...");
+        return;
+      }
       const assetId = node.assetRefs?.primary?.assetId ?? node.assetRefs?.preview?.assetId ?? node.assetRefs?.poster?.assetId ?? node.assetRefs?.waveform?.assetId;
       if (!assetId || !isMediaKind(node.type)) return;
       showToast("正在刷新预览...");
@@ -1986,48 +2022,21 @@ async function clearStorage(board: PixiBoard, resyncMediaBadges: () => void): Pr
 }
 
 async function refreshModelPreviews(board: PixiBoard): Promise<void> {
-  const modelNodes = board.nodes.list().filter((node): node is BoardNode<MediaProps> => node.type === "model");
-  if (!modelNodes.length) return;
-
-  const grouped = new Map<string, BoardNode<MediaProps>[]>();
-  for (const node of modelNodes) {
-    const assetId = selectedMediaAssetId(node);
-    if (!assetId) continue;
-    const bucket = grouped.get(assetId) ?? [];
-    bucket.push(node);
-    grouped.set(assetId, bucket);
-  }
-  if (!grouped.size) return;
-
-  const refreshed = new Set<string>();
-  for (const assetId of grouped.keys()) {
-    const changed = await mediaLibrary.refreshPreview(assetId, "model").catch(() => false);
-    if (changed) refreshed.add(assetId);
-  }
-  if (!refreshed.size) return;
-
-  for (const assetId of refreshed) {
-    textureCache.delete(`${assetId}:preview`);
-  }
-
-  board.transaction("Refresh model previews", () => {
-    for (const assetId of refreshed) {
-      const nodes = grouped.get(assetId) ?? [];
-      for (const node of nodes) {
-        const current = board.nodes.get<MediaProps>(node.id);
-        if (!current) continue;
-        const assetRefs = Object.fromEntries(
-          Object.entries(current.assetRefs ?? {}).filter(([key]) => !key.startsWith("_refreshPreview")),
-        );
-        board.nodes.update<MediaProps>(node.id, {
-          assetRefs: {
-            ...assetRefs,
-            [`_refreshPreview${Date.now()}`]: { assetId, variant: "preview" },
-          },
-        });
-      }
+  for (const node of board.nodes.list()) {
+    if (!isPreviewNode(node)) continue;
+    const status = (node.props as PreviewImportState).previewStatus;
+    const unfinished = status === "pending" || status === "queued" || status === "running";
+    // A host resumes its own jobs. Without one, no persisted in-flight state
+    // has an owner: retry models locally and settle documents to a terminal state.
+    if (hasSitePreviewRenderer()) {
+      if (node.type !== "model" || status !== undefined) continue;
+    } else if (!unfinished && (node.type !== "model" || status !== undefined)) continue;
+    try {
+      await requestDocumentPreview(board, node.id);
+    } catch (error) {
+      console.warn("Failed to refresh model preview", error);
     }
-  }, { origin: "ui" });
+  }
 }
 
 async function cleanupUnusedAssets(board: PixiBoard): Promise<void> {

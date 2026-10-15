@@ -1,3 +1,4 @@
+import { isAssetVariant } from "./asset-variant";
 import { DocumentValidationError, NodeValidationError } from "./errors";
 import { assertJsonValue, cloneValue } from "./json";
 import type { NodeTypeRegistry } from "./node-type-registry";
@@ -145,12 +146,7 @@ function validateAssetRefs(input: unknown, path: string): asserts input is Recor
   for (const [name, ref] of Object.entries(input)) {
     if (!name || !isRecord(ref)) throw new DocumentValidationError(`${path}.${name} is invalid`);
     readString(ref, "assetId", `${path}.${name}`);
-    if (
-      ref.variant !== undefined &&
-      ref.variant !== "original" &&
-      ref.variant !== "preview" &&
-      ref.variant !== "waveform"
-    ) {
+    if (ref.variant !== undefined && !isAssetVariant(ref.variant)) {
       throw new DocumentValidationError(`${path}.${name}.variant is invalid`);
     }
   }

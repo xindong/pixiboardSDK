@@ -4,16 +4,17 @@ import {
   NativeObjectUrlPort,
   NativeOpfsPort,
 } from "@pixi-board/adapter-browser";
-import type { AssetRecord, BoardDocument } from "@pixi-board/core";
+import type { AssetRecord, AssetVariant, BoardDocument, PreviewSpec } from "@pixi-board/core";
 import { renderModelPreview } from "./modelPreviewScene";
+import { documentPreviewImport, classifyPreviewFile, hasSitePreviewRenderer, type PreviewImportState } from "./preview";
 
 export type MediaKind = "image" | "video" | "audio" | "model" | "html" | "markdown" | "text-file" | "file";
 export type ModelVertex = [number, number, number];
 
 /** Storage variants this demo writes; mirrors the core `AssetRef["variant"]`. */
-export type AssetVariant = "original" | "preview" | "waveform";
+export type { AssetVariant } from "@pixi-board/core";
 
-export type MediaImport = {
+export type MediaImport = PreviewImportState & {
   assetId: string;
   kind: MediaKind;
   name: string;
@@ -60,7 +61,7 @@ export function classifyMedia(file: File): MediaKind | undefined {
   if (["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "svg"].includes(extension)) return "image";
   if (["mp4", "webm", "mov", "m4v", "ogv"].includes(extension)) return "video";
   if (["mp3", "wav", "ogg", "oga", "m4a", "flac", "aac"].includes(extension)) return "audio";
-  if (["glb", "gltf", "obj", "fbx", "stl", "ply", "dae", "3mf", "3ds", "vrml", "wrl", "zip"].includes(extension)) return "model";
+  if (["glb", "gltf", "obj", "fbx", "stl", "ply", "dae", "3mf", "3ds", "vrml", "wrl", "step", "stp"].includes(extension)) return "model";
   if (["html", "htm"].includes(extension)) return "html";
   if (["md", "markdown"].includes(extension)) return "markdown";
   if (["txt", "log", "csv", "json", "xml", "yaml", "yml"].includes(extension)) return "text-file";
@@ -71,7 +72,7 @@ export function classifyMedia(file: File): MediaKind | undefined {
   if (type === "text/html") return "html";
   if (["text/markdown", "text/x-markdown"].includes(type)) return "markdown";
   if (type.startsWith("text/")) return "text-file";
-  return undefined;
+  return "file";
 }
 
 /**
@@ -113,7 +114,7 @@ export class MediaLibrary {
    * variant.
    */
   async importFile(file: File): Promise<MediaImport> {
-    const kind = classifyMedia(file);
+    const kind = await classifyPreviewFile(file, classifyMedia(file));
     if (!kind) throw new UnsupportedMediaError(file.name, file.type);
 
     const assetId = `asset-${crypto.randomUUID()}`;
@@ -124,6 +125,7 @@ export class MediaLibrary {
         name: file.name,
         mimeType: file.type || "application/octet-stream",
         size: file.size,
+        relativePath: file.webkitRelativePath || file.name,
       },
     };
 
@@ -166,7 +168,19 @@ export class MediaLibrary {
       };
     }
 
-    const preview = kind === "model" ? await modelPreview(file) : await filePreview(file, kind);
+    let state = documentPreviewImport(file, kind);
+    let preview: Blob;
+    if (kind === "model" && !hasSitePreviewRenderer()) {
+      try {
+        preview = await modelPreview(file, state.previewSpec);
+        state = { ...state, previewStatus: "ready", previewQuality: "thumbnail", previewError: null };
+      } catch (error) {
+        state = { ...state, previewStatus: "error", previewError: error instanceof Error ? error.message : String(error) };
+        preview = await filePreview(file, kind);
+      }
+    } else {
+      preview = await filePreview(file, kind);
+    }
     await this.adapter.putDerivative(assetId, "preview", preview);
     return {
       assetId,
@@ -177,6 +191,7 @@ export class MediaLibrary {
       width: kind === "model" ? MODEL_NODE_WIDTH : DOCUMENT_NODE_WIDTH,
       height: kind === "model" ? MODEL_NODE_HEIGHT : DOCUMENT_NODE_HEIGHT,
       hasPreview: true,
+      ...state,
     };
   }
 
@@ -221,11 +236,13 @@ export class MediaLibrary {
   }
 
   async deleteAsset(assetId: string): Promise<void> {
-    for (const variant of ["original", "preview", "waveform"] as const) this.revokeLease(assetId, variant);
+    for (const key of [...this.leases.keys()]) {
+      if (key.startsWith(`${assetId}:`)) this.revokeLease(assetId, key.slice(assetId.length + 1) as AssetVariant);
+    }
     await this.adapter.deleteAsset(assetId);
   }
 
-  async refreshPreview(assetId: string, kind: MediaKind): Promise<boolean> {
+  async refreshPreview(assetId: string, kind: MediaKind, spec?: PreviewSpec, isCurrent: () => boolean = () => true): Promise<boolean> {
     const stored = await this.adapter.getAsset(assetId, { variant: "original" });
     if (!stored) return false;
 
@@ -256,9 +273,18 @@ export class MediaLibrary {
       return true;
     }
 
-    const preview = kind === "model" ? await modelPreview(file) : await filePreview(file, kind);
+    let preview: Blob;
+    let failure: unknown;
+    try {
+      preview = kind === "model" ? await modelPreview(file, spec) : await filePreview(file, kind);
+    } catch (error) {
+      failure = error;
+      preview = await filePreview(file, kind);
+    }
+    if (!isCurrent()) return false;
     await this.adapter.putDerivative(assetId, "preview", preview);
     this.revokeLease(assetId, "preview");
+    if (failure) throw failure;
     return true;
   }
 
@@ -513,8 +539,8 @@ async function audioWaveform(file: Blob): Promise<{ blob: Blob; duration?: numbe
   return { blob: await canvasBlob(canvas), duration };
 }
 
-async function modelPreview(file: File): Promise<Blob> {
-  return renderModelPreview(file);
+async function modelPreview(file: File, spec?: Partial<PreviewSpec>): Promise<Blob> {
+  return withTimeout(renderModelPreview(file, spec), 20_000, "模型预览超时，暂无预览，原文件已保存。");
 }
 
 export async function modelVertices(file: File, extension: string): Promise<ModelVertex[]> {
@@ -623,7 +649,9 @@ async function filePreview(file: File, kind: MediaKind): Promise<Blob> {
   context.font = "400 18px Inter, Arial, sans-serif";
   context.fillText(`${kindLabel(kind)} · ${formatBytes(file.size)}`, 156, 112);
 
-  const snippet = await previewSnippet(file, kind);
+  const snippet = ["html", "markdown", "text-file", "file"].includes(kind)
+    ? "原文件已保存，可下载或交给 Agent 处理。"
+    : await previewSnippet(file, kind);
   context.fillStyle = "#384152";
   context.font = "400 18px ui-monospace, SFMono-Regular, Menlo, monospace";
   const lines = wrapText(context, snippet, width - 92, kind === "model" ? 5 : 7);
@@ -633,7 +661,7 @@ async function filePreview(file: File, kind: MediaKind): Promise<Blob> {
 }
 
 async function previewSnippet(file: File, kind: MediaKind): Promise<string> {
-  if (kind === "model") return "3D 模型文件已保存为原始资源。下一步在 SDK 中接入 Three.js 运行时后，可在节点内直接预览和旋转。";
+  if (kind === "model") return "暂无预览。原始模型已保存，可下载后查看。";
   try {
     const text = await file.slice(0, 3200).text();
     return text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || kindLabel(kind);

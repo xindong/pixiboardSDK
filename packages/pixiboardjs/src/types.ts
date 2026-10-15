@@ -1,4 +1,5 @@
 import type {
+  AssetRef,
   BoardChangeEvent,
   BoardCoreOptions,
   BoardDocument,
@@ -106,7 +107,7 @@ export type CustomTextureLease = { texture?: unknown; release?: () => void };
 
 export type CustomNodeRendererContext = {
   assets: {
-    acquireTexture(ref: { assetId: string; variant?: "original" | "preview" | "waveform" }, options?: Record<string, unknown>): Promise<CustomTextureLease>;
+    acquireTexture(ref: AssetRef, options?: Record<string, unknown>): Promise<CustomTextureLease>;
   };
   invalidate(): void;
   signal: AbortSignal;
@@ -393,3 +394,14 @@ export interface PixiBoard {
 export type NodePatch<Props extends JsonValue = JsonValue> = BoardNodePatch<Props>;
 export type NodeInput<Props extends JsonValue = JsonValue> = BoardNodeCreateInput<Props>;
 export type TransactionOrigin = ChangeOrigin;
+
+export type {
+  AssetRef,
+  AssetVariant,
+  PreviewStatus,
+  PreviewQuality,
+  PreviewSpec,
+  PreviewState,
+  PreviewNode,
+  PreviewSpecOptions,
+} from "@pixi-board/core";

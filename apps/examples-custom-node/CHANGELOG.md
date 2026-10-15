@@ -1,5 +1,13 @@
 # pixiboardjs-example-custom-node
 
+## 0.1.1-alpha.1
+
+### Patch Changes
+
+- Updated dependencies
+  - pixiboardjs@0.1.0-alpha.2
+  - @pixi-board/renderer-pixi@0.0.0
+
 ## 0.1.1-alpha.0
 
 ### Patch Changes

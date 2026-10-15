@@ -37,6 +37,13 @@ import type {
 
 export * from "./errors";
 export type * from "./types";
+export {
+  isAssetVariant,
+  isDocumentPreviewType,
+  isPreviewNodeType,
+  createPreviewSpec,
+  previewStatusLabel,
+} from "@pixi-board/core";
 // Re-exported so a host can compute handle placement and cursors itself when
 // it draws the transformer inside its own scene instead of over the DOM.
 export {

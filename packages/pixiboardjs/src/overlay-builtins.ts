@@ -177,7 +177,9 @@ export function attachLabelOverlay(board: PixiBoard, options: LabelOverlayOption
         data: { text: value, icon: options.icon?.(node) } satisfies LabelData,
       };
     },
-    render: ({ element, placement }) => {
+    render: ({ element, placement, node }) => {
+      const previewError = (node.props as Record<string, unknown>)?.previewError;
+      element.title = typeof previewError === "string" ? previewError : "";
       let parts = labelParts.get(element);
       if (!parts) {
         parts = {

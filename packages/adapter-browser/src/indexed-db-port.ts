@@ -1,3 +1,4 @@
+import { assertAssetVariant } from "./asset-variant";
 import type {
   AssetBinaryVariant,
   BrowserDocumentRecord,
@@ -12,7 +13,8 @@ const ASSET_STORE = "asset-metadata";
 const BLOB_STORE = "asset-blobs";
 const DOCUMENT_KEY = "current";
 
-function blobKey(id: string, variant: AssetBinaryVariant): IDBValidKey {
+function blobKey(id: string, variant: unknown): IDBValidKey {
+  assertAssetVariant(variant);
   return [id, variant];
 }
 
@@ -135,6 +137,8 @@ export class NativeIndexedDbPort implements IndexedDbPort {
     binaryWrite: { variant: AssetBinaryVariant; blob: Blob } | undefined,
     signal: AbortSignal,
   ): Promise<void> {
+    for (const variant of Object.keys(entry.binaries)) assertAssetVariant(variant);
+    if (binaryWrite !== undefined) assertAssetVariant(binaryWrite.variant);
     await this.#write([ASSET_STORE, BLOB_STORE], signal, (transaction) => {
       transaction.objectStore(ASSET_STORE).put(entry, entry.id);
       if (binaryWrite !== undefined) {
@@ -157,6 +161,8 @@ export class NativeIndexedDbPort implements IndexedDbPort {
     signal: AbortSignal,
     options: SaveBrowserDocumentOptions = {},
   ): Promise<void> {
+    for (const variant of Object.keys(entry.binaries)) assertAssetVariant(variant);
+    if (binaryWrite !== undefined) assertAssetVariant(binaryWrite.variant);
     const database = await this.#open(signal);
     if (signal.aborted) throw abortError(signal);
     const transaction = database.transaction(
