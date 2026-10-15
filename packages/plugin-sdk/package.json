@@ -1,6 +1,6 @@
 {
   "name": "@pixi-board/plugin-sdk",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.4",
   "description": "Public PixiBoardJS Plugin API v3 contract",
   "type": "module",
   "private": false,

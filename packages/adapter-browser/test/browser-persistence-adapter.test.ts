@@ -1,4 +1,5 @@
 import type { AssetRecord, BoardDocument } from "@pixi-board/core";
+import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_OPFS_THRESHOLD_BYTES,
@@ -408,6 +409,154 @@ describe("BrowserPersistenceAdapter contract", () => {
     expect(opfs.deletedKeys).toContain("hero-original-generation-1");
     expect(await (await adapter.getAsset("hero"))?.blob.text()).toBe("replacement");
     expect(await (await adapter.getAsset("hero", { variant: "preview" }))?.blob.text()).toBe("preview");
+  });
+
+  it("preserves the original and both preview variants when writes for one asset overlap", async () => {
+    const { adapter, indexedDb } = setup();
+    const firstVariant = `preview-${"a".repeat(64)}` as const;
+    const secondVariant = `preview-${"b".repeat(64)}` as const;
+    indexedDb.resetAssetPutGate();
+    indexedDb.blockNextAssetPutUntilRelease = true;
+    const original = adapter.putAsset(asset("concurrent"), new Blob(["original"]));
+    await indexedDb.assetPutStarted;
+
+    // Both derivatives are requested before the original metadata exists.
+    const writes = Promise.all([
+      original,
+      adapter.putDerivative("concurrent", firstVariant, new Blob(["first preview"])),
+      adapter.putDerivative("concurrent", secondVariant, new Blob(["second preview"])),
+    ]);
+    indexedDb.releaseAssetPut();
+    await writes;
+
+    expect(Object.keys(indexedDb.entries.get("concurrent")!.binaries).sort())
+      .toEqual(["original", firstVariant, secondVariant].sort());
+    expect(await (await adapter.getAsset("concurrent"))?.blob.text()).toBe("original");
+    expect(await (await adapter.resolveAsset("concurrent", firstVariant))?.blob.text())
+      .toBe("first preview");
+    expect(await (await adapter.resolveAsset("concurrent", secondVariant))?.blob.text())
+      .toBe("second preview");
+  });
+
+  it.each([
+    { storage: "IndexedDB blob", preferOpfs: false },
+    { storage: "OPFS pointer", preferOpfs: true },
+  ])("merges concurrent derivatives from separate native connections using $storage", async ({ preferOpfs }) => {
+    const factory = new IDBFactory();
+    const ports = [0, 1].map(() => new NativeIndexedDbPort({
+      indexedDb: factory,
+      databaseName: "concurrent-derivatives",
+    }));
+    const opfs = new MemoryOpfsPort();
+    const adapters = ports.map((indexedDb, index) => new BrowserPersistenceAdapter({
+      indexedDb,
+      opfs,
+      objectUrls: new MemoryObjectUrlPort(),
+      storageKeyFactory: (id, variant) => `${id}-${variant}-${index}`,
+    }));
+    const firstVariant = `preview-${"a".repeat(64)}` as const;
+    const secondVariant = `preview-${"b".repeat(64)}` as const;
+    try {
+      await adapters[0].putAsset(asset("concurrent"), new Blob(["original"]), { preferOpfs });
+
+      // putDerivative reads once to find the record and again to prepare its write.
+      // Gate both rounds so both connections prepare writes from the original entry.
+      const releases: (() => void)[] = [];
+      const barriers = [0, 1].map((round) => new Promise<void>((resolve) => {
+        releases[round] = resolve;
+      }));
+      const arrivals = [0, 0];
+      for (const port of ports) {
+        const getAssetEntry = port.getAssetEntry.bind(port);
+        let reads = 0;
+        port.getAssetEntry = async (id, signal) => {
+          const entry = await getAssetEntry(id, signal);
+          const round = reads++;
+          if (round < barriers.length) {
+            expect(Object.keys(entry!.binaries)).toEqual(["original"]);
+            if (++arrivals[round] === ports.length) releases[round]();
+            await barriers[round];
+          }
+          return entry;
+        };
+      }
+
+      await Promise.all([
+        adapters[0].putDerivative("concurrent", firstVariant, new Blob(["first preview"]), { preferOpfs }),
+        adapters[1].putDerivative("concurrent", secondVariant, new Blob(["second preview"]), { preferOpfs }),
+      ]);
+
+      for (const adapter of adapters) {
+        const [entry] = await adapter.listAssets();
+        expect(Object.keys(entry.binaries).sort()).toEqual(["original", firstVariant, secondVariant].sort());
+        for (const binary of Object.values(entry.binaries)) {
+          expect(binary.storage.kind).toBe(preferOpfs ? "opfs" : "indexeddb");
+        }
+        expect(await (await adapter.getAsset("concurrent"))?.blob.text()).toBe("original");
+        expect(await (await adapter.resolveAsset("concurrent", firstVariant))?.blob.text()).toBe("first preview");
+        expect(await (await adapter.resolveAsset("concurrent", secondVariant))?.blob.text()).toBe("second preview");
+      }
+    } finally {
+      await Promise.all(adapters.map((adapter) => adapter.destroy()));
+    }
+  });
+
+  it("allows another asset to finish writing while one asset write is blocked", async () => {
+    const { adapter, indexedDb } = setup({ opfsAvailable: false });
+    indexedDb.resetAssetPutGate();
+    indexedDb.blockNextAssetPutUntilRelease = true;
+    const first = adapter.putAsset(asset("blocked-a"), new Blob(["asset A"]));
+    await indexedDb.assetPutStarted;
+    const second = adapter.putAsset(asset("independent-b"), new Blob(["asset B"]));
+
+    try {
+      await expect.poll(() => indexedDb.entries.has("independent-b"), { timeout: 1000 }).toBe(true);
+      await second;
+      expect(indexedDb.entries.has("blocked-a")).toBe(false);
+      expect(await (await adapter.getAsset("independent-b"))?.blob.text()).toBe("asset B");
+    } finally {
+      indexedDb.releaseAssetPut();
+      await Promise.all([first, second]);
+    }
+    expect(await (await adapter.getAsset("blocked-a"))?.blob.text()).toBe("asset A");
+  });
+
+  it("continues queued writes for the same asset after a write fails", async () => {
+    const { adapter, indexedDb, opfs } = setup();
+    await adapter.putAsset(asset("recover"), new Blob(["stable"]));
+    indexedDb.resetAssetPutGate();
+    indexedDb.blockNextAssetPutUntilRelease = true;
+    indexedDb.failNextAssetPut = true;
+    const failed = adapter.putAsset(asset("recover"), new Blob(["failed"]));
+    const rejection = expect(failed).rejects.toThrow("asset transaction failed");
+    await indexedDb.assetPutStarted;
+    const queued = adapter.putAsset(asset("recover"), new Blob(["recovered"]));
+
+    indexedDb.releaseAssetPut();
+    await rejection;
+    await queued;
+    expect(await (await adapter.getAsset("recover"))?.blob.text()).toBe("recovered");
+    expect(opfs.blobs.has("recover-original-generation-2")).toBe(false);
+    await adapter.putDerivative("recover", "preview", new Blob(["later preview"]));
+    expect(await (await adapter.resolveAsset("recover", "preview"))?.blob.text()).toBe("later preview");
+    expect(await (await adapter.getAsset("recover"))?.blob.text()).toBe("recovered");
+  });
+
+  it("deletes an asset only after its in-flight write finishes", async () => {
+    const { adapter, indexedDb, opfs } = setup();
+    await adapter.putAsset(asset("delete-in-flight"), new Blob(["original"]));
+    indexedDb.resetAssetPutGate();
+    indexedDb.blockNextAssetPutUntilRelease = true;
+    const write = adapter.putAsset(asset("delete-in-flight"), new Blob(["replacement"]));
+    await indexedDb.assetPutStarted;
+    const deletion = adapter.deleteAsset("delete-in-flight");
+
+    indexedDb.releaseAssetPut();
+    await write;
+    expect(await deletion).toBe(true);
+    expect(await adapter.getAsset("delete-in-flight")).toBeNull();
+    expect(indexedDb.entries.has("delete-in-flight")).toBe(false);
+    expect(opfs.blobs.size).toBe(0);
   });
 
   it("rejects a reused OPFS generation key before it can overwrite the previous commit", async () => {

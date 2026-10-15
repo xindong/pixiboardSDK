@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.0-alpha.4
+
+### Patch Changes
+
+- Fix lost variant index entries during concurrent BrowserPersistenceAdapter writes by serializing writes for the same asset.
+
+  Merge NativeIndexedDB variant updates within a transaction so concurrent writes preserve all variant index entries.
+
+## 0.1.0-alpha.3
+
+### Patch Changes
+
+- Fix the official site generic host import dispatch so imported assets are routed through the configured host preview flow.
+
+  Keep local model content-addressed variants in isolated copies so preview variant updates do not mutate shared asset data.
+
+## 0.1.0-alpha.2
+
+### Minor Changes
+
+- Add validated content-addressed preview variants, shared preview state and stable viewport/reset sizing helpers, and a host-configurable preview lifecycle in the site. The site accepts arbitrary files, classifies ZIP model archives by their directory, preserves preview state, and guards stale texture decodes. Hosts can supply preview jobs without coupling the SDK to a transport or renderer service.
+
 ## 0.1.0-alpha.1
 
 ### Minor Changes

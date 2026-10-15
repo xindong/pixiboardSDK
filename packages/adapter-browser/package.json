@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@pixi-board/adapter-contract-tests": "workspace:*",
+    "fake-indexeddb": "^6.2.5",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   }

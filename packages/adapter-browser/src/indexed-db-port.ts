@@ -1,3 +1,4 @@
+import { assertAssetVariant } from "./asset-variant";
 import type {
   AssetBinaryVariant,
   BrowserDocumentRecord,
@@ -12,7 +13,8 @@ const ASSET_STORE = "asset-metadata";
 const BLOB_STORE = "asset-blobs";
 const DOCUMENT_KEY = "current";
 
-function blobKey(id: string, variant: AssetBinaryVariant): IDBValidKey {
+function blobKey(id: string, variant: unknown): IDBValidKey {
+  assertAssetVariant(variant);
   return [id, variant];
 }
 
@@ -135,19 +137,41 @@ export class NativeIndexedDbPort implements IndexedDbPort {
     binaryWrite: { variant: AssetBinaryVariant; blob: Blob } | undefined,
     signal: AbortSignal,
   ): Promise<void> {
-    await this.#write([ASSET_STORE, BLOB_STORE], signal, (transaction) => {
-      transaction.objectStore(ASSET_STORE).put(entry, entry.id);
+    for (const variant of Object.keys(entry.binaries)) assertAssetVariant(variant);
+    if (binaryWrite !== undefined) assertAssetVariant(binaryWrite.variant);
+    const database = await this.#open(signal);
+    if (signal.aborted) throw abortError(signal);
+    const transaction = database.transaction([ASSET_STORE, BLOB_STORE], "readwrite");
+    const done = transactionDone(transaction, signal);
+    try {
+      const assets = transaction.objectStore(ASSET_STORE);
+      const current = await requestResult(assets.get(entry.id)) as StoredAssetEntry | undefined;
+      // Each binary write owns exactly one variant. Merge against the latest
+      // entry inside this transaction, including writes from another adapter/tab.
+      const committed = binaryWrite !== undefined && current !== undefined ? {
+        ...entry,
+        record: binaryWrite.variant === "original" ? entry.record : current.record,
+        createdAt: current.createdAt,
+        updatedAt: Math.max(current.updatedAt, entry.updatedAt),
+        binaries: { ...current.binaries, [binaryWrite.variant]: entry.binaries[binaryWrite.variant] },
+      } : current !== undefined ? {
+        ...entry,
+        binaries: { ...entry.binaries, ...current.binaries },
+      } : entry;
+      assets.put(committed, entry.id);
       if (binaryWrite !== undefined) {
         const blobs = transaction.objectStore(BLOB_STORE);
-        const binary = entry.binaries[binaryWrite.variant];
+        const binary = committed.binaries[binaryWrite.variant];
         const key = blobKey(entry.id, binaryWrite.variant);
-        if (binary?.storage.kind === "opfs") {
-          blobs.delete(key);
-        } else {
-          blobs.put(binaryWrite.blob, key);
-        }
+        if (binary?.storage.kind === "opfs") blobs.delete(key);
+        else blobs.put(binaryWrite.blob, key);
       }
-    });
+      await done;
+    } catch (error) {
+      try { transaction.abort(); } catch { /* The transaction may already have ended. */ }
+      await done.catch(() => undefined);
+      throw error;
+    }
   }
 
   async commitAssetAndDocument(
@@ -157,6 +181,8 @@ export class NativeIndexedDbPort implements IndexedDbPort {
     signal: AbortSignal,
     options: SaveBrowserDocumentOptions = {},
   ): Promise<void> {
+    for (const variant of Object.keys(entry.binaries)) assertAssetVariant(variant);
+    if (binaryWrite !== undefined) assertAssetVariant(binaryWrite.variant);
     const database = await this.#open(signal);
     if (signal.aborted) throw abortError(signal);
     const transaction = database.transaction(

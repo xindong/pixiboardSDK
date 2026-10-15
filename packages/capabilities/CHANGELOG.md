@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.0-alpha.4
+
+### Patch Changes
+
+- @pixi-board/core@0.1.0-alpha.4
+
+## 0.1.0-alpha.3
+
+### Patch Changes
+
+- @pixi-board/core@0.1.0-alpha.3
+
+## 0.1.0-alpha.2
+
+### Patch Changes
+
+- Add validated content-addressed preview variants, shared preview state and stable viewport/reset sizing helpers, and a host-configurable preview lifecycle in the site. The site accepts arbitrary files, classifies ZIP model archives by their directory, preserves preview state, and guards stale texture decodes. Hosts can supply preview jobs without coupling the SDK to a transport or renderer service.
+- Updated dependencies
+  - @pixi-board/core@0.1.0-alpha.2
+
 ## 0.1.0-alpha.1
 
 ### Minor Changes

@@ -17,8 +17,11 @@ export type AssetRecord = {
 // @public (undocumented)
 export type AssetRef = {
     assetId: string;
-    variant?: "original" | "preview" | "waveform";
+    variant?: AssetVariant;
 };
+
+// @public (undocumented)
+export type AssetVariant = "original" | "preview" | "waveform" | `preview-${string}`;
 
 // @public (undocumented)
 export class BoardAssetsController {
@@ -206,6 +209,9 @@ export type ChangeOrigin = "api" | "ui" | "plugin" | "agent" | "history" | "load
 // @public (undocumented)
 export function createBoardCore(options?: BoardCoreOptions): BoardCore;
 
+// @public
+export function createPreviewSpec(node: PreviewNode, options?: PreviewSpecOptions): PreviewSpec;
+
 // @public (undocumented)
 export type DocumentLoadOptions = {
     replaceHistory?: boolean;
@@ -226,6 +232,15 @@ export type FitBoundsOptions = {
     maxScale?: number;
     screen?: Size;
 };
+
+// @public
+export function isAssetVariant(value: unknown): value is AssetVariant;
+
+// @public (undocumented)
+export function isDocumentPreviewType(type: string): boolean;
+
+// @public (undocumented)
+export function isPreviewNodeType(type: string): boolean;
 
 // @public (undocumented)
 export function isResizeHandle(value: unknown): value is ResizeHandle;
@@ -353,6 +368,52 @@ export type Point = {
     x: number;
     y: number;
 };
+
+// @public
+export type PreviewNode = {
+    type?: string;
+    name?: string;
+    width: number;
+    height: number;
+    props?: unknown;
+};
+
+// @public (undocumented)
+export type PreviewQuality = "thumbnail" | "detail";
+
+// @public
+export type PreviewSpec = {
+    width: number;
+    height: number;
+    page: number;
+    mode: "viewport" | "fixed-viewport";
+    quality: PreviewQuality;
+};
+
+// @public (undocumented)
+export type PreviewSpecOptions = {
+    reason?: string;
+    quality?: PreviewQuality;
+    width?: number;
+    height?: number;
+    page?: number;
+};
+
+// @public (undocumented)
+export type PreviewState = {
+    previewStatus?: PreviewStatus;
+    previewSpec?: PreviewSpec;
+    previewQuality?: PreviewQuality;
+    previewRequestId?: string | null;
+    previewJobId?: string | null;
+    previewError?: string | null;
+};
+
+// @public
+export type PreviewStatus = "pending" | "queued" | "running" | "ready" | "error" | "failed" | "unsupported";
+
+// @public
+export function previewStatusLabel(node: Pick<PreviewNode, "type" | "name" | "props">, typeLabel: string): string;
 
 // @public (undocumented)
 export type RegisterNodeTypeOptions = {

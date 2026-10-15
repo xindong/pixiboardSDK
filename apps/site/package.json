@@ -1,6 +1,6 @@
 {
   "name": "pixiboardjs-site",
-  "version": "0.1.1-alpha.0",
+  "version": "0.1.1-alpha.3",
   "private": true,
   "type": "module",
   "description": "Interactive PixiBoardJS SDK feature showcase, published to GitHub Pages",
@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "fflate": "0.8.3",
     "lucide": "^1.33.0",
     "pixiboardjs": "workspace:*",
     "three": "^0.185.1"

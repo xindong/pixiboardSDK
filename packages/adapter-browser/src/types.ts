@@ -1,4 +1,4 @@
-import type { AssetRecord, BoardDocument, BoardNode, JsonValue } from "@pixi-board/core";
+import type { AssetVariant, AssetRecord, BoardDocument, BoardNode, JsonValue } from "@pixi-board/core";
 
 export type BrowserDocumentMetadata = Record<string, JsonValue>;
 
@@ -26,7 +26,7 @@ export type AssetStorageLocation =
   | { kind: "indexeddb" }
   | { kind: "opfs"; key: string };
 
-export type AssetBinaryVariant = "original" | "preview" | "waveform";
+export type AssetBinaryVariant = AssetVariant;
 
 export type StoredAssetBinary = {
   storage: AssetStorageLocation;

@@ -20,9 +20,12 @@
   },
   "changesets": [
     "bright-trees-smile",
+    "browser-persistence-concurrent-variants",
+    "generic-asset-previews",
     "p6-publishability",
     "public-capabilities-agent-tools",
     "resize-policy-transformer",
+    "site-import-model-preview-fixes",
     "viewport-virtualization-lod"
   ]
 }

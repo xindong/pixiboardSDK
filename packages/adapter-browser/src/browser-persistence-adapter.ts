@@ -1,3 +1,4 @@
+import { assertAssetVariant } from "./asset-variant";
 import type { AssetRecord, BoardDocument, BoardNode, JsonValue } from "@pixi-board/core";
 import {
   BrowserAssetBinaryMissingError,
@@ -131,6 +132,7 @@ export class BrowserPersistenceAdapter {
   readonly #onCleanupError: (record: BrowserCleanupError) => void;
   readonly #abortController = new AbortController();
   readonly #leasesByAsset = new Map<string, Set<LeaseState>>();
+  readonly #assetWrites = new Map<string, Promise<void>>();
   readonly #cleanupErrors: BrowserCleanupError[] = [];
   #destroyed = false;
   #destroyPromise?: Promise<void>;
@@ -379,8 +381,13 @@ export class BrowserPersistenceAdapter {
   }
 
   async putAsset(record: AssetRecord, blob: Blob, options: PutAssetOptions = {}): Promise<StoredAssetEntry> {
+    return this.#serializeAsset(record.id, () => this.#putAsset(record, blob, options));
+  }
+
+  async #putAsset(record: AssetRecord, blob: Blob, options: PutAssetOptions): Promise<StoredAssetEntry> {
     return this.#run(options.signal, async (signal) => {
-      const variant = options.variant ?? "original";
+      const variant = options.variant === undefined ? "original" : options.variant;
+      assertAssetVariant(variant);
       const previous = await this.#indexedDb.getAssetEntry(record.id, signal);
       const previousBinary = previous?.binaries[variant];
       this.#throwIfAborted(signal);
@@ -440,14 +447,18 @@ export class BrowserPersistenceAdapter {
     blob: Blob,
     options: Omit<PutAssetOptions, "variant"> = {},
   ): Promise<StoredAssetEntry> {
-    const entry = await this.#run(options.signal, (signal) => this.#indexedDb.getAssetEntry(assetId, signal));
-    if (entry === undefined) throw new BrowserAssetNotFoundError(assetId);
-    return this.putAsset(entry.record, blob, { ...options, variant });
+    assertAssetVariant(variant);
+    return this.#serializeAsset(assetId, () => this.#run(options.signal, async (signal) => {
+      const entry = await this.#indexedDb.getAssetEntry(assetId, signal);
+      if (entry === undefined) throw new BrowserAssetNotFoundError(assetId);
+      return this.#putAsset(entry.record, blob, { ...options, variant, signal });
+    }));
   }
 
   async getAsset(id: string, options: GetAssetOptions = {}): Promise<BrowserAsset | null> {
     return this.#run(options.signal, async (signal) => {
-      const variant = options.variant ?? "original";
+      const variant = options.variant === undefined ? "original" : options.variant;
+      assertAssetVariant(variant);
       const entry = await this.#indexedDb.getAssetEntry(id, signal);
       this.#throwIfAborted(signal);
       if (entry === undefined) return null;
@@ -480,6 +491,10 @@ export class BrowserPersistenceAdapter {
   }
 
   async deleteAsset(id: string, options: AdapterOperationOptions = {}): Promise<boolean> {
+    return this.#serializeAsset(id, () => this.#deleteAsset(id, options));
+  }
+
+  async #deleteAsset(id: string, options: AdapterOperationOptions): Promise<boolean> {
     return this.#run(options.signal, async (signal) => {
       const entry = await this.#indexedDb.getAssetEntry(id, signal);
       this.#throwIfAborted(signal);
@@ -502,7 +517,8 @@ export class BrowserPersistenceAdapter {
 
   async leaseObjectUrl(id: string, options: GetAssetOptions = {}): Promise<ObjectUrlLease> {
     return this.#run(options.signal, async (signal) => {
-      const variant = options.variant ?? "original";
+      const variant = options.variant === undefined ? "original" : options.variant;
+      assertAssetVariant(variant);
       const asset = await this.getAsset(id, { signal, variant });
       this.#throwIfAborted(signal);
       if (asset === null) throw new BrowserAssetNotFoundError(id);
@@ -527,7 +543,8 @@ export class BrowserPersistenceAdapter {
 
   async exportAsset(id: string, options: BrowserExportOptions = {}): Promise<BrowserAssetExport> {
     return this.#run(options.signal, async (signal) => {
-      const variant = options.variant ?? "original";
+      const variant = options.variant === undefined ? "original" : options.variant;
+      assertAssetVariant(variant);
       const asset = await this.getAsset(id, { signal, variant });
       if (asset === null) throw new BrowserAssetNotFoundError(id);
       const storedName = asset.entry.record.metadata?.fileName;
@@ -725,6 +742,17 @@ export class BrowserPersistenceAdapter {
       },
     };
     return { sourceType, asset, blob, fileName };
+  }
+
+  #serializeAsset<T>(id: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.#assetWrites.get(id) ?? Promise.resolve();
+    const result = previous.then(operation);
+    const settled = result.then(() => undefined, () => undefined);
+    this.#assetWrites.set(id, settled);
+    void settled.then(() => {
+      if (this.#assetWrites.get(id) === settled) this.#assetWrites.delete(id);
+    });
+    return result;
   }
 
   async #run<T>(externalSignal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {

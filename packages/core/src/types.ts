@@ -27,9 +27,11 @@ export type ViewportSnapshot = {
   offset: Point;
 };
 
+export type AssetVariant = "original" | "preview" | "waveform" | `preview-${string}`;
+
 export type AssetRef = {
   assetId: string;
-  variant?: "original" | "preview" | "waveform";
+  variant?: AssetVariant;
 };
 
 export type AssetRecord = {

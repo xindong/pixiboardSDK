@@ -4,11 +4,11 @@ type ModelGeometry = InstanceType<import("three")["BufferGeometry"]>;
 
 const MODEL_PREVIEW_BACKGROUND = 0xe8edf3;
 
-export async function renderModelPreview(file: File): Promise<Blob> {
+export async function renderModelPreview(file: File, spec?: { width?: number; height?: number }): Promise<Blob> {
   const THREE = await import("three");
   const extension = file.name.toLowerCase().split(".").pop() ?? "glb";
-  const width = 960;
-  const height = 640;
+  const width = spec?.width ?? 1024;
+  const height = spec?.height ?? 768;
   let object: ModelObject | null = null;
   let objectUrlToRevoke: string | null = null;
 
@@ -105,7 +105,7 @@ async function loadModelObject(
       return normalizeLoadedModel(THREE, await new VRMLLoader().loadAsync(url));
     }
     default:
-      return createFallbackModel(THREE);
+      throw new Error("此模型格式暂不支持本地预览，原文件已保存。");
   }
 }
 
@@ -125,11 +125,6 @@ function meshFromGeometry(THREE: typeof import("three"), geometry: ModelGeometry
     geometry.computeVertexNormals();
   }
   return new THREE.Mesh(geometry, createModelMaterial(THREE));
-}
-
-function createFallbackModel(THREE: typeof import("three")): ModelObject {
-  const geometry = new THREE.BoxGeometry(2.2, 2.2, 2.2);
-  return meshFromGeometry(THREE, geometry);
 }
 
 function applyFallbackMaterials(THREE: typeof import("three"), object: ModelObject): void {
