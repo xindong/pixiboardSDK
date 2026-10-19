@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-alpha.5
+
+### Patch Changes
+
+- Add native directed connections, bounded node-agent context, reversible metadata transactions, in-place node conversion, and public browser host runtime exports. Relationships use only metadata.connections.
+
 ## 0.1.0-alpha.4
 
 ### Patch Changes

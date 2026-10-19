@@ -1,0 +1,52 @@
+name: npm release artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Full merged main commit to package (publish the resulting tarballs unchanged)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CI: "true"
+  CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PIXIBOARD_RELEASE_ARTIFACT_DIR: .artifacts/release
+      PIXIBOARD_BUNDLE_REPORT: .artifacts/release/bundle-report.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+      - name: Require a merged main commit
+        shell: bash
+        run: |
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
+      - uses: ./.github/actions/setup-sdk
+      - run: pnpm build:release
+      - name: Generate release API reports
+        shell: bash
+        run: |
+          pnpm api:report
+          for entry in browser node types; do
+            pnpm --filter pixiboardjs exec api-extractor run --local --config "api-extractor.$entry.json"
+          done
+          pnpm --filter @pixi-board/agent-tools exec api-extractor run --local --config api-extractor.schemas.json
+      - run: node scripts/check-current-document-only.mjs
+      - run: pnpm release:check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-release-${{ inputs.candidate_sha }}
+          path: .artifacts/release/
+          if-no-files-found: error

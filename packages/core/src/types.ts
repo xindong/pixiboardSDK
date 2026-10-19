@@ -94,6 +94,12 @@ export type BoardNodePatch<Props extends JsonValue = JsonValue> = Partial<
   >
 >;
 
+/** Change content type in place; omitted geometry stays, old props/assets do not. */
+export type BoardNodeConvertInput<Props extends JsonValue = JsonValue> = BoardNodePatch<Props> & {
+  type: string;
+  typeVersion?: number;
+};
+
 export type ResizeInput<Props extends JsonValue> = {
   node: Readonly<BoardNode<Props>>;
   width: number;
@@ -153,6 +159,7 @@ export type ChangeOrigin =
   | (string & {});
 
 export type BoardChangeSet = {
+  metadataChanged?: boolean;
   transactionId: string;
   revision: number;
   label?: string;

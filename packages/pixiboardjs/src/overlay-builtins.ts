@@ -131,6 +131,7 @@ export type LabelOverlayOptions = {
   text?(node: Readonly<BoardNode<JsonValue>>): string | undefined;
   /** An optional icon or prefix element content, rendered before the text. */
   icon?(node: Readonly<BoardNode<JsonValue>>): string | undefined;
+  tooltip?(node: Readonly<BoardNode<JsonValue>>): string | undefined;
   classPrefix?: string;
   /** Defaults to `bottom-left`, i.e. hanging under the node. */
   anchor?: OverlayAnchor;
@@ -195,6 +196,7 @@ export function attachLabelOverlay(board: PixiBoard, options: LabelOverlayOption
         // the cached spans, but reattach them when that element is reused.
         element.replaceChildren(parts.icon, parts.text);
       }
+      element.title = options.tooltip?.(node) ?? "";
       const data = placement.data as LabelData;
       // Collapsed labels keep their element (so the pool and the DOM order
       // stay stable) but drop the text, which is what makes a dense zoomed-out

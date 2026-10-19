@@ -1,3 +1,4 @@
+import { ConnectionRenderLayer } from "./connections";
 import { rotatedRectBounds, type BoardNode, type BoardDocument, type BoardDocumentUpdate, type BoardChangeSet, type WorldBounds, type Point, type AssetRef, type NodeTypeRegistry } from "@pixi-board/core";
 import { NodeRendererRegistry } from "./registry";
 import { registerBuiltinRenderers } from "./builtins";
@@ -51,7 +52,11 @@ export class PixiBoardRenderer {
   private readonly operations = new Map<string, NodeOperation>();
   private app?: PixiApplication;
   private world?: PixiDisplayObject;
+  private connectionLayers = new Set<ConnectionRenderLayer>();
   private revision?: number;
+  private readonly nodeOrder = new Map<string, number>();
+  private nextNodeOrder = 0;
+  private displayOrderDirty = false;
   private readonly nodesById = new Map<string, Readonly<BoardNode>>();
   private desiredIds = new Set<string>();
   private visibleBounds?: WorldBounds;
@@ -86,12 +91,30 @@ export class PixiBoardRenderer {
     this.app.stage.addChild?.(this.world);
   }
 
+  async createConnectionLayer(): Promise<ConnectionRenderLayer> {
+    this.assertAlive();
+    if (!this.world) throw new Error("Renderer has not initialized");
+    let layer: ConnectionRenderLayer;
+    layer = new ConnectionRenderLayer(() => this.requestFrame(), () => this.connectionLayers.delete(layer));
+    this.world.addChild?.(layer.container as unknown as PixiDisplayObject);
+    // Custom factories may not create sortable containers.
+    (this.world as unknown as { sortableChildren: boolean }).sortableChildren = true;
+    this.connectionLayers.add(layer);
+    layer.setVisibleBounds(this.visibleBounds);
+    return layer;
+  }
+
   async rebuild(snapshot: Readonly<BoardDocument>): Promise<void> {
     this.assertAlive();
     try {
       this.revision = snapshot.revision;
       this.nodesById.clear();
-      for (const node of snapshot.nodes) this.nodesById.set(node.id, node);
+      this.nodeOrder.clear();
+      this.nextNodeOrder = 0;
+      for (const node of snapshot.nodes) {
+        this.nodesById.set(node.id, node);
+        this.nodeOrder.set(node.id, this.nextNodeOrder++);
+      }
       this.rebuildSpatialIndex(snapshot);
       this.refreshDesiredIds();
       for (const id of new Set([...this.entries.keys(), ...this.operations.keys()])) await this.destroyView(id);
@@ -123,6 +146,7 @@ export class PixiBoardRenderer {
 
       for (const id of changeSet.removedNodeIds) {
         this.nodesById.delete(id);
+        this.nodeOrder.delete(id);
         this.desiredIds.delete(id);
         this.spatialIndex.remove(id);
         await this.destroyView(id);
@@ -131,6 +155,7 @@ export class PixiBoardRenderer {
         const node = nextNodes.get(id);
         if (!node) continue;
         this.nodesById.set(id, node);
+        if (!this.nodeOrder.has(id)) this.nodeOrder.set(id, this.nextNodeOrder++);
         const item = { ...this.getBounds(node), id };
         if (addedIds.has(id)) this.spatialIndex.insert(item);
         else if (updatedIds.has(id)) this.spatialIndex.update(item);
@@ -165,6 +190,7 @@ export class PixiBoardRenderer {
       throw new RangeError("Viewport scale must be finite and greater than zero");
     }
     this.visibleBounds = bounds;
+    for (const layer of this.connectionLayers) layer.setVisibleBounds(bounds);
     this.currentScale = scale;
     const nextLevel = lodLevelFor(scale, this.lodThresholds);
     const levelChanged = nextLevel !== this.currentLodLevel;
@@ -212,7 +238,7 @@ export class PixiBoardRenderer {
   hitTest(worldPoint: Point): string | undefined {
     const ids = this.spatialIndex.queryPoint?.(worldPoint) ?? this.entries.keys();
     const order = [...ids]
-      .map((id, index) => ({ node: this.entries.get(id)?.node, index }))
+      .map((id) => ({ node: this.entries.get(id)?.node, index: this.nodeOrder.get(id) ?? -1 }))
       .filter(({ node }) => node)
       .sort((a, b) => b.node!.zIndex - a.node!.zIndex || b.index - a.index);
     for (const { node } of order) {
@@ -244,7 +270,11 @@ export class PixiBoardRenderer {
     }
     if (request.target === "bounds") frame = request.bounds;
     if (request.target === "viewport" && this.app?.screen) frame = { minX: 0, minY: 0, maxX: this.app.screen.width, maxY: this.app.screen.height };
-    return this.captureFrame(target, frame, scale, request, signal, options.requestId);
+    // Export bounds can extend outside the current camera's culled edges.
+    // Node-only captures above intentionally exclude external connections.
+    for (const layer of this.connectionLayers) layer.setVisibleBounds(undefined);
+    try { return await this.captureFrame(target, frame, scale, request, signal, options.requestId); }
+    finally { for (const layer of this.connectionLayers) layer.setVisibleBounds(this.visibleBounds); }
   }
 
   async destroy(): Promise<void> {
@@ -254,6 +284,7 @@ export class PixiBoardRenderer {
     for (const operation of this.operations.values()) operation.controller.abort();
     await Promise.allSettled([...this.operations.values()].map((operation) => operation.promise).filter(Boolean) as Promise<void>[]);
     for (const id of [...this.entries.keys()]) await this.destroyView(id);
+    for (const layer of [...this.connectionLayers]) layer.destroy();
     this.world?.destroy?.({ children: true });
     this.app?.destroy?.(true);
     this.entries.clear();
@@ -263,15 +294,32 @@ export class PixiBoardRenderer {
     this.updateDiagnosticCounts();
   }
 
+  private syncDisplayOrder(): void {
+    // Texture decoding and viewport culling must not determine equal-z stacking.
+    const world = this.world as any;
+    if (!world?.children) return;
+    const order = new Map<unknown, number>();
+    for (const [id, entry] of this.entries) {
+      entry.view.displayObject.zIndex = entry.node.zIndex;
+      order.set(entry.view.displayObject, this.nodeOrder.get(id) ?? -1);
+    }
+    world.children.sort((a: any, b: any) =>
+      (a.zIndex ?? 0) - (b.zIndex ?? 0) || (order.get(a) ?? -1) - (order.get(b) ?? -1));
+    world.sortDirty = true;
+  }
+
   private async ensureView(node: Readonly<BoardNode>, forceRecreate = false): Promise<void> {
     const renderer = this.registry.get(node.type) ?? this.registry.get("unknown-node")!;
     const current = this.entries.get(node.id);
-    if (current && !forceRecreate && current.renderer === renderer && sameAssetRefs(current.node.assetRefs, node.assetRefs)) {
+    if (current && !forceRecreate && current.node.type === node.type && current.node.typeVersion === node.typeVersion
+      && current.renderer === renderer && sameAssetRefs(current.node.assetRefs, node.assetRefs)) {
       const operation = this.beginOperation(node.id);
       const task = (async () => {
+        const orderChanged = current.node.zIndex !== node.zIndex;
         current.node = node;
         this.diagnostics.updates++;
         await renderer.update(current.view, node, this.context(combineSignals(current.lifetime.signal, operation.controller.signal), current.scope));
+        if (orderChanged) this.displayOrderDirty = true;
         if (!this.isCurrentOperation(node.id, operation) || this.entries.get(node.id) !== current) this.diagnostics.lateUpdates++;
       })();
       await this.trackOperation(node.id, operation, task);
@@ -304,6 +352,7 @@ export class PixiBoardRenderer {
         this.entries.set(node.id, entry);
         this.activeViews.set(node.id, view);
         this.world?.addChild?.(view.displayObject);
+        this.displayOrderDirty = true;
         this.diagnostics.creates++;
         this.updateDiagnosticCounts();
       } catch (error) {
@@ -468,6 +517,10 @@ export class PixiBoardRenderer {
    * driving continuous frames for that animation.
    */
   private requestFrame(): void {
+    if (this.displayOrderDirty) {
+      this.syncDisplayOrder();
+      this.displayOrderDirty = false;
+    }
     if (this.destroyed || !this.app || this.diagnostics.tickers > 0 || this.frameScheduled) return;
     this.frameScheduled = true;
     void Promise.resolve().then(() => {

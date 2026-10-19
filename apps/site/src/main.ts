@@ -4,6 +4,8 @@ import {
   attachLabelOverlay,
   attachSelectionOverlay,
   createPixiBoard,
+  type BoardConnection,
+  type ConnectionsController,
   type CustomNodeDefinition,
   type CustomTextureLease,
   type DomTransformer,
@@ -75,6 +77,12 @@ const BOARD_NODES_CLIPBOARD_TYPE = "application/x-pixiboard-nodes";
 const ARROW_KEY_STEP = 1;
 const ARROW_KEY_STEP_LARGE = 10;
 let clipboardNodes: BoardNode[] | undefined;
+let clipboardConnections: BoardConnection[] = [];
+let siteConnections: ConnectionsController | undefined;
+/** Optional host integration; relationship commands remain owned by the SDK. */
+export function configureSiteConnections(controller: ConnectionsController): void {
+  siteConnections = controller;
+}
 let pasteCount = 0;
 let cloneSequence = 0;
 let activeProject: SiteProject | undefined;
@@ -673,6 +681,7 @@ function copySelection(board: PixiBoard): boolean {
     .sort((a, b) => a.zIndex - b.zIndex);
   if (selected.length === 0) return false;
   clipboardNodes = selected.map((item) => structuredClone(item));
+  clipboardConnections = siteConnections?.copyWithin(selected.map(node => node.id)) ?? [];
   pasteCount = 0;
   showToast(`已复制 ${selected.length} 个节点`, "success");
   return true;
@@ -698,6 +707,7 @@ function pasteNodes(board: PixiBoard): void {
   const clones = clipboardNodes.map((item) => cloneNodeForInsert(item, { x: offset, y: offset }));
   board.transaction("Paste nodes", () => {
     for (const item of clones) board.nodes.create(item);
+    siteConnections?.pasteWithin(clipboardConnections, new Map(clipboardNodes!.map((node, index) => [node.id, clones[index]!.id])));
   }, { origin: "ui" });
   board.selection.set(clones.map((item) => item.id).filter((id): id is string => typeof id === "string"));
 }
@@ -709,8 +719,10 @@ function duplicateSelection(board: PixiBoard): void {
     .sort((a, b) => a.zIndex - b.zIndex);
   if (!selected.length) return;
   const clones = selected.map((item) => cloneNodeForInsert(item, { x: 24, y: 24 }));
+  const connections = siteConnections?.copyWithin(selected.map(node => node.id)) ?? [];
   board.transaction("Duplicate nodes", () => {
     for (const item of clones) board.nodes.create(item);
+    siteConnections?.pasteWithin(connections, new Map(selected.map((node, index) => [node.id, clones[index]!.id])));
   }, { origin: "ui" });
   board.selection.set(clones.map((item) => item.id).filter((id): id is string => typeof id === "string"));
 }
@@ -2724,11 +2736,17 @@ function beginTextEdit(board: PixiBoard, nodeId: string): void {
 }
 
 function hitTestTopmost(board: PixiBoard, worldPoint: { x: number; y: number }): string | undefined {
-  const candidates = board
-    .find()
-    .filter((item) => worldPoint.x >= item.x && worldPoint.x <= item.x + item.width && worldPoint.y >= item.y && worldPoint.y <= item.y + item.height)
-    .sort((a, b) => b.zIndex - a.zIndex);
-  return candidates[0]?.id;
+  const candidates = board.find().map((node, index) => ({ node, index }))
+    .filter(({ node }) => {
+      if (node.visible === false) return false;
+      // Inverse node rotation: hit the actual rectangle, not its axis-aligned box.
+      const dx = worldPoint.x - node.x, dy = worldPoint.y - node.y;
+      const cos = Math.cos(node.rotation), sin = Math.sin(node.rotation);
+      const x = dx * cos + dy * sin, y = -dx * sin + dy * cos;
+      return x >= 0 && x <= node.width && y >= 0 && y <= node.height;
+    })
+    .sort((a, b) => b.node.zIndex - a.node.zIndex || b.index - a.index);
+  return candidates[0]?.node.id;
 }
 
 function toHostPoint(event: MouseEvent | PointerEvent | WheelEvent): { x: number; y: number } {

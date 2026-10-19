@@ -1,7 +1,8 @@
-import type { AssetRecord, BoardNode } from "./types";
+import type { AssetRecord, BoardNode, BoardDocument } from "./types";
 import type { RuntimeDocumentStore } from "./store";
 
 export type DataPatch =
+  | { op: "metadata:replace"; metadata: BoardDocument["metadata"] }
   | { op: "node:insert"; index: number; node: BoardNode }
   | { op: "node:replace"; node: BoardNode }
   | { op: "node:remove"; nodeId: string }
@@ -12,6 +13,9 @@ export type DataPatch =
 export function applyDataPatches(store: RuntimeDocumentStore, patches: DataPatch[]): void {
   for (const patch of patches) {
     switch (patch.op) {
+      case "metadata:replace":
+        store.setMetadata(patch.metadata);
+        break;
       case "node:insert":
         store.insertNode(patch.index, patch.node);
         break;

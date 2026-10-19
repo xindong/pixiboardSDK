@@ -44,6 +44,10 @@ export class RuntimeDocumentStore {
     return cloneValue(this.materializedDocument());
   }
 
+  getMetadata(): BoardDocument["metadata"] { return cloneValue(this.document.metadata); }
+
+  setMetadata(value: BoardDocument["metadata"]): void { this.document.metadata = cloneValue(value); }
+
   get revision(): number {
     return this.document.revision;
   }

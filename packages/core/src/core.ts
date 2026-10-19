@@ -11,7 +11,7 @@ import {
   HistoryController,
   type HistoryEntry,
 } from "./history";
-import { cloneValue, deepFreeze, immutableClone, jsonEqual } from "./json";
+import { assertJsonValue, cloneValue, deepFreeze, immutableClone, jsonEqual } from "./json";
 import { NodeTypeRegistry } from "./node-type-registry";
 import { applyDataPatches, type DataPatch } from "./patches";
 import { resolveResize } from "./resize";
@@ -24,6 +24,7 @@ import type {
   BoardDocumentUpdate,
   BoardNode,
   BoardNodeCreateInput,
+  BoardNodeConvertInput,
   BoardNodePatch,
   ChangeOrigin,
   DocumentLoadOptions,
@@ -353,6 +354,7 @@ export class BoardCore {
         inverse: transaction.inverse,
       });
     }
+    changeSet.metadataChanged = transaction.forward.some(patch => patch.op === "metadata:replace") && !jsonEqual(before.getMetadata(), after.getMetadata());
     this.emitChange(changeSet);
     return changeSet;
   }
@@ -460,6 +462,32 @@ export class BoardNodesController {
     });
   }
 
+  convert<Props extends JsonValue>(nodeId: string, input: BoardNodeConvertInput<Props>): Readonly<BoardNode<Props>> {
+    const internals = getCoreInternals(this.core);
+    return internals.mutate("Convert node", (transaction) => {
+      const previous = transaction.draft.requireNode(nodeId);
+      const { typeVersion, props } = this.core.nodeTypes.createProps(input.type, input.props);
+      const { x, y, width, height, rotation, zIndex, locked, visible } = previous;
+      const next = validateNode({
+        x, y, width, height, rotation, zIndex,
+        ...(locked === undefined ? {} : { locked }),
+        ...(visible === undefined ? {} : { visible }),
+        ...cloneValue(input),
+        id: previous.id,
+        typeVersion: input.typeVersion ?? typeVersion,
+        props,
+      }) as BoardNode<Props>;
+      const validated = this.core.nodeTypes.validateNode(next);
+      if (jsonEqual(previous, validated)) return immutableClone(validated);
+      transaction.draft.replaceNode(validated);
+      internals.recordPatch(transaction,
+        { op: "node:replace", node: validated },
+        { op: "node:replace", node: previous },
+      );
+      return immutableClone(validated);
+    });
+  }
+
   /**
    * Applies one resize gesture step through the node type's `ResizePolicy`.
    * The policy decides what the requested handle drag is allowed to become —
@@ -491,6 +519,11 @@ export class BoardNodesController {
         { op: "node:remove", nodeId },
         { op: "node:insert", index, node: removed },
       );
+      const metadata = transaction.draft.getMetadata();
+      if (Array.isArray(metadata?.connections)) {
+        const connections = metadata.connections.filter((edge) => !edge || typeof edge !== "object" || Array.isArray(edge) || (edge.source !== nodeId && edge.target !== nodeId));
+        if (connections.length !== metadata.connections.length) this.core.document.patchMetadata({ connections });
+      }
       return immutableClone(removed);
     });
   }
@@ -650,6 +683,26 @@ export class BoardViewportController {
 export class BoardDocumentController {
   constructor(private readonly core: BoardCore) {}
 
+  getMetadata(): BoardDocument["metadata"] {
+    return getCoreInternals(this.core).currentStore().getMetadata();
+  }
+
+  patchMetadata(patch: Record<string, JsonValue | undefined>): void {
+    const internals = getCoreInternals(this.core);
+    internals.mutate("Update document metadata", (transaction) => {
+      const previous = transaction.draft.getMetadata();
+      const next = { ...previous };
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === undefined) delete next[key];
+        else next[key] = cloneValue(value);
+      }
+      // Round-trip validation prevents functions, cycles and non-JSON values.
+      assertJsonValue(next, "document.metadata");
+      transaction.draft.setMetadata(next);
+      internals.recordPatch(transaction, { op: "metadata:replace", metadata: next }, { op: "metadata:replace", metadata: previous });
+    });
+  }
+
   snapshot(): Readonly<BoardDocument> {
     return getCoreInternals(this.core).snapshotDocument();
   }
@@ -770,6 +823,7 @@ function hasEffectivePatchChanges(
   after: RuntimeDocumentStore,
   patches: DataPatch[],
 ): boolean {
+  if (patches.some(patch => patch.op === "metadata:replace") && !jsonEqual(before.getMetadata(), after.getMetadata())) return true;
   if (patches.some((patch) => patch.op.endsWith(":insert") || patch.op.endsWith(":remove"))) {
     const beforeSnapshot = before.mutableSnapshot();
     const afterSnapshot = after.mutableSnapshot();

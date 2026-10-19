@@ -6,6 +6,7 @@ import type {
   BoardDocumentUpdate,
   BoardNode,
   BoardNodeCreateInput,
+  BoardNodeConvertInput,
   BoardNodePatch,
   ChangeOrigin,
   DocumentLoadOptions,
@@ -34,6 +35,7 @@ export type {
   BoardDocumentUpdate,
   BoardNode,
   BoardNodeCreateInput,
+  BoardNodeConvertInput,
   BoardNodePatch,
   CaptureResult,
   ChangeOrigin,
@@ -63,6 +65,7 @@ export type DocumentPersistence = {
 };
 
 export type RuntimeRenderer = {
+  createConnectionLayer?(): Promise<import("@pixi-board/renderer-pixi").ConnectionRenderLayer>;
   init(): Promise<void>;
   rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
   apply(update: BoardDocumentUpdate, changeSet: BoardChangeEvent["changeSet"]): Promise<RendererApplyResult>;
@@ -105,11 +108,20 @@ export type CustomDisplayFactory = {
 
 export type CustomTextureLease = { texture?: unknown; release?: () => void };
 
+/** Resources are released when the view is culled, converted or destroyed. */
+export type CustomRendererResources = {
+  onCleanup(cleanup: () => void): () => void;
+  listen(target: Pick<EventTarget, "addEventListener" | "removeEventListener">, type: string,
+    listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): () => void;
+  addTicker(listener: (...args: unknown[]) => void): () => void;
+};
+
 export type CustomNodeRendererContext = {
   assets: {
     acquireTexture(ref: AssetRef, options?: Record<string, unknown>): Promise<CustomTextureLease>;
   };
   invalidate(): void;
+  resources: CustomRendererResources;
   signal: AbortSignal;
   lod: { level?: number; scale?: number };
   diagnostics: { creates: number; updates: number; destroys: number; lateUpdates: number };
@@ -311,6 +323,7 @@ export interface PixiBoard {
   readonly nodes: {
     create<Props extends JsonValue>(input: BoardNodeCreateInput<Props>): Promise<NodeHandle<Props>>;
     update<Props extends JsonValue>(nodeId: string, patch: BoardNodePatch<Props>): NodeHandle<Props>;
+    convert<Props extends JsonValue>(nodeId: string, input: BoardNodeConvertInput<Props>): NodeHandle<Props>;
     resize<Props extends JsonValue>(nodeId: string, request: NodeResizeRequest): NodeHandle<Props>;
     remove(nodeId: string): void;
     get<Props extends JsonValue = JsonValue>(nodeId: string): Readonly<BoardNode<Props>> | undefined;
@@ -362,7 +375,10 @@ export interface PixiBoard {
     redo(): BoardChangeEvent["changeSet"] | undefined;
     clear(): void;
   };
+  createConnectionLayer(): Promise<import("@pixi-board/renderer-pixi").ConnectionRenderLayer>;
   readonly document: {
+    getMetadata(): BoardDocument["metadata"];
+    patchMetadata(patch: Record<string, JsonValue | undefined>): void;
     snapshot(): Readonly<BoardDocument>;
     toJSON(): BoardDocument;
     load(input: unknown, options?: DocumentLoadOptions): Promise<void>;

@@ -315,3 +315,5 @@ await tools.call("canvas.write", {
 - [Desktop SDK fixture](../../apps/examples-desktop-sdk/README.md)
 - [公开 API 草案（维护者参考）](../04-public-api.md)
 - [自定义节点设计（维护者参考）](../05-custom-node-system.md)
+
+- [连线与节点 Agent](connections-and-node-agent-local.md)：当前关系模型、图上下文、类型转换与公开浏览器入口。
