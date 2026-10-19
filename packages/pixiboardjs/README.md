@@ -90,3 +90,6 @@ from `pixiboardjs/browser`; no private workspace imports are needed. See the
 [connection and node-agent guide](https://github.com/xindong/pixiboardSDK/blob/main/docs/developers/connections-and-node-agent-local.md)
 for lifecycle, style and host integration details. Call `destroy()` on controllers
 when removing a host surface.
+
+The browser ESM budget is 270,000 bytes (uncompressed) for the native connection
+renderer and node-agent additions; the root and Node budgets are unchanged.

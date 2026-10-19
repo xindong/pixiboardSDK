@@ -220,4 +220,3 @@ export type ConnectionCurve = {
   startDirection?: Point;
   endDirection?: Point;
 };
-
