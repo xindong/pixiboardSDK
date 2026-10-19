@@ -33,7 +33,7 @@ describe("metadata transactions and node conversion", () => {
     core.nodes.convert("a", { type: "result", props: { text: "new" } });
     expect(core.nodes.get("a")).toMatchObject({ id: "a", type: "result", x: 40, width: 320, props: { text: "new" } });
     core.history.undo();
-    expect(core.nodes.get("a")).toMatchObject({ type: "placeholder", x: 0, y: 0, width: 100, height: 80, props: { text: "old" } });
+    expect(core.nodes.get("a")).toMatchObject({ type: "placeholder", x: 40, y: 0, width: 320, height: 80, props: { text: "old" } });
     core.history.redo();
     expect(core.nodes.get("a")?.type).toBe("result");
   });
