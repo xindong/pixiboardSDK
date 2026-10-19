@@ -24,7 +24,7 @@ export declare class PixiBoardRenderer {
   constructor(options: PixiBoardRendererOptions);
   init(): Promise<void>;
   rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
-  apply(update: BoardDocumentUpdate, changeSet: BoardChangeSet): Promise<void>;
+  apply(update: BoardDocumentUpdate, changeSet: BoardChangeSet): Promise<"applied" | "rebuild-required">;
   createConnectionLayer(): Promise<ConnectionRenderLayer>;
   capture(input: CaptureRequest, options?: { signal?: AbortSignal; requestId?: string }): Promise<RendererCaptureResult>;
   destroy(): Promise<void>;

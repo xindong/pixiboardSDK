@@ -1,4 +1,5 @@
-import type { Point, SpatialIndex, SpatialIndexItem, WorldBounds } from "./types";
+import type { Point, WorldBounds } from "@pixi-board/core";
+import type { SpatialIndex, SpatialIndexItem } from "./types";
 
 /** A deterministic uniform grid. Queries only inspect intersecting buckets. */
 export class GridSpatialIndex implements SpatialIndex {
