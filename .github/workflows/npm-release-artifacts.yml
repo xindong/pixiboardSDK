@@ -25,14 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.candidate_sha }}
-          fetch-depth: 0
-      - name: Require a merged main commit
+          ref: main
+      - name: Require the requested main HEAD
         shell: bash
         run: |
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
-          git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
       - uses: ./.github/actions/setup-sdk
       - run: pnpm build:release
       - name: Generate release API reports
