@@ -18,6 +18,13 @@ Flat document model · PixiJS rendering · custom nodes · one contract for Capa
 
 ---
 
+## Current alpha
+
+`0.1.0-alpha.5` adds native directed connections, bounded host-driven node agents,
+and in-place node conversion. Install from the `alpha` npm tag (`pnpm add
+pixiboardjs@alpha`), or pin the exact prerelease version. The `latest` tag is not
+used to advance prereleases. See the [connection and node-agent guide](docs/developers/connections-and-node-agent-local.md).
+
 ## What is this?
 
 PixiBoardJS is an infinite canvas SDK extracted from a real desktop media application: the document is a flat, serializable JSON tree, and the PixiJS scene is nothing more than a disposable **viewport render cache**. It is not another general-purpose scene-graph graphics library — it's purpose-built for large, sparse, media-dense canvases where images, video, audio, markdown, model previews, and AI-generated content all live in the same document model.

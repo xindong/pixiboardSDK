@@ -248,3 +248,7 @@ pnpm build:release
 ## License
 
 [MIT](LICENSE) © 2026 [Xindong](https://github.com/xindong)
+
+## 当前 Alpha
+
+`0.1.0-alpha.5` 提供原生有向连线、节点 Agent 上下文和保留 ID 的节点转换。安装使用 `pnpm add pixiboardjs@alpha` 或固定具体版本；预发布沿用 alpha 标签，不推进 latest。参见[连线与节点 Agent 指南](docs/developers/connections-and-node-agent-local.md)。

@@ -17,7 +17,7 @@ single-node render commit does not create or scan a full document snapshot.
 Install target for SDK consumers:
 
 ```sh
-pnpm add pixiboardjs
+pnpm add pixiboardjs@alpha
 ```
 
 The public surface is the package root. `./browser`, `./node` and `./types`
