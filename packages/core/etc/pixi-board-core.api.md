@@ -45,6 +45,7 @@ export type BoardChangeEvent = {
 
 // @public (undocumented)
 export type BoardChangeSet = {
+    metadataChanged?: boolean;
     transactionId: string;
     revision: number;
     label?: string;
@@ -111,7 +112,13 @@ export type BoardDocument = {
 export class BoardDocumentController {
     constructor(core: BoardCore);
     // (undocumented)
+    getMetadata(): BoardDocument["metadata"];
+    // (undocumented)
+    getRevision(): number;
+    // (undocumented)
     load(input: unknown, options?: DocumentLoadOptions): BoardChangeSet;
+    // (undocumented)
+    patchMetadata(patch: Record<string, JsonValue | undefined>): void;
     // (undocumented)
     snapshot(): Readonly<BoardDocument>;
     // (undocumented)
@@ -146,6 +153,12 @@ export type BoardNode<Props extends JsonValue = JsonValue> = {
     props: Props;
 };
 
+// @public
+export type BoardNodeConvertInput<Props extends JsonValue = JsonValue> = BoardNodePatch<Props> & {
+    type: string;
+    typeVersion?: number;
+};
+
 // @public (undocumented)
 export type BoardNodeCreateInput<Props extends JsonValue = JsonValue> = Omit<BoardNode<Props>, "id" | "typeVersion" | "rotation" | "zIndex" | "props"> & {
     id?: string;
@@ -161,6 +174,8 @@ export type BoardNodePatch<Props extends JsonValue = JsonValue> = Partial<Pick<B
 // @public (undocumented)
 export class BoardNodesController {
     constructor(core: BoardCore);
+    // (undocumented)
+    convert<Props extends JsonValue>(nodeId: string, input: BoardNodeConvertInput<Props>): Readonly<BoardNode<Props>>;
     // (undocumented)
     create<Props extends JsonValue>(input: BoardNodeCreateInput<Props>): Readonly<BoardNode<Props>>;
     // (undocumented)
@@ -205,6 +220,25 @@ export class BoardViewportController {
 
 // @public (undocumented)
 export type ChangeOrigin = "api" | "ui" | "plugin" | "agent" | "history" | "load" | (string & {});
+
+// @public (undocumented)
+export type ConnectionCurve = {
+    id: string;
+    start: Point;
+    end: Point;
+    startDirection?: Point;
+    endDirection?: Point;
+};
+
+// @public (undocumented)
+export type ConnectionStyle = {
+    startColor: string;
+    endColor: string;
+    startOpacity: number;
+    endOpacity: number;
+    width: number;
+    lineType: "solid" | "dashed" | "dotted";
+};
 
 // @public (undocumented)
 export function createBoardCore(options?: BoardCoreOptions): BoardCore;
