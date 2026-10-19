@@ -391,6 +391,7 @@ export interface PixiBoard {
   };
   createConnectionLayer(): Promise<ConnectionLayer>;
   readonly document: {
+    getRevision(): number;
     getMetadata(): BoardDocument["metadata"];
     patchMetadata(patch: Record<string, JsonValue | undefined>): void;
     snapshot(): Readonly<BoardDocument>;

@@ -82,9 +82,10 @@ export function createNodeAgentController(board: PixiBoard, initial: NodeAgentOp
     await options.beforeSubmit?.(operation);
     validate(target, controller);
     const expectedVersion = contextVersion;
+    const expectedRevision = board.document.getRevision();
     const assertSnapshotCurrent = () => {
       validate(target, controller);
-      if (contextVersion !== expectedVersion) {
+      if (contextVersion !== expectedVersion || board.document.getRevision() !== expectedRevision) {
         throw new Error("Canvas changed while preparing node context; retry the operation");
       }
     };
@@ -199,6 +200,9 @@ export function createNodeAgentController(board: PixiBoard, initial: NodeAgentOp
     async submit(target: NodeAgentTarget, instruction: string) {
       if (!options.onSubmit) throw new Error("Node agent requires an onSubmit callback");
       const request = await prepare(target, instruction);
+      if (request.signal.aborted || board.document.getRevision() !== request.context.revision) {
+        throw new Error("Canvas changed before node submission; retry the operation");
+      }
       const result = await options.onSubmit(request);
       if (request.signal.aborted) throw new DOMException("Node agent operation cancelled", "AbortError");
       return result;

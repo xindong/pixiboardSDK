@@ -272,6 +272,7 @@ class PixiBoardFacade implements PixiBoard {
       clear: () => { this.assertAlive(); this.core.history.clear(); },
     };
     this.document = {
+      getRevision: () => { this.assertAlive(); return this.core.document.getRevision(); },
       getMetadata: () => { this.assertAlive(); return this.core.document.getMetadata(); },
       patchMetadata: (patch) => { this.assertAlive(); this.core.document.patchMetadata(patch); },
       snapshot: () => { this.assertAlive(); return this.core.document.snapshot(); },

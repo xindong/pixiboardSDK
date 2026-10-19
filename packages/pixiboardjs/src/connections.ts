@@ -41,6 +41,9 @@ export async function attachConnections(board: PixiBoard, options: ConnectionsOp
   const incomingIndex = new Map<string, Set<string>>();
   const outgoingIndex = new Map<string, Set<string>>();
   const nodes = new Map<string, Readonly<BoardNode>>();
+  const nodeOrder = new Map<string, number>();
+  let nextNodeOrder = 0;
+  let indexedRevision = -1;
   const nodeIndex = new GridSpatialIndex();
   const dirty = new Set<string>();
   const cleanup: Array<() => void> = [];
@@ -139,9 +142,12 @@ export async function attachConnections(board: PixiBoard, options: ConnectionsOp
   };
   const rebuildNodes = () => {
     nodes.clear();
+    nodeOrder.clear();
+    nextNodeOrder = 0;
     nodeIndex.rebuild([]);
     for (const node of board.find()) {
       nodes.set(node.id, node);
+      if (!nodeOrder.has(node.id)) nodeOrder.set(node.id, nextNodeOrder++);
       if (node.visible !== false) nodeIndex.insert({ id: node.id, ...rotatedRectBounds(node) });
     }
   };
@@ -179,6 +185,7 @@ export async function attachConnections(board: PixiBoard, options: ConnectionsOp
     initialized = true;
 
     const next = readEdges();
+    indexedRevision = board.document.getRevision();
     for (const id of edges.keys()) {
       if (next.has(id)) continue;
       layer.remove(id);
@@ -202,8 +209,9 @@ export async function attachConnections(board: PixiBoard, options: ConnectionsOp
   };
   const write = (values: BoardConnection[]) => {
     board.document.patchMetadata({ connections: values as unknown as JsonValue });
-    // Board change delivery can be deferred; keep consecutive API calls consistent.
-    synchronize();
+    // Transactions settle synchronously; read only after their caller has either
+    // committed or rolled back. Never publish a draft into the live render cache.
+    queueMicrotask(() => { if (!destroyed) synchronize(); });
   };
   const create = (source: string, target: string): BoardConnection | undefined => {
     if (destroyed || source === target || !canConnect(board.nodes.get(source)) || !canConnect(board.nodes.get(target))) return;
@@ -221,6 +229,12 @@ export async function attachConnections(board: PixiBoard, options: ConnectionsOp
     if (current.delete(id)) write([...current.values()]);
   };
   const indexedEdges = (index: Map<string, Set<string>>, nodeId: string): BoardConnection[] => {
+    if (board.document.getRevision() !== indexedRevision) {
+      // Rendering/persistence can delay change delivery. Read the live document
+      // without publishing potentially uncommitted state into the cached indices.
+      const endpoint = index === incomingIndex ? 'target' : 'source';
+      return [...readEdges().values()].filter(edge => edge[endpoint] === nodeId);
+    }
     const result: BoardConnection[] = [];
     for (const id of index.get(nodeId) ?? []) {
       const edge = edges.get(id);
@@ -254,7 +268,7 @@ export async function attachConnections(board: PixiBoard, options: ConnectionsOp
       const dy = point.y - node.y;
       const x = dx * c + dy * s;
       const y = -dx * s + dy * c;
-      if (x >= 0 && x <= node.width && y >= 0 && y <= node.height && (!found || node.zIndex >= found.zIndex)) found = node;
+      if (x >= 0 && x <= node.width && y >= 0 && y <= node.height && (!found || node.zIndex > found.zIndex || (node.zIndex === found.zIndex && (nodeOrder.get(node.id) ?? -1) > (nodeOrder.get(found.id) ?? -1)))) found = node;
     }
     return found;
   };
@@ -391,11 +405,13 @@ export async function attachConnections(board: PixiBoard, options: ConnectionsOp
     }
     for (const id of event.changeSet.removedNodeIds) {
       nodes.delete(id);
+      nodeOrder.delete(id);
       nodeIndex.remove(id);
       for (const edgeId of adjacent.get(id) ?? []) dirty.add(edgeId);
     }
     for (const node of event.documentUpdate.changedNodes) {
       nodes.set(node.id, node);
+      if (!nodeOrder.has(node.id)) nodeOrder.set(node.id, nextNodeOrder++);
       if (node.visible === false) nodeIndex.remove(node.id);
       else nodeIndex.update({ id: node.id, ...rotatedRectBounds(node) });
       for (const id of adjacent.get(node.id) ?? []) dirty.add(id);
@@ -447,7 +463,7 @@ export async function attachConnections(board: PixiBoard, options: ConnectionsOp
     },
     getStyle: () => ({ ...style }),
     isEnabled: () => enabled,
-    list: () => [...edges.values()].map(edge => ({ ...edge })),
+    list: () => [...readEdges().values()].map(edge => ({ ...edge })),
     /** Copies only internal edges, independently of the rendering preference. */
     copyWithin(nodeIds: Iterable<string>): BoardConnection[] {
       const included = new Set(nodeIds);
@@ -458,22 +474,20 @@ export async function attachConnections(board: PixiBoard, options: ConnectionsOp
     /** Call inside the node-paste transaction to undo nodes and edges together. */
     pasteWithin(connections: readonly BoardConnection[], idMap: ReadonlyMap<string, string>): void {
       if (destroyed) return;
-      board.transaction("Paste connections", () => {
-        const current = readEdges();
-        const pairs = new Set([...current.values()].map(edge => JSON.stringify([edge.source, edge.target])));
-        const pasted: BoardConnection[] = [];
-        for (const connection of connections) {
-          const source = idMap.get(connection.source);
-          const target = idMap.get(connection.target);
-          if (source === undefined || target === undefined || source === target) continue;
-          if (!board.nodes.get(source) || !board.nodes.get(target)) continue;
-          const pair = JSON.stringify([source, target]);
-          if (pairs.has(pair)) continue;
-          pairs.add(pair);
-          pasted.push({ id: crypto.randomUUID(), source, target });
-        }
-        if (pasted.length) write([...current.values(), ...pasted]);
-      });
+      const current = readEdges();
+      const pairs = new Set([...current.values()].map(edge => JSON.stringify([edge.source, edge.target])));
+      const pasted: BoardConnection[] = [];
+      for (const connection of connections) {
+        const source = idMap.get(connection.source);
+        const target = idMap.get(connection.target);
+        if (source === undefined || target === undefined || source === target) continue;
+        if (!board.nodes.get(source) || !board.nodes.get(target)) continue;
+        const pair = JSON.stringify([source, target]);
+        if (pairs.has(pair)) continue;
+        pairs.add(pair);
+        pasted.push({ id: crypto.randomUUID(), source, target });
+      }
+      if (pasted.length) write([...current.values(), ...pasted]);
     },
     /** Stored relationships remain queryable even when rendering is disabled. */
     incoming: (nodeId: string) => indexedEdges(incomingIndex, nodeId),
@@ -483,9 +497,8 @@ export async function attachConnections(board: PixiBoard, options: ConnectionsOp
       if (!enabled) return [];
       const index = direction === "incoming" ? incomingIndex : outgoingIndex;
       const neighbors = new Set<string>();
-      for (const id of index.get(nodeId) ?? []) {
-        const edge = edges.get(id);
-        if (edge) neighbors.add(direction === "incoming" ? edge.source : edge.target);
+      for (const edge of indexedEdges(index, nodeId)) {
+        neighbors.add(direction === "incoming" ? edge.source : edge.target);
       }
       return [...neighbors];
     },

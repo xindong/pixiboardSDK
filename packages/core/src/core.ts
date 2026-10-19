@@ -683,6 +683,10 @@ export class BoardViewportController {
 export class BoardDocumentController {
   constructor(private readonly core: BoardCore) {}
 
+  getRevision(): number {
+    return getCoreInternals(this.core).currentStore().revision;
+  }
+
   getMetadata(): BoardDocument["metadata"] {
     return getCoreInternals(this.core).currentStore().getMetadata();
   }

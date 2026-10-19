@@ -196,7 +196,7 @@ export function attachLabelOverlay(board: PixiBoard, options: LabelOverlayOption
         // the cached spans, but reattach them when that element is reused.
         element.replaceChildren(parts.icon, parts.text);
       }
-      element.title = options.tooltip?.(node) ?? "";
+      element.title = options.tooltip?.(node) ?? (typeof previewError === "string" ? previewError : "");
       const data = placement.data as LabelData;
       // Collapsed labels keep their element (so the pool and the DOM order
       // stay stable) but drop the text, which is what makes a dense zoomed-out
