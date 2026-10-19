@@ -50,3 +50,6 @@
 - 性能目标由可重复 benchmark 定义，而不是只使用“比 Konva 快”等口号。
 - SDK 只支持自身新 Document 格式；旧格式明确拒绝且不进入迁移、desktop 或 release 验收。
 - 文档通过 `pnpm docs:check`。
+
+- [ADR 0013：保留节点身份的显式内容转换](adr/0013-in-place-node-conversion.md)
+- [连线与节点 Agent](developers/connections-and-node-agent-local.md)

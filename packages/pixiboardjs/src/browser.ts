@@ -21,3 +21,11 @@ export function indexedDbPersistence(options: { database?: string } = {}): Brows
     download: new NativeDownloadPort(),
   });
 }
+
+export * from "./connections";
+export * from "./node-agent";
+
+// Advanced browser hosts can share the same registry, geometry and Pixi runtime
+// as the facade without importing private workspace packages.
+export { NodeTypeRegistry, rotatedRectBounds } from "@pixi-board/core";
+export { createPixiApplicationFactory, loadPixiRuntime, PixiBoardRenderer } from "@pixi-board/renderer-pixi";

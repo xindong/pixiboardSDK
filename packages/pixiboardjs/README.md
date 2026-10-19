@@ -17,7 +17,7 @@ single-node render commit does not create or scan a full document snapshot.
 Install target for SDK consumers:
 
 ```sh
-pnpm add pixiboardjs
+pnpm add pixiboardjs@alpha
 ```
 
 The public surface is the package root. `./browser`, `./node` and `./types`
@@ -52,3 +52,44 @@ dependency.
 requires those real artifacts, packs the facade, and installs the tarball into
 clean Node and Vite consumers outside the repository before checking API and
 bundle-size budgets. It never creates or substitutes release artifacts.
+
+## Connections and node agents (alpha.5)
+
+```ts
+import { attachConnections, createNodeAgentController } from "pixiboardjs/browser";
+
+const connections = await attachConnections(board, {
+  surface: container, enabled: true, persistSettings: false,
+});
+connections.create("source-node", "result-node");
+
+const agent = createNodeAgentController(board, {
+  context: { scope: "upstream", maxDepth: 2, maxNodes: 20, maxChars: 24000 },
+  getNeighborIds: connections.getNeighborIds,
+  onSubmit: async ({ prompt, signal }) => sendToYourAgent(prompt, signal),
+});
+await agent.submit({ nodeId: "result-node" }, "Describe the sources and improve this result");
+```
+
+Connections live in `document.metadata.connections` as `{ id, source, target }`.
+They follow moving/rotating nodes, support selection/deletion, configurable
+styles, viewport culling, and atomic copy/paste with nodes. Metadata edits and
+node deletion participate in undo/redo. No relationship fields are read from
+node props.
+
+Node agents collect bounded node/selection/upstream/downstream context, resolve
+assets through host callbacks, and reject cancelled or stale preparation. The
+SDK supplies no AI provider, credentials or generation service.
+
+Use `board.nodes.convert(id, { type, props, assetRefs })` to replace a placeholder
+with a result while keeping its ID, geometry and connections. Register the target
+node type first. Old content properties and assets are replaced.
+
+Advanced browser hosts can import registry, geometry and Pixi renderer helpers
+from `pixiboardjs/browser`; no private workspace imports are needed. See the
+[connection and node-agent guide](https://github.com/xindong/pixiboardSDK/blob/main/docs/developers/connections-and-node-agent-local.md)
+for lifecycle, style and host integration details. Call `destroy()` on controllers
+when removing a host surface.
+
+The browser ESM budget is 270,000 bytes (uncompressed) for the native connection
+renderer and node-agent additions; the root and Node budgets are unchanged.

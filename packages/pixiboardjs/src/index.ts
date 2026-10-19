@@ -3,6 +3,7 @@ import {
   NodeNotFoundError,
   type BoardChangeEvent,
   type BoardNode,
+  type BoardNodeConvertInput,
   type BoardNodePatch,
   type JsonValue,
   type NodeTypeDefinition as InternalNodeTypeDefinition,
@@ -212,6 +213,11 @@ class PixiBoardFacade implements PixiBoard {
         this.core.nodes.resize<Props>(nodeId, request);
         return this.node<Props>(nodeId);
       },
+      convert: <Props extends JsonValue>(nodeId: string, input: BoardNodeConvertInput<Props>) => {
+        this.assertAlive();
+        this.core.nodes.convert<Props>(nodeId, input);
+        return this.node<Props>(nodeId);
+      },
       remove: (nodeId) => this.removeNode(nodeId),
       get: <Props extends JsonValue = JsonValue>(nodeId: string) => this.getNode<Props>(nodeId),
       list: (filter = {}) => { this.assertAlive(); return this.core.nodes.list(filter); },
@@ -266,6 +272,9 @@ class PixiBoardFacade implements PixiBoard {
       clear: () => { this.assertAlive(); this.core.history.clear(); },
     };
     this.document = {
+      getRevision: () => { this.assertAlive(); return this.core.document.getRevision(); },
+      getMetadata: () => { this.assertAlive(); return this.core.document.getMetadata(); },
+      patchMetadata: (patch) => { this.assertAlive(); this.core.document.patchMetadata(patch); },
       snapshot: () => { this.assertAlive(); return this.core.document.snapshot(); },
       toJSON: () => { this.assertAlive(); return this.core.document.toJSON(); },
       load: async (input, loadOptions) => {
@@ -282,6 +291,13 @@ class PixiBoardFacade implements PixiBoard {
     this.bindCoreEvents();
     this.bindRuntimePorts();
     this.ready = this.mount();
+  }
+
+  async createConnectionLayer() {
+    await this.ready;
+    this.assertAlive();
+    if (!this.renderer?.createConnectionLayer) throw new Error("Renderer does not support connection layers");
+    return this.renderer.createConnectionLayer();
   }
 
   get state(): BoardLifecycleState { return this.lifecycle; }
