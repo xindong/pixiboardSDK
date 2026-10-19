@@ -145,6 +145,12 @@ export type BoardNode<Props extends JsonValue = JsonValue> = {
     props: Props;
 };
 
+// @public
+export type BoardNodeConvertInput<Props extends JsonValue = JsonValue> = BoardNodePatch<Props> & {
+    type: string;
+    typeVersion?: number;
+};
+
 // @public (undocumented)
 export type BoardNodeCreateInput<Props extends JsonValue = JsonValue> = Omit<BoardNode<Props>, "id" | "typeVersion" | "rotation" | "zIndex" | "props"> & {
     id?: string;
@@ -224,6 +230,18 @@ export type CaptureResult = {
 // @public (undocumented)
 export type ChangeOrigin = "api" | "ui" | "plugin" | "agent" | "history" | "load" | (string & {});
 
+// @public
+export type ConnectionLayer = {
+    setEnabled(enabled: boolean): void;
+    setSelected(id?: string): void;
+    setStyle(style: Partial<ConnectionStyle>): void;
+    setVisibleBounds(bounds?: WorldBounds): void;
+    upsert(curve: ConnectionCurve): void;
+    remove(id: string): void;
+    hitTest(point: Point, tolerance: number): string | undefined;
+    destroy(): void;
+};
+
 // @public (undocumented)
 export function createPixiBoard(options?: PixiBoardOptions): Promise<PixiBoard>;
 
@@ -278,6 +296,7 @@ export type CustomNodeRendererContext = {
         acquireTexture(ref: AssetRef, options?: Record<string, unknown>): Promise<CustomTextureLease>;
     };
     invalidate(): void;
+    resources: CustomRendererResources;
     signal: AbortSignal;
     lod: {
         level?: number;
@@ -304,6 +323,13 @@ export type CustomNodeRendererRegistry = {
 export type CustomNodeView<State = unknown> = {
     displayObject: CustomDisplayObject;
     state: State;
+};
+
+// @public
+export type CustomRendererResources = {
+    onCleanup(cleanup: () => void): () => void;
+    listen(target: Pick<EventTarget, "addEventListener" | "removeEventListener">, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): () => void;
+    addTicker(listener: (...args: unknown[]) => void): () => void;
 };
 
 // @public (undocumented)
@@ -507,9 +533,14 @@ export interface PixiBoard {
     // (undocumented)
     capture(input: CaptureInput, options?: RequestOptions): Promise<CaptureResult>;
     // (undocumented)
+    createConnectionLayer(): Promise<ConnectionLayer>;
+    // (undocumented)
     destroy(): Promise<void>;
     // (undocumented)
     readonly document: {
+        getRevision(): number;
+        getMetadata(): BoardDocument["metadata"];
+        patchMetadata(patch: Record<string, JsonValue | undefined>): void;
         snapshot(): Readonly<BoardDocument>;
         toJSON(): BoardDocument;
         load(input: unknown, options?: DocumentLoadOptions): Promise<void>;
@@ -535,6 +566,7 @@ export interface PixiBoard {
     readonly nodes: {
         create<Props extends JsonValue>(input: BoardNodeCreateInput<Props>): Promise<NodeHandle<Props>>;
         update<Props extends JsonValue>(nodeId: string, patch: BoardNodePatch<Props>): NodeHandle<Props>;
+        convert<Props extends JsonValue>(nodeId: string, input: BoardNodeConvertInput<Props>): NodeHandle<Props>;
         resize<Props extends JsonValue>(nodeId: string, request: NodeResizeRequest): NodeHandle<Props>;
         remove(nodeId: string): void;
         get<Props extends JsonValue = JsonValue>(nodeId: string): Readonly<BoardNode<Props>> | undefined;
@@ -723,6 +755,7 @@ export type ResizeObserverPort = {
 
 // @public (undocumented)
 export type RuntimeRenderer = {
+    createConnectionLayer?(): Promise<ConnectionLayer>;
     init(): Promise<void>;
     rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
     apply(update: BoardDocumentUpdate, changeSet: BoardChangeEvent["changeSet"]): Promise<RendererApplyResult>;
@@ -806,21 +839,23 @@ export type WorldBounds = {
 
 // Warnings were encountered during analysis:
 //
-// dist/types-CZ0KxRlm.d.ts:313:9 - (ae-forgotten-export) The symbol "RequestOptions" needs to be exported by the entry point node.d.ts
-// dist/types-CZ0KxRlm.d.ts:314:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point node.d.ts
-// dist/types-CZ0KxRlm.d.ts:314:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point node.d.ts
-// dist/types-CZ0KxRlm.d.ts:317:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point node.d.ts
-// dist/types-CZ0KxRlm.d.ts:323:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point node.d.ts
-// dist/types-CZ0KxRlm.d.ts:323:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point node.d.ts
-// dist/types-CZ0KxRlm.d.ts:324:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point node.d.ts
-// dist/types-CZ0KxRlm.d.ts:325:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point node.d.ts
-// dist/types-CZ0KxRlm.d.ts:328:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point node.d.ts
-// dist/types-CZ0KxRlm.d.ts:335:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point node.d.ts
-// dist/types-CZ0KxRlm.d.ts:342:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point node.d.ts
-// dist/types-CZ0KxRlm.d.ts:370:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point node.d.ts
-// dist/types-CZ0KxRlm.d.ts:548:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point node.d.ts
-// dist/types-CZ0KxRlm.d.ts:551:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point node.d.ts
-// dist/types-CZ0KxRlm.d.ts:552:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:334:9 - (ae-forgotten-export) The symbol "RequestOptions" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:335:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:335:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:338:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:344:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:344:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:345:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:346:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:349:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:356:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:363:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:391:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:419:5 - (ae-forgotten-export) The symbol "ConnectionStyle" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:421:5 - (ae-forgotten-export) The symbol "ConnectionCurve" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:588:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:591:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point node.d.ts
+// dist/types-D39-tYZ8.d.ts:592:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point node.d.ts
 
 // (No @packageDocumentation comment for this package)
 

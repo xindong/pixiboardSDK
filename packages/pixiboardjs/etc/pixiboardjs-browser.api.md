@@ -65,6 +65,34 @@ export class AssetUnavailableError extends CapabilityError {
 export type AssetVariant = "original" | "preview" | "waveform" | `preview-${string}`;
 
 // @public
+export function attachConnections(board: PixiBoard, options: ConnectionsOptions): Promise<{
+    setEnabled(value: boolean): void;
+    setStyle(value: Partial<ConnectionStyle>): void;
+    getStyle: () => {
+        startColor: string;
+        endColor: string;
+        startOpacity: number;
+        endOpacity: number;
+        width: number;
+        lineType: "solid" | "dashed" | "dotted";
+    };
+    isEnabled: () => boolean;
+    list: () => {
+        id: string;
+        source: string;
+        target: string;
+    }[];
+    copyWithin(nodeIds: Iterable<string>): BoardConnection[];
+    pasteWithin(connections: readonly BoardConnection[], idMap: ReadonlyMap<string, string>): void;
+    incoming: (nodeId: string) => BoardConnection[];
+    outgoing: (nodeId: string) => BoardConnection[];
+    getNeighborIds(nodeId: string, direction: "incoming" | "outgoing"): string[];
+    create: (source: string, target: string) => BoardConnection | undefined;
+    remove: (id: string) => void;
+    destroy: () => void;
+}>;
+
+// @public
 export function attachDomTransformer(board: PixiBoard, options: DomTransformerOptions): DomTransformer;
 
 // @public
@@ -162,6 +190,13 @@ export type BoardChangeEvent = {
 };
 
 // @public (undocumented)
+export type BoardConnection = {
+    id: string;
+    source: string;
+    target: string;
+};
+
+// @public (undocumented)
 export class BoardDestroyedError extends CapabilityError {
     constructor(message?: string);
 }
@@ -201,6 +236,12 @@ export type BoardNode<Props extends JsonValue = JsonValue> = {
     visible?: boolean;
     assetRefs?: Record<string, AssetRef>;
     props: Props;
+};
+
+// @public
+export type BoardNodeConvertInput<Props extends JsonValue = JsonValue> = BoardNodePatch<Props> & {
+    type: string;
+    typeVersion?: number;
 };
 
 // @public (undocumented)
@@ -516,6 +557,9 @@ export class BrowserStorageQuotaError extends BrowserPersistenceError {
     readonly retryable = true;
 }
 
+// @public
+export function buildNodeAgentPrompt(input: Omit<NodeAgentRequest, "prompt">): string;
+
 // @public (undocumented)
 export class CapabilityError extends Error {
     constructor(code: CapabilityErrorCode, message: string, details?: Readonly<Record<string, unknown>>);
@@ -567,6 +611,67 @@ export type CaptureResult = {
 
 // @public (undocumented)
 export type ChangeOrigin = "api" | "ui" | "plugin" | "agent" | "history" | "load" | (string & {});
+
+// @public (undocumented)
+export type ConnectionCurve = {
+    id: string;
+    start: Point;
+    end: Point;
+    startDirection?: Point;
+    endDirection?: Point;
+};
+
+// @public
+export type ConnectionLayer = {
+    setEnabled(enabled: boolean): void;
+    setSelected(id?: string): void;
+    setStyle(style: Partial<ConnectionStyle>): void;
+    setVisibleBounds(bounds?: WorldBounds): void;
+    upsert(curve: ConnectionCurve): void;
+    remove(id: string): void;
+    hitTest(point: Point, tolerance: number): string | undefined;
+    destroy(): void;
+};
+
+// @public (undocumented)
+export type ConnectionsController = Awaited<ReturnType<typeof attachConnections>>;
+
+// @public (undocumented)
+export type ConnectionsOptions = {
+    surface: HTMLElement;
+    overlay?: HTMLElement;
+    enabled?: boolean;
+    style?: Partial<ConnectionStyle>;
+    persistSettings?: boolean;
+    canInteract?: () => boolean;
+    interactionOverlays?: readonly HTMLElement[];
+};
+
+// @public (undocumented)
+export type ConnectionStyle = {
+    startColor: string;
+    endColor: string;
+    startOpacity: number;
+    endOpacity: number;
+    width: number;
+    lineType: "solid" | "dashed" | "dotted";
+};
+
+// @public
+export function createNodeAgentController(board: PixiBoard, initial?: NodeAgentOptions): {
+    prepare: (target: NodeAgentTarget, instruction: string) => Promise<NodeAgentRequest>;
+    submit(target: NodeAgentTarget, instruction: string): Promise<unknown>;
+    cancel: () => void;
+    setEnabled(enabled: boolean): void;
+    configure(next: Partial<NodeAgentOptions>): void;
+    destroy(): void;
+};
+
+// Warning: (ae-forgotten-export) The symbol "PixiRuntimeLoader" needs to be exported by the entry point browser.d.ts
+// Warning: (ae-forgotten-export) The symbol "PixiApplicationFactory" needs to be exported by the entry point browser.d.ts
+//
+// @public (undocumented)
+export function createPixiApplicationFactory(options?: Record<string, unknown>, runtimeLoader?: PixiRuntimeLoader): PixiApplicationFactory;
 
 // @public (undocumented)
 export function createPixiBoard(options?: PixiBoardOptions): Promise<PixiBoard>;
@@ -622,6 +727,7 @@ export type CustomNodeRendererContext = {
         acquireTexture(ref: AssetRef, options?: Record<string, unknown>): Promise<CustomTextureLease>;
     };
     invalidate(): void;
+    resources: CustomRendererResources;
     signal: AbortSignal;
     lod: {
         level?: number;
@@ -648,6 +754,13 @@ export type CustomNodeRendererRegistry = {
 export type CustomNodeView<State = unknown> = {
     displayObject: CustomDisplayObject;
     state: State;
+};
+
+// @public
+export type CustomRendererResources = {
+    onCleanup(cleanup: () => void): () => void;
+    listen(target: Pick<EventTarget, "addEventListener" | "removeEventListener">, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): () => void;
+    addTicker(listener: (...args: unknown[]) => void): () => void;
 };
 
 // @public (undocumented)
@@ -790,6 +903,7 @@ export type LabelOverlayOptions = {
     wheelSurface?: HTMLElement;
     text?(node: Readonly<BoardNode<JsonValue>>): string | undefined;
     icon?(node: Readonly<BoardNode<JsonValue>>): string | undefined;
+    tooltip?(node: Readonly<BoardNode<JsonValue>>): string | undefined;
     classPrefix?: string;
     anchor?: OverlayAnchor;
     offset?: {
@@ -800,6 +914,11 @@ export type LabelOverlayOptions = {
     declutter?: OverlayDeclutter;
     schedule?(callback: () => void): () => void;
 };
+
+// Warning: (ae-forgotten-export) The symbol "PixiRuntimeModule" needs to be exported by the entry point browser.d.ts
+//
+// @public (undocumented)
+export function loadPixiRuntime(): Promise<PixiRuntimeModule>;
 
 // @public (undocumented)
 export class NativeDownloadPort implements DownloadPort {
@@ -875,6 +994,75 @@ export class NativeOpfsPort implements OpfsPort {
 export type NativeOpfsPortOptions = {
     directoryName?: string;
     getRootDirectory?: () => Promise<FileSystemDirectoryHandle>;
+};
+
+// @public (undocumented)
+export type NodeAgentContext = {
+    contextVersion: 1;
+    boardId?: string;
+    revision: number;
+    nodeIds: string[];
+    node: BoardNode;
+    nodes: BoardNode[];
+    assets: AssetRecord[];
+    connections: Array<{
+        source: string;
+        target: string;
+    }>;
+    truncated: string[];
+};
+
+// @public (undocumented)
+export type NodeAgentContextOptions = {
+    scope?: NodeAgentScope;
+    maxDepth?: number;
+    maxNodes?: number;
+    maxChars?: number;
+    maxResources?: number;
+};
+
+// @public (undocumented)
+export type NodeAgentOperation = NodeAgentTarget & {
+    requestId: string;
+    signal: AbortSignal;
+};
+
+// @public (undocumented)
+export type NodeAgentOptions = {
+    enabled?: boolean;
+    context?: NodeAgentContextOptions;
+    getNeighborIds?(nodeId: string, direction: "incoming" | "outgoing"): Iterable<string>;
+    validateTarget?(target: NodeAgentTarget): void;
+    beforeSubmit?(operation: NodeAgentOperation): void | Promise<void>;
+    resolveAsset?(asset: AssetRecord, operation: NodeAgentOperation): NodeAgentResource | undefined | Promise<NodeAgentResource | undefined>;
+    collectContext?(context: NodeAgentContext, operation: NodeAgentOperation): NodeAgentContext | Promise<NodeAgentContext>;
+    buildPrompt?(input: Omit<NodeAgentRequest, "prompt">): string | Promise<string>;
+    onSubmit?(request: NodeAgentRequest): unknown | Promise<unknown>;
+};
+
+// @public (undocumented)
+export type NodeAgentRequest = {
+    requestId: string;
+    instruction: string;
+    context: NodeAgentContext;
+    resources: NodeAgentResource[];
+    prompt: string;
+    signal: AbortSignal;
+};
+
+// @public (undocumented)
+export type NodeAgentResource = {
+    assetId: string;
+    [key: string]: unknown;
+};
+
+// @public (undocumented)
+export type NodeAgentScope = "node" | "selection" | "upstream" | "downstream" | "connected";
+
+// @public (undocumented)
+export type NodeAgentTarget = {
+    nodeId: string;
+    boardId?: string;
 };
 
 // @public
@@ -978,6 +1166,34 @@ export type NodeTypeRegistrationDisposer = () => Promise<void>;
 export type NodeTypeRegistrationOptions = {
     replace?: boolean;
 };
+
+// @public (undocumented)
+export class NodeTypeRegistry {
+    // Warning: (ae-forgotten-export) The symbol "NodeTypeRegistryOptions" needs to be exported by the entry point browser.d.ts
+    constructor(options?: NodeTypeRegistryOptions);
+    // (undocumented)
+    createProps<Props extends JsonValue>(type: string, props: Props | undefined): {
+        typeVersion: number;
+        props: Props;
+    };
+    // (undocumented)
+    get<Props extends JsonValue = JsonValue>(type: string): NodeTypeDefinition$1<Props> | undefined;
+    // (undocumented)
+    getBounds<Props extends JsonValue>(node: BoardNode<Props>): WorldBounds;
+    // (undocumented)
+    has(type: string): boolean;
+    // (undocumented)
+    list(): ReadonlyArray<NodeTypeDefinition$1<JsonValue>>;
+    // Warning: (ae-forgotten-export) The symbol "NodeTypeDefinition$1" needs to be exported by the entry point browser.d.ts
+    // Warning: (ae-forgotten-export) The symbol "RegisterNodeTypeOptions" needs to be exported by the entry point browser.d.ts
+    //
+    // (undocumented)
+    register<Props extends JsonValue>(definition: NodeTypeDefinition$1<Props>, options?: RegisterNodeTypeOptions): () => void;
+    // (undocumented)
+    require<Props extends JsonValue = JsonValue>(type: string): NodeTypeDefinition$1<Props>;
+    // (undocumented)
+    validateNode<Props extends JsonValue>(node: BoardNode<Props>): BoardNode<Props>;
+}
 
 // @public (undocumented)
 export class NodeValidationError extends PixiBoardCoreError {
@@ -1112,9 +1328,14 @@ export interface PixiBoard {
     // (undocumented)
     capture(input: CaptureInput, options?: RequestOptions): Promise<CaptureResult>;
     // (undocumented)
+    createConnectionLayer(): Promise<ConnectionLayer>;
+    // (undocumented)
     destroy(): Promise<void>;
     // (undocumented)
     readonly document: {
+        getRevision(): number;
+        getMetadata(): BoardDocument["metadata"];
+        patchMetadata(patch: Record<string, JsonValue | undefined>): void;
         snapshot(): Readonly<BoardDocument>;
         toJSON(): BoardDocument;
         load(input: unknown, options?: DocumentLoadOptions): Promise<void>;
@@ -1140,6 +1361,7 @@ export interface PixiBoard {
     readonly nodes: {
         create<Props extends JsonValue>(input: BoardNodeCreateInput<Props>): Promise<NodeHandle<Props>>;
         update<Props extends JsonValue>(nodeId: string, patch: BoardNodePatch<Props>): NodeHandle<Props>;
+        convert<Props extends JsonValue>(nodeId: string, input: BoardNodeConvertInput<Props>): NodeHandle<Props>;
         resize<Props extends JsonValue>(nodeId: string, request: NodeResizeRequest): NodeHandle<Props>;
         remove(nodeId: string): void;
         get<Props extends JsonValue = JsonValue>(nodeId: string): Readonly<BoardNode<Props>> | undefined;
@@ -1217,6 +1439,32 @@ export type PixiBoardOptions = {
     preview?: PreviewService;
     capture?: CaptureService;
 };
+
+// @public
+export class PixiBoardRenderer {
+    // Warning: (ae-forgotten-export) The symbol "PixiBoardRendererOptions_2" needs to be exported by the entry point browser.d.ts
+    constructor(options: PixiBoardRendererOptions_2);
+    // (undocumented)
+    apply(update: BoardDocumentUpdate, changeSet: BoardChangeSet): Promise<"applied" | "rebuild-required">;
+    // Warning: (ae-forgotten-export) The symbol "CaptureRequest" needs to be exported by the entry point browser.d.ts
+    // Warning: (ae-forgotten-export) The symbol "RendererCaptureResult" needs to be exported by the entry point browser.d.ts
+    //
+    // (undocumented)
+    capture(input: CaptureRequest, options?: {
+        signal?: AbortSignal;
+        requestId?: string;
+    }): Promise<RendererCaptureResult>;
+    // Warning: (ae-forgotten-export) The symbol "ConnectionRenderLayer" needs to be exported by the entry point browser.d.ts
+    //
+    // (undocumented)
+    createConnectionLayer(): Promise<ConnectionRenderLayer>;
+    // (undocumented)
+    destroy(): Promise<void>;
+    // (undocumented)
+    init(): Promise<void>;
+    // (undocumented)
+    rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
+}
 
 // @public (undocumented)
 export type PixiBoardRendererOptions = PublicRendererOptions;
@@ -1355,10 +1603,14 @@ export function resolveOverlayBounds(node: Readonly<BoardNode<JsonValue>>, nodeT
 export function resolveScale(mode: OverlayScaleMode | undefined, viewportScale: number): number;
 
 // @public (undocumented)
+export function rotatedRectBounds(node: BoardNode): WorldBounds;
+
+// @public (undocumented)
 export function runBrowserAdapterContract(harness: BrowserAdapterContractHarness): Promise<BrowserAdapterContractEvidence>;
 
 // @public (undocumented)
 export type RuntimeRenderer = {
+    createConnectionLayer?(): Promise<ConnectionLayer>;
     init(): Promise<void>;
     rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
     apply(update: BoardDocumentUpdate, changeSet: BoardChangeEvent["changeSet"]): Promise<RendererApplyResult>;
@@ -1482,21 +1734,21 @@ export type WorldBounds = {
 
 // Warnings were encountered during analysis:
 //
-// dist/types-CZ0KxRlm.d.ts:313:9 - (ae-forgotten-export) The symbol "RequestOptions" needs to be exported by the entry point browser.d.ts
-// dist/types-CZ0KxRlm.d.ts:314:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point browser.d.ts
-// dist/types-CZ0KxRlm.d.ts:314:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point browser.d.ts
-// dist/types-CZ0KxRlm.d.ts:317:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point browser.d.ts
-// dist/types-CZ0KxRlm.d.ts:323:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point browser.d.ts
-// dist/types-CZ0KxRlm.d.ts:323:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point browser.d.ts
-// dist/types-CZ0KxRlm.d.ts:324:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point browser.d.ts
-// dist/types-CZ0KxRlm.d.ts:325:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point browser.d.ts
-// dist/types-CZ0KxRlm.d.ts:328:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point browser.d.ts
-// dist/types-CZ0KxRlm.d.ts:335:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point browser.d.ts
-// dist/types-CZ0KxRlm.d.ts:342:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point browser.d.ts
-// dist/types-CZ0KxRlm.d.ts:370:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point browser.d.ts
-// dist/types-CZ0KxRlm.d.ts:548:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point browser.d.ts
-// dist/types-CZ0KxRlm.d.ts:551:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point browser.d.ts
-// dist/types-CZ0KxRlm.d.ts:552:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:334:9 - (ae-forgotten-export) The symbol "RequestOptions" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:335:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:335:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:338:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:344:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:344:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:345:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:346:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:349:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:356:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:363:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:391:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:588:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:591:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point browser.d.ts
+// dist/types-D39-tYZ8.d.ts:592:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point browser.d.ts
 
 // (No @packageDocumentation comment for this package)
 
