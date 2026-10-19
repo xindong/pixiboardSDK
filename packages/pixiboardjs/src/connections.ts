@@ -417,6 +417,9 @@ export async function attachConnections(board: PixiBoard, options: ConnectionsOp
       for (const id of adjacent.get(node.id) ?? []) dirty.add(id);
     }
     if (event.changeSet.metadataChanged) synchronize();
+    else if (indexedRevision === event.changeSet.revision - 1 && board.document.getRevision() === event.changeSet.revision) {
+      indexedRevision = event.changeSet.revision;
+    }
     schedule();
   }));
   cleanup.push(board.on("viewport:change", projectPort));
