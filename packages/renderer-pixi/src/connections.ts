@@ -2,22 +2,8 @@ import { Container, Graphics } from "pixi.js";
 import { GridSpatialIndex } from "./spatial";
 import type { Point, WorldBounds } from "@pixi-board/core";
 
-export type ConnectionStyle = {
-  startColor: string;
-  endColor: string;
-  startOpacity: number;
-  endOpacity: number;
-  width: number;
-  lineType: "solid" | "dashed" | "dotted";
-};
-
-export type ConnectionCurve = {
-  id: string;
-  start: Point;
-  end: Point;
-  startDirection?: Point;
-  endDirection?: Point;
-};
+import type { ConnectionCurve, ConnectionStyle } from "@pixi-board/core";
+export type { ConnectionCurve, ConnectionStyle } from "@pixi-board/core";
 
 export const defaultConnectionStyle: ConnectionStyle = {
   startColor: "#6366f1",

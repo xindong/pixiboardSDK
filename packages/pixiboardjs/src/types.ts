@@ -1,5 +1,7 @@
 import type {
   AssetRef,
+  ConnectionCurve,
+  ConnectionStyle,
   BoardChangeEvent,
   BoardCoreOptions,
   BoardDocument,
@@ -64,8 +66,20 @@ export type DocumentPersistence = {
   destroy?(): void | Promise<void>;
 };
 
+/** Renderer-independent connection layer contract for custom renderer hosts. */
+export type ConnectionLayer = {
+  setEnabled(enabled: boolean): void;
+  setSelected(id?: string): void;
+  setStyle(style: Partial<ConnectionStyle>): void;
+  setVisibleBounds(bounds?: WorldBounds): void;
+  upsert(curve: ConnectionCurve): void;
+  remove(id: string): void;
+  hitTest(point: Point, tolerance: number): string | undefined;
+  destroy(): void;
+};
+
 export type RuntimeRenderer = {
-  createConnectionLayer?(): Promise<import("@pixi-board/renderer-pixi").ConnectionRenderLayer>;
+  createConnectionLayer?(): Promise<ConnectionLayer>;
   init(): Promise<void>;
   rebuild(snapshot: Readonly<BoardDocument>): Promise<void>;
   apply(update: BoardDocumentUpdate, changeSet: BoardChangeEvent["changeSet"]): Promise<RendererApplyResult>;
@@ -375,7 +389,7 @@ export interface PixiBoard {
     redo(): BoardChangeEvent["changeSet"] | undefined;
     clear(): void;
   };
-  createConnectionLayer(): Promise<import("@pixi-board/renderer-pixi").ConnectionRenderLayer>;
+  createConnectionLayer(): Promise<ConnectionLayer>;
   readonly document: {
     getMetadata(): BoardDocument["metadata"];
     patchMetadata(patch: Record<string, JsonValue | undefined>): void;

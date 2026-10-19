@@ -8,7 +8,7 @@ import {
 import { rotatedRectBounds } from "@pixi-board/core";
 import type { BoardDocument, BoardNode, JsonValue, PixiBoard, Point } from "./types";
 
-export type { ConnectionStyle } from "@pixi-board/renderer-pixi";
+export type { ConnectionCurve, ConnectionStyle } from "@pixi-board/core";
 export type BoardConnection = { id: string; source: string; target: string };
 export type ConnectionsOptions = {
   surface: HTMLElement;

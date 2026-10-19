@@ -203,3 +203,21 @@ export type TransactionOptions = {
 export type DocumentLoadOptions = {
   replaceHistory?: boolean;
 };
+
+export type ConnectionStyle = {
+  startColor: string;
+  endColor: string;
+  startOpacity: number;
+  endOpacity: number;
+  width: number;
+  lineType: "solid" | "dashed" | "dotted";
+};
+
+export type ConnectionCurve = {
+  id: string;
+  start: Point;
+  end: Point;
+  startDirection?: Point;
+  endDirection?: Point;
+};
+
