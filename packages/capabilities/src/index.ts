@@ -5,6 +5,7 @@ import {
   type BoardChangeSet,
   type BoardCore,
   type BoardNode,
+  type BoardNodeCreateInput,
   type JsonValue,
 } from "@pixi-board/core";
 import { aborted, CapabilityError, CapabilityUnavailableError, mapCoreError } from "./errors.ts";
@@ -85,9 +86,21 @@ export function createBoardCapabilities(core: BoardCore, services: BoardCapabili
   return capabilities;
 }
 
-type PreparedNodeInput = Omit<CreateNodeInput, "asset" | "source"> & { asset?: AssetRecord };
+type PreparedNodeInput = BoardNodeCreateInput & { asset?: AssetRecord };
 type PreparedNodeUpdate = { id: string; patch: NonNullable<UpdateNodeInput["patch"]>; asset?: AssetRecord };
 
+async function prepareWrite(
+  core: BoardCore,
+  services: BoardCapabilityServices,
+  raw: CreateNodeInput,
+  options: WriteOptions,
+): Promise<PreparedNodeInput>;
+async function prepareWrite(
+  core: BoardCore,
+  services: BoardCapabilityServices,
+  raw: UpdateNodeInput,
+  options: WriteOptions,
+): Promise<PreparedNodeUpdate>;
 async function prepareWrite(
   core: BoardCore,
   services: BoardCapabilityServices,
