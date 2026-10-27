@@ -1,5 +1,6 @@
 export * from "./asset-variant";
 export * from "./asset-previews";
+export * from "./media-assets";
 export * from "./core";
 export * from "./errors";
 export * from "./geometry";

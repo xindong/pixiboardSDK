@@ -20,8 +20,8 @@ Flat document model · PixiJS rendering · custom nodes · one contract for Capa
 
 ## Current alpha
 
-`0.1.0-alpha.5` adds native directed connections, bounded host-driven node agents,
-and in-place node conversion. Install from the `alpha` npm tag (`pnpm add
+`0.1.0-alpha.6` adds media import roles, aspect-aware preview rendering,
+and a Node-only media preparation provider, alongside directed connections and node agents. Install from the `alpha` npm tag (`pnpm add
 pixiboardjs@alpha`), or pin the exact prerelease version. The `latest` tag is not
 used to advance prereleases. See the [connection and node-agent guide](docs/developers/connections-and-node-agent-local.md).
 

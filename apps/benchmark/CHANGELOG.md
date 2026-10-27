@@ -1,5 +1,14 @@
 # pixiboardjs-benchmark
 
+## 0.1.1-alpha.5
+
+### Patch Changes
+
+- Updated dependencies
+  - pixiboardjs@0.1.0-alpha.6
+  - @pixi-board/core@0.1.0-alpha.6
+  - @pixi-board/renderer-pixi@0.0.0
+
 ## 0.1.1-alpha.4
 
 ### Patch Changes

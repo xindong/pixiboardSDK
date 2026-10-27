@@ -20,9 +20,11 @@ Install target for SDK consumers:
 pnpm add pixiboardjs@alpha
 ```
 
-The public surface is the package root. `./browser`, `./node` and `./types`
-are explicit subpath contracts so consumers can select platform ports without
-depending on internal workspace packages.
+The public surface is the package root. `./browser`, `./node`, `./types` and
+the Node-only `./node-media-provider` are explicit subpath contracts so
+consumers can select platform ports without depending on internal workspace
+packages. The media provider is not imported by the browser entries and must
+only be loaded in Node.
 
 ```ts
 import { createPixiBoard } from "pixiboardjs";
@@ -42,6 +44,28 @@ await board.destroy();
 
 See [`VERSIONING.md`](VERSIONING.md) for the separate SDK, document, node,
 plugin and Agent-tool version dimensions.
+
+### Node media provider
+
+The host injects `sharp`; install it in the Node application if it is not
+already available. `ffmpeg` and `ffprobe` are executable dependencies used for
+video/audio probing and previews. Pass their paths explicitly, or set
+`FFMPEG_PATH` / `FFPROBE_PATH`:
+
+```ts
+import sharp from "sharp";
+import { createNodeMediaProvider } from "pixiboardjs/node-media-provider";
+
+const media = createNodeMediaProvider({
+  sharp,
+  ffmpegPath: "/opt/homebrew/bin/ffmpeg",
+  ffprobePath: "/opt/homebrew/bin/ffprobe",
+});
+```
+
+If paths are omitted, the provider checks `FFMPEG_PATH` / `FFPROBE_PATH` and
+common installation locations before falling back to the executable names on
+`PATH`. Do not import this subpath from browser code.
 
 `pnpm build:release` reproducibly creates ESM JavaScript, source maps and
 declaration artifacts under `dist/`. The public facade bundles private workspace

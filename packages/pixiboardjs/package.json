@@ -1,6 +1,6 @@
 {
   "name": "pixiboardjs",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "description": "High-performance infinite canvas SDK for large, media-heavy, AI-native boards — flat document model, PixiJS rendering, custom nodes.",
   "keywords": [
     "canvas",
@@ -27,6 +27,8 @@
   "private": false,
   "sideEffects": false,
   "files": [
+    "src/node-media-provider.mjs",
+    "src/node-media-provider.d.ts",
     "dist",
     "etc",
     "README.md",
@@ -48,6 +50,11 @@
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js",
       "default": "./dist/node.js"
+    },
+    "./node-media-provider": {
+      "types": "./src/node-media-provider.d.ts",
+      "import": "./src/node-media-provider.mjs",
+      "default": "./src/node-media-provider.mjs"
     },
     "./types": {
       "types": "./dist/types.d.ts",

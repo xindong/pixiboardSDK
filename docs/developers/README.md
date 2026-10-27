@@ -251,16 +251,16 @@ if (board.history.canRedo()) board.history.redo();
 
 ### 图片、视频、音频：assetRefs + renderer
 
-媒体节点的 `props` 只存描述信息，实际文件或纹理通过 `assetRefs` 引用。内置 Pixi renderer 会按候选 ref 名称查找资源：image 使用 `preview/image/primary/source`，video 使用 `preview/poster/video/primary/source`，audio 使用 `waveform/preview/audio/primary/source`。
+媒体节点的 `props` 只存描述信息，实际文件或纹理通过 `assetRefs` 引用。内置 Pixi renderer 只读取可安全解码成纹理的候选：image 使用 `preview/image/primary/original/source`，video 使用 `poster/preview`，audio 使用 `waveform/preview`；Markdown、HTML、模型和其他文档只使用 `preview`。原始视频、音频和文档的可下载资源仍可放在 `primary`，但不会交给图片纹理解码器。
 
 ```ts
 const mediaRenderer = (kind: MediaKind): CustomNodeRenderer<MediaProps> => ({
   async create(node, ctx) {
     const names = kind === "image"
-      ? ["preview", "image", "primary", "source"]
+      ? ["preview", "image", "primary", "original", "source"]
       : kind === "video"
-        ? ["preview", "poster", "video", "primary", "source"]
-        : ["waveform", "preview", "audio", "primary", "source"];
+        ? ["poster", "preview"]
+        : ["waveform", "preview"];
     const ref = names.map((name) => node.assetRefs?.[name]).find(Boolean);
     const lease = ref ? await ctx.assets.acquireTexture(ref, { kind }) : undefined;
     const display = await ctx.display.createImage?.(ref, node) ?? ctx.display.createContainer();

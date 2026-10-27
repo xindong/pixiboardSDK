@@ -7,8 +7,12 @@ the document remains truth and the Pixi scene remains a disposable cache. The
 package owns view lifecycle, culling and renderer registration and does not
 depend on Tauri, plugins, agents or UI.
 
-The renderer includes `rect`, `image` (asset lease delegated to the host),
-`unknown-node`, and an injectable custom renderer registry. `PixiBoardRenderer`
+The renderer includes `rect`, image/video/audio/model/document renderers (asset
+lease delegated to the host), `text`, `unknown-node`, and an injectable custom
+renderer registry. Media content defaults to `contain`, with explicit `cover`
+and `stretch`; videos resolve only poster/preview textures and documents only
+rendered previews. A lease may report `width` and `height`, while node props may
+carry legacy `intrinsicWidth`/`intrinsicHeight` metadata. `PixiBoardRenderer`
 can use the default lazy PixiJS 8 adapter when factories are omitted; callers
 may inject application/view factories, a spatial index, and a capture adapter
 for tests and advanced hosts. The default spatial index is a real uniform grid

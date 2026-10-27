@@ -24,9 +24,11 @@ What this layer adds over calling capabilities directly:
   does not arrive as one enormous JSON blob.
 - **Serializable errors** — `{ ok: false, error }` instead of a thrown class,
   with `retryable` marked, so a result can cross a process or network boundary.
-- **Source translation** — `content` / `path` on a node becomes an asset and a
-  node in a single commit, rather than three separate calls a caller has to
-  sequence correctly.
+- **Unified import routing** — `content`, `path`, or a structured `source`
+  object goes through the host's `AssetImportService`. The provider probes
+  media, creates derivatives, and commits the asset and node together. Raw
+  video/document bytes are never exposed as texture refs, and omitted node
+  dimensions use the imported media's intrinsic ratio.
 
 Writes default to `origin: "agent:canvas"` and are ordinary transactions: they
 undo, they emit the same ChangeSet, and they are attributable.

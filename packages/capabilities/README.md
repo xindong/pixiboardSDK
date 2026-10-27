@@ -10,7 +10,15 @@ over a headless `BoardCore` when no renderer is involved.
 
 Every write takes an `origin` (`user` / `api` / `plugin:<id>` / `agent:<id>`), so
 a host can tell who changed what. `availability` reports which capabilities the
-current runtime actually has — `preview` and `capture` need a mounted renderer.
+current runtime actually has — `preview`, `capture`, and unified media `import`.
+
+An optional `AssetImportService` handles browser files, Agent paths and URLs.
+The adapter probes original bytes, stores assets and derivatives, and returns
+`{ asset, assetRefs, width, height, duration, previewStatus }`. Capabilities
+complete that work before opening the Core transaction, so an asset record and
+its node are committed together. `assetRefs` remain semantic slots: videos use
+`poster`, audio uses `waveform`, documents use `preview`, and `primary` always
+points to original bytes.
 
 Use `isCapabilityError(error)` instead of `instanceof CapabilityError` when the
 error may have crossed a package boundary: `pixiboardjs` inlines this package

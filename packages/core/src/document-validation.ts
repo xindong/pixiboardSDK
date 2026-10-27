@@ -1,6 +1,7 @@
 import { isAssetVariant } from "./asset-variant";
 import { DocumentValidationError, NodeValidationError } from "./errors";
 import { assertJsonValue, cloneValue } from "./json";
+import { isContentFit } from "./media-assets";
 import type { NodeTypeRegistry } from "./node-type-registry";
 import type {
   AssetRecord,
@@ -114,6 +115,9 @@ export function validateNode(input: unknown, path = "node"): BoardNode {
     throw new DocumentValidationError(`${path}.visible must be a boolean`);
   }
   if (!("props" in input)) throw new DocumentValidationError(`${path}.props is required`);
+  if (input.fit !== undefined && !isContentFit(input.fit)) {
+    throw new DocumentValidationError(`${path}.fit must be contain, cover, or stretch`);
+  }
   if (input.assetRefs !== undefined) validateAssetRefs(input.assetRefs, `${path}.assetRefs`);
   return { ...(cloneValue(input) as BoardNode), id, type, typeVersion };
 }

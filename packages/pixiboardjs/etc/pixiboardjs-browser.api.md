@@ -43,6 +43,47 @@ export type AssetGcRoots = {
 };
 
 // @public (undocumented)
+export type AssetImportRequest = {
+    source: AssetImportSource;
+    nodeType: string;
+    name?: string;
+    mimeType?: string;
+    width?: number;
+    height?: number;
+};
+
+// Warning: (ae-forgotten-export) The symbol "RequestOptions" needs to be exported by the entry point browser.d.ts
+//
+// @public (undocumented)
+export type AssetImportService = (input: AssetImportRequest, options: RequestOptions) => Promise<ImportedAsset> | ImportedAsset;
+
+// @public
+export type AssetImportSource = {
+    type: "content";
+    content: string;
+    fileName?: string;
+    mimeType?: string;
+    relativePath?: string;
+    rootPath?: string;
+    baseUrl?: string;
+} | {
+    type: "file";
+    path: string;
+    fileName?: string;
+    mimeType?: string;
+    relativePath?: string;
+    rootPath?: string;
+    baseUrl?: string;
+} | {
+    type: "url";
+    url: string;
+    fileName?: string;
+    mimeType?: string;
+    relativePath?: string;
+    baseUrl?: string;
+};
+
+// @public (undocumented)
 export type AssetRef = {
     assetId: string;
     variant?: AssetVariant;
@@ -109,6 +150,7 @@ export type BoardCapabilities = {
     availability: {
         preview: boolean;
         capture: boolean;
+        import: boolean;
     };
     document: {
         snapshot(options?: RequestOptions): Promise<Readonly<BoardDocument>>;
@@ -235,6 +277,7 @@ export type BoardNode<Props extends JsonValue = JsonValue> = {
     locked?: boolean;
     visible?: boolean;
     assetRefs?: Record<string, AssetRef>;
+    fit?: ContentFit;
     props: Props;
 };
 
@@ -254,7 +297,7 @@ export type BoardNodeCreateInput<Props extends JsonValue = JsonValue> = Omit<Boa
 };
 
 // @public (undocumented)
-export type BoardNodePatch<Props extends JsonValue = JsonValue> = Partial<Pick<BoardNode<Props>, "name" | "x" | "y" | "width" | "height" | "rotation" | "zIndex" | "locked" | "visible" | "assetRefs" | "props">>;
+export type BoardNodePatch<Props extends JsonValue = JsonValue> = Partial<Pick<BoardNode<Props>, "name" | "x" | "y" | "width" | "height" | "rotation" | "zIndex" | "locked" | "visible" | "assetRefs" | "fit" | "props">>;
 
 // @public (undocumented)
 export type BoardRuntimePorts = {
@@ -658,6 +701,15 @@ export type ConnectionStyle = {
 };
 
 // @public
+export type ContentFit = "contain" | "cover" | "stretch";
+
+// @public
+export function createMediaAssetRefs(kind: string, assetId: string, available?: Partial<Record<"preview" | "poster" | "waveform", boolean>>): Record<string, AssetRef>;
+
+// @public
+export function createMediaMetadata(input: MediaMetadata_2): MediaMetadata_2;
+
+// @public
 export function createNodeAgentController(board: PixiBoard, initial?: NodeAgentOptions): {
     prepare: (target: NodeAgentTarget, instruction: string) => Promise<NodeAgentRequest>;
     submit(target: NodeAgentTarget, instruction: string): Promise<unknown>;
@@ -780,9 +832,11 @@ export type CustomResizePolicy<Props extends JsonValue> = {
     }): BoardNodePatch<Props>;
 };
 
-// @public (undocumented)
+// @public
 export type CustomTextureLease = {
     texture?: unknown;
+    width?: number;
+    height?: number;
     release?: () => void;
 };
 
@@ -839,6 +893,12 @@ export interface DownloadPort extends PortLifecycle {
     download(request: BrowserDownloadRequest): void | Promise<void>;
 }
 
+// Warning: (ae-forgotten-export) The symbol "Size" needs to be exported by the entry point browser.d.ts
+// Warning: (ae-forgotten-export) The symbol "MediaLayoutRect" needs to be exported by the entry point browser.d.ts
+//
+// @public
+export function fitMediaRect(frame: Size, intrinsic: Size | undefined, fit?: ContentFit): MediaLayoutRect;
+
 // @public (undocumented)
 export type GetAssetOptions = AdapterOperationOptions & {
     variant?: AssetBinaryVariant;
@@ -848,6 +908,18 @@ export type GetAssetOptions = AdapterOperationOptions & {
 export type HistoryChangeEvent = {
     canUndo: boolean;
     canRedo: boolean;
+};
+
+// @public
+export type ImportedAsset = {
+    asset: AssetRecord;
+    assetRefs?: Record<string, AssetRef>;
+    width?: number;
+    height?: number;
+    duration?: number;
+    props?: Record<string, JsonValue>;
+    previewStatus?: "pending" | "queued" | "running" | "ready" | "error" | "failed" | "unsupported";
+    fit?: ContentFit;
 };
 
 // @public (undocumented)
@@ -885,6 +957,9 @@ export function isAssetVariant(value: unknown): value is AssetVariant;
 export function isBrowserQuotaError(error: unknown): boolean;
 
 // @public (undocumented)
+export function isContentFit(value: unknown): value is ContentFit;
+
+// @public (undocumented)
 export function isDocumentPreviewType(type: string): boolean;
 
 // @public (undocumented)
@@ -919,6 +994,21 @@ export type LabelOverlayOptions = {
 //
 // @public (undocumented)
 export function loadPixiRuntime(): Promise<PixiRuntimeModule>;
+
+// @public
+type MediaMetadata_2 = {
+    version?: 1;
+    contentHash?: string;
+    mimeType?: string;
+    width?: number;
+    height?: number;
+    duration?: number;
+    orientation?: number;
+    relativePath?: string;
+    rootId?: string;
+    baseUrl?: string;
+};
+export { MediaMetadata_2 as MediaMetadata }
 
 // @public (undocumented)
 export class NativeDownloadPort implements DownloadPort {
@@ -1117,8 +1207,11 @@ export type NodeHandleEventMap = {
     change: BoardChangeEvent;
 };
 
-// @public (undocumented)
-export type NodeInput<Props extends JsonValue = JsonValue> = BoardNodeCreateInput<Props>;
+// Warning: (ae-forgotten-export) The symbol "DirectNodeCreateInput" needs to be exported by the entry point browser.d.ts
+// Warning: (ae-forgotten-export) The symbol "SourceNodeCreateInput" needs to be exported by the entry point browser.d.ts
+//
+// @public
+export type NodeInput<Props extends JsonValue = JsonValue> = DirectNodeCreateInput<Props> | SourceNodeCreateInput;
 
 // @public (undocumented)
 export type NodeListFilter = {
@@ -1359,7 +1452,7 @@ export interface PixiBoard {
     node<Props extends JsonValue = JsonValue>(nodeId: string): NodeHandle<Props>;
     // (undocumented)
     readonly nodes: {
-        create<Props extends JsonValue>(input: BoardNodeCreateInput<Props>): Promise<NodeHandle<Props>>;
+        create<Props extends JsonValue = JsonValue>(input: NodeInput<Props>): Promise<NodeHandle<Props>>;
         update<Props extends JsonValue>(nodeId: string, patch: BoardNodePatch<Props>): NodeHandle<Props>;
         convert<Props extends JsonValue>(nodeId: string, input: BoardNodeConvertInput<Props>): NodeHandle<Props>;
         resize<Props extends JsonValue>(nodeId: string, request: NodeResizeRequest): NodeHandle<Props>;
@@ -1438,6 +1531,7 @@ export type PixiBoardOptions = {
     rendererFactory?: (options: PublicRendererOptions) => RuntimeRenderer;
     preview?: PreviewService;
     capture?: CaptureService;
+    import?: AssetImportService;
 };
 
 // @public
@@ -1482,6 +1576,9 @@ export interface PortLifecycle {
     // (undocumented)
     destroy?(): void | Promise<void>;
 }
+
+// @public
+export function preferredMediaNodeSize(intrinsic: Size | undefined, maxWidth?: number, maxHeight?: number): Size;
 
 // @public
 export type PreviewNode = {
@@ -1602,6 +1699,9 @@ export function resolveOverlayBounds(node: Readonly<BoardNode<JsonValue>>, nodeT
 // @public (undocumented)
 export function resolveScale(mode: OverlayScaleMode | undefined, viewportScale: number): number;
 
+// @public
+export function resolveTextureAssetRef(node: Pick<BoardNode, "type" | "assetRefs">, kind?: string): AssetRef | undefined;
+
 // @public (undocumented)
 export function rotatedRectBounds(node: BoardNode): WorldBounds;
 
@@ -1679,6 +1779,7 @@ export class TransactionConflictError extends PixiBoardCoreError {
 // @public (undocumented)
 export type TransactionOptions = {
     origin?: ChangeOrigin;
+    recordHistory?: boolean;
     coalesceKey?: string;
 };
 
@@ -1734,21 +1835,20 @@ export type WorldBounds = {
 
 // Warnings were encountered during analysis:
 //
-// dist/types-D39-tYZ8.d.ts:334:9 - (ae-forgotten-export) The symbol "RequestOptions" needs to be exported by the entry point browser.d.ts
-// dist/types-D39-tYZ8.d.ts:335:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point browser.d.ts
-// dist/types-D39-tYZ8.d.ts:335:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point browser.d.ts
-// dist/types-D39-tYZ8.d.ts:338:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point browser.d.ts
-// dist/types-D39-tYZ8.d.ts:344:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point browser.d.ts
-// dist/types-D39-tYZ8.d.ts:344:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point browser.d.ts
-// dist/types-D39-tYZ8.d.ts:345:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point browser.d.ts
-// dist/types-D39-tYZ8.d.ts:346:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point browser.d.ts
-// dist/types-D39-tYZ8.d.ts:349:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point browser.d.ts
-// dist/types-D39-tYZ8.d.ts:356:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point browser.d.ts
-// dist/types-D39-tYZ8.d.ts:363:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point browser.d.ts
-// dist/types-D39-tYZ8.d.ts:391:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point browser.d.ts
-// dist/types-D39-tYZ8.d.ts:588:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point browser.d.ts
-// dist/types-D39-tYZ8.d.ts:591:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point browser.d.ts
-// dist/types-D39-tYZ8.d.ts:592:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point browser.d.ts
+// dist/types-Cl2ogJCs.d.ts:426:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point browser.d.ts
+// dist/types-Cl2ogJCs.d.ts:426:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point browser.d.ts
+// dist/types-Cl2ogJCs.d.ts:429:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point browser.d.ts
+// dist/types-Cl2ogJCs.d.ts:435:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point browser.d.ts
+// dist/types-Cl2ogJCs.d.ts:435:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point browser.d.ts
+// dist/types-Cl2ogJCs.d.ts:436:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point browser.d.ts
+// dist/types-Cl2ogJCs.d.ts:437:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point browser.d.ts
+// dist/types-Cl2ogJCs.d.ts:440:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point browser.d.ts
+// dist/types-Cl2ogJCs.d.ts:447:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point browser.d.ts
+// dist/types-Cl2ogJCs.d.ts:454:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point browser.d.ts
+// dist/types-Cl2ogJCs.d.ts:482:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point browser.d.ts
+// dist/types-Cl2ogJCs.d.ts:682:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point browser.d.ts
+// dist/types-Cl2ogJCs.d.ts:685:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point browser.d.ts
+// dist/types-Cl2ogJCs.d.ts:686:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point browser.d.ts
 
 // (No @packageDocumentation comment for this package)
 

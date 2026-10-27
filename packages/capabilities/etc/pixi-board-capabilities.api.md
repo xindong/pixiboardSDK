@@ -5,18 +5,59 @@
 ```ts
 
 import { AssetRecord } from '@pixi-board/core';
+import { AssetRef } from '@pixi-board/core';
 import { BoardChangeSet } from '@pixi-board/core';
 import { BoardCore } from '@pixi-board/core';
 import { BoardDocument } from '@pixi-board/core';
 import { BoardNode } from '@pixi-board/core';
 import { BoardNodeCreateInput } from '@pixi-board/core';
 import { BoardNodePatch } from '@pixi-board/core';
+import { ContentFit } from '@pixi-board/core';
 import { JsonValue } from '@pixi-board/core';
 import { NodeListFilter } from '@pixi-board/core';
 import { ViewportSnapshot } from '@pixi-board/core';
 
 // @public (undocumented)
 export function aborted(signal?: AbortSignal): void;
+
+// @public (undocumented)
+export type AssetImportRequest = {
+    source: AssetImportSource;
+    nodeType: string;
+    name?: string;
+    mimeType?: string;
+    width?: number;
+    height?: number;
+};
+
+// @public (undocumented)
+export type AssetImportService = (input: AssetImportRequest, options: RequestOptions) => Promise<ImportedAsset> | ImportedAsset;
+
+// @public
+export type AssetImportSource = {
+    type: "content";
+    content: string;
+    fileName?: string;
+    mimeType?: string;
+    relativePath?: string;
+    rootPath?: string;
+    baseUrl?: string;
+} | {
+    type: "file";
+    path: string;
+    fileName?: string;
+    mimeType?: string;
+    relativePath?: string;
+    rootPath?: string;
+    baseUrl?: string;
+} | {
+    type: "url";
+    url: string;
+    fileName?: string;
+    mimeType?: string;
+    relativePath?: string;
+    baseUrl?: string;
+};
 
 export { AssetRecord }
 
@@ -30,6 +71,7 @@ export type BoardCapabilities = {
     availability: {
         preview: boolean;
         capture: boolean;
+        import: boolean;
     };
     document: {
         snapshot(options?: RequestOptions): Promise<Readonly<BoardDocument>>;
@@ -107,6 +149,7 @@ export type BoardCapabilities = {
 export type BoardCapabilityServices = {
     preview?: PreviewService;
     capture?: CaptureService;
+    import?: AssetImportService;
 };
 
 export { BoardChangeSet }
@@ -160,14 +203,27 @@ export type ChangeSet = BoardChangeSet;
 // @public (undocumented)
 export function createBoardCapabilities(core: BoardCore, services?: BoardCapabilityServices): BoardCapabilities;
 
+// Warning: (ae-forgotten-export) The symbol "DirectCreateNodeInput" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "SourceCreateNodeInput" needs to be exported by the entry point index.d.ts
+//
 // @public (undocumented)
-export type CreateNodeInput = BoardNodeCreateInput & {
-    asset?: AssetRecord;
-};
+export type CreateNodeInput = DirectCreateNodeInput | SourceCreateNodeInput;
 
 // @public (undocumented)
 export type DocumentLoadOptions = {
     replaceHistory?: boolean;
+};
+
+// @public
+export type ImportedAsset = {
+    asset: AssetRecord;
+    assetRefs?: Record<string, AssetRef>;
+    width?: number;
+    height?: number;
+    duration?: number;
+    props?: Record<string, JsonValue>;
+    previewStatus?: "pending" | "queued" | "running" | "ready" | "error" | "failed" | "unsupported";
+    fit?: ContentFit;
 };
 
 // @public
@@ -243,12 +299,14 @@ export type UpdateNodeInput = {
     id: string;
     patch: BoardNodePatch;
     asset?: AssetRecord;
+    source?: AssetImportSource;
 };
 
 // @public (undocumented)
 export type WriteOptions = RequestOptions & {
     origin?: string;
     label?: string;
+    recordHistory?: boolean;
 };
 
 // @public (undocumented)

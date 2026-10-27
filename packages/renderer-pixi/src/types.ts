@@ -12,7 +12,7 @@ export type PixiRuntimeModule = {
   Text: new (options?: unknown) => PixiDisplayObject;
   Texture?: { from(source: unknown): unknown };
 };
-export type TextureLease = { texture?: unknown; release?: () => void };
+export type TextureLease = { texture?: unknown; width?: number; height?: number; release?: () => void };
 export type RendererDiagnostics = { creates: number; updates: number; destroys: number; lateUpdates: number; activeViews: number; pendingOperations: number; textureLeases: number; listeners: number; tickers: number };
 export type RendererResourceScope = {
   onCleanup(cleanup: () => void): () => void;

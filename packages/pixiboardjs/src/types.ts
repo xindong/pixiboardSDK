@@ -23,6 +23,8 @@ import type {
   WorldBounds,
 } from "@pixi-board/core";
 import type {
+  AssetImportService,
+  AssetImportSource,
   BoardCapabilities,
   CaptureResult,
   CaptureService,
@@ -120,7 +122,8 @@ export type CustomDisplayFactory = {
   createText?(text: string, style?: Record<string, unknown>): CustomDisplayObject;
 };
 
-export type CustomTextureLease = { texture?: unknown; release?: () => void };
+/** Optional intrinsic size lets a host provide layout metadata with its texture. */
+export type CustomTextureLease = { texture?: unknown; width?: number; height?: number; release?: () => void };
 
 /** Resources are released when the view is culled, converted or destroyed. */
 export type CustomRendererResources = {
@@ -233,6 +236,7 @@ export type PixiBoardOptions = {
   rendererFactory?: (options: PublicRendererOptions) => RuntimeRenderer;
   preview?: PreviewService;
   capture?: CaptureService;
+  import?: AssetImportService;
 };
 
 export type CaptureInput =
@@ -335,7 +339,7 @@ export interface PixiBoard {
   readonly signal: AbortSignal;
   readonly capabilities: BoardCapabilities;
   readonly nodes: {
-    create<Props extends JsonValue>(input: BoardNodeCreateInput<Props>): Promise<NodeHandle<Props>>;
+    create<Props extends JsonValue = JsonValue>(input: NodeInput<Props>): Promise<NodeHandle<Props>>;
     update<Props extends JsonValue>(nodeId: string, patch: BoardNodePatch<Props>): NodeHandle<Props>;
     convert<Props extends JsonValue>(nodeId: string, input: BoardNodeConvertInput<Props>): NodeHandle<Props>;
     resize<Props extends JsonValue>(nodeId: string, request: NodeResizeRequest): NodeHandle<Props>;
@@ -423,12 +427,43 @@ export interface PixiBoard {
 }
 
 export type NodePatch<Props extends JsonValue = JsonValue> = BoardNodePatch<Props>;
-export type NodeInput<Props extends JsonValue = JsonValue> = BoardNodeCreateInput<Props>;
+type DirectNodeCreateInput<Props extends JsonValue> = Omit<
+  BoardNodeCreateInput<Props>,
+  "props"
+> & {
+  props?: Props;
+  /** Atomically persist an already-imported record and its explicit refs. */
+  asset?: import("@pixi-board/capabilities").AssetRecord;
+  source?: undefined;
+};
+type SourceNodeCreateInput = Omit<
+  BoardNodeCreateInput,
+  "x" | "y" | "width" | "height" | "props"
+> & {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  /** The import result supplies props at runtime; callers may still override them. */
+  props?: JsonValue;
+  asset?: undefined;
+  /** Host-owned source import; uses the configured import service. */
+  source: AssetImportSource;
+};
+/**
+ * Direct creation keeps geometry required; source imports may omit it and use
+ * the dimensions resolved by the configured import service.
+ */
+export type NodeInput<Props extends JsonValue = JsonValue> =
+  | DirectNodeCreateInput<Props>
+  | SourceNodeCreateInput;
 export type TransactionOrigin = ChangeOrigin;
 
 export type {
   AssetRef,
   AssetVariant,
+  ContentFit,
+  MediaMetadata,
   PreviewStatus,
   PreviewQuality,
   PreviewSpec,

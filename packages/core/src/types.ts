@@ -29,6 +29,23 @@ export type ViewportSnapshot = {
 
 export type AssetVariant = "original" | "preview" | "waveform" | `preview-${string}`;
 
+/** Named slots used by the built-in media renderers and import adapters. */
+export type AssetRefRole =
+  | "primary"
+  | "original"
+  | "preview"
+  | "poster"
+  | "waveform"
+  | "source"
+  | "image"
+  | "video"
+  | "audio"
+  | "model"
+  | "html"
+  | "markdown"
+  | "text-file"
+  | "file";
+
 export type AssetRef = {
   assetId: string;
   variant?: AssetVariant;
@@ -39,6 +56,27 @@ export type AssetRecord = {
   kind: string;
   metadata?: Record<string, JsonValue>;
 } & Record<string, JsonValue | undefined>;
+
+/**
+ * Optional media facts shared by importers, probes and renderers. Keeping
+ * these values optional lets each source omit facts it cannot determine while
+ * giving new imports one canonical shape.
+ */
+export type MediaMetadata = {
+  version?: 1;
+  contentHash?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  orientation?: number;
+  relativePath?: string;
+  rootId?: string;
+  baseUrl?: string;
+};
+
+/** How intrinsic content is fitted inside its persisted node rectangle. */
+export type ContentFit = "contain" | "cover" | "stretch";
 
 export type BoardNode<Props extends JsonValue = JsonValue> = {
   id: string;
@@ -54,6 +92,8 @@ export type BoardNode<Props extends JsonValue = JsonValue> = {
   locked?: boolean;
   visible?: boolean;
   assetRefs?: Record<string, AssetRef>;
+  /** Defaults to `contain`; `stretch` is an explicit opt-in. */
+  fit?: ContentFit;
   props: Props;
 };
 
@@ -90,6 +130,7 @@ export type BoardNodePatch<Props extends JsonValue = JsonValue> = Partial<
     | "locked"
     | "visible"
     | "assetRefs"
+    | "fit"
     | "props"
   >
 >;
@@ -190,6 +231,8 @@ export type NodeListFilter = {
 
 export type TransactionOptions = {
   origin?: ChangeOrigin;
+  /** Host-owned background updates can emit a normal change without entering undo. */
+  recordHistory?: boolean;
   /**
    * Merges this transaction into the previous history entry when that entry
    * carries the same key. A pointer gesture that commits once per frame passes

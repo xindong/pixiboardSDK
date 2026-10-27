@@ -1,7 +1,7 @@
 import { CapabilityError, isCapabilityError, type BoardCapabilities } from "@pixi-board/capabilities";
 import { canvasReadSchema, canvasWriteSchema } from "./schemas.ts";
 import type { AgentCallOptions, AgentTools, CanvasOutput, CanvasReadInput, CanvasWriteInput, CompactAsset, CompactNode } from "./types.ts";
-import type { AssetRecord, BoardNode, JsonValue } from "@pixi-board/capabilities";
+import type { AssetImportSource, AssetRecord, BoardNode, CreateNodeInput, JsonValue } from "@pixi-board/capabilities";
 export * from "./types.ts";
 export * from "./schemas.ts";
 
@@ -24,33 +24,69 @@ async function write(c: BoardCapabilities, input: CanvasWriteInput, options: Age
   const writeOptions = { ...options, origin: options.origin ?? "agent:canvas" };
   if (input.type === "delete") { const r = await c.nodes.delete({ nodeIds: input.nodeIds }, writeOptions); return { type: "delete", deletedNodeIds: [...(r.deletedNodeIds ?? [])], revision: r.revision, changeSet: r.changeSet, requestId: options.requestId }; }
   if (input.type === "create") {
-    const nodes = input.nodes.map((node, index) => {
-      const { content, path, ...rest } = node;
-      const sourceValue = sourceOf(content, path);
-      const source = sourceValue && { id: `agent-asset:${node.id ?? index}`, kind: "source", source: sourceValue };
-      return { x: 0, y: 0, width: 100, height: 100, rotation: 0, zIndex: 0, ...rest, ...(source ? { asset: source } : {}) };
+    const nodes = input.nodes.map((node): CreateNodeInput => {
+      const { content, path, source, ...rest } = node;
+      const { fileName, mimeType, relativePath, rootPath, baseUrl, ...geometry } = rest;
+      const hasSource = source !== undefined || content !== undefined || path !== undefined;
+      const positioned = {
+        x: 0,
+        y: 0,
+        rotation: 0,
+        zIndex: 0,
+        ...geometry,
+      };
+      if (!hasSource) return { width: 100, height: 100, ...positioned };
+      return {
+        ...positioned,
+        source: agentSource(source, content, path, { fileName, mimeType, relativePath, rootPath, baseUrl }),
+      };
     });
     const r = await c.nodes.create({ nodes }, writeOptions); return { type: "create", nodes: r.nodes.map((node) => compact(node)), revision: r.revision, changed: r.changed, changeSet: r.changeSet, requestId: options.requestId };
   }
   const current = await c.nodes.read({ filter: { ids: input.nodes.map((node) => node.id) } }, options);
   const byId = new Map(current.nodes.map((node) => [node.id, node]));
-  const updates = input.nodes.map(({ id, content, path, ...patch }) => {
-    if (content === undefined && path === undefined) return { id, patch };
-    const node = byId.get(id);
-    const assetId = node?.assetRefs?.primary?.assetId;
-    if (!assetId) throw new CapabilityError("INVALID_INPUT", `nodes[${id}] source update requires a primary asset`);
-    const asset = { id: assetId, kind: "source", source: sourceOf(content, path)! };
-    return { id, patch: { ...patch, assetRefs: { ...(node.assetRefs ?? {}), primary: { assetId, variant: "original" as const } }, }, asset };
+  const updates = input.nodes.map(({ id, content, path, source, ...rest }) => {
+    const { fileName, mimeType, relativePath, rootPath, baseUrl, ...patch } = rest;
+    if (content === undefined && path === undefined && source === undefined) return { id, patch };
+    if (!byId.has(id)) throw new CapabilityError("NODE_NOT_FOUND", `Node not found: ${id}`, { nodeId: id });
+    return { id, patch, source: agentSource(source, content, path, { fileName, mimeType, relativePath, rootPath, baseUrl }) };
   });
   const r = await c.nodes.update({ nodes: updates }, writeOptions); return { type: "update", nodes: r.nodes.map((node) => compact(node)), revision: r.revision, changed: r.changed, changeSet: r.changeSet, requestId: options.requestId };
 }
-/** A node's inline source, as a JSON record rather than a union of two shapes. */
-function sourceOf(content: string | undefined, path: string | undefined): Record<string, JsonValue> | undefined {
-  if (content !== undefined) return { content };
-  if (path !== undefined) return { path };
-  return undefined;
+function agentSource(
+  explicit: AssetImportSource | undefined,
+  content: string | undefined,
+  path: string | undefined,
+  fields: {
+    fileName?: string;
+    mimeType?: string;
+    relativePath?: string;
+    rootPath?: string;
+    baseUrl?: string;
+  },
+): AssetImportSource {
+  if (explicit) return explicit;
+  const shared = {
+    ...(fields.fileName ? { fileName: fields.fileName } : {}),
+    ...(fields.mimeType ? { mimeType: fields.mimeType } : {}),
+    ...(fields.relativePath ? { relativePath: fields.relativePath } : {}),
+    ...(fields.baseUrl ? { baseUrl: fields.baseUrl } : {}),
+  };
+  if (content !== undefined) return { type: "content", content, ...shared };
+  if (path !== undefined) return { type: "file", path, ...shared, ...(fields.rootPath ? { rootPath: fields.rootPath } : {}) };
+  throw new CapabilityError("INVALID_INPUT", "source must be content, file, or url");
 }
-function compact(node: BoardNode, fields?: string[]): CompactNode { const out: CompactNode = { id: node.id, type: node.type, ...(node.name === undefined ? {} : { name: node.name }) }; if (!fields?.length || fields.includes("position")) out.position = { x: node.x, y: node.y }; if (!fields?.length || fields.includes("size")) out.size = { width: node.width, height: node.height }; if (!fields?.length || fields.includes("rotation")) out.rotation = node.rotation; if (!fields?.length || fields.includes("zIndex")) out.zIndex = node.zIndex; if (!fields?.length || fields.includes("props")) out.props = node.props; return out; }
+function compact(node: BoardNode, fields?: string[]): CompactNode {
+  const out: CompactNode = { id: node.id, type: node.type, ...(node.name === undefined ? {} : { name: node.name }) };
+  if (!fields?.length || fields.includes("position")) out.position = { x: node.x, y: node.y };
+  if (!fields?.length || fields.includes("size")) out.size = { width: node.width, height: node.height };
+  if (!fields?.length || fields.includes("rotation")) out.rotation = node.rotation;
+  if (!fields?.length || fields.includes("zIndex")) out.zIndex = node.zIndex;
+  if (!fields?.length || fields.includes("fit")) out.fit = node.fit ?? "contain";
+  if (!fields?.length || fields.includes("assetRefs")) out.assetRefs = node.assetRefs;
+  if (!fields?.length || fields.includes("props")) out.props = node.props;
+  return out;
+}
 function project(value: AssetRecord, fields?: string[]): CompactAsset { if (!fields?.length) return { ...value }; const out: CompactAsset = { id: value.id, kind: value.kind }; for (const field of fields) if (field in value) out[field] = value[field] as JsonValue | undefined; return out; }
 function validateRead(value: unknown): CanvasReadInput { if (!value || typeof value !== "object" || Array.isArray(value)) throw new CapabilityError("INVALID_INPUT", "canvas.read input must be an object"); const v = value as Record<string, unknown>; if (!["nodes", "assets", "preview"].includes(v.type as string)) throw new CapabilityError("INVALID_INPUT", "canvas.read.type is invalid"); const allowed = v.type === "nodes" ? ["type","ids","types","limit","cursor","fields"] : v.type === "assets" ? ["type","ids","kinds","limit","cursor","fields"] : ["type","id","maxWidth","maxHeight","frameNumber","fps"]; rejectUnknown(v, allowed); if (v.type === "preview" && typeof v.id !== "string") throw new CapabilityError("INVALID_INPUT", "canvas.read preview requires id"); if (v.limit !== undefined && (!Number.isInteger(v.limit) || Number(v.limit) < 1 || Number(v.limit) > 200)) throw new CapabilityError("INVALID_INPUT", "limit must be between 1 and 200"); return v as unknown as CanvasReadInput; }
 function validateWrite(value: unknown): CanvasWriteInput { if (!value || typeof value !== "object" || Array.isArray(value)) throw new CapabilityError("INVALID_INPUT", "canvas.write input must be an object"); const v = value as Record<string, unknown>; if (!["create", "update", "delete"].includes(v.type as string)) throw new CapabilityError("INVALID_INPUT", "canvas.write.type is invalid"); rejectUnknown(v, v.type === "delete" ? ["type","nodeIds"] : ["type","nodes"]); if (v.type === "delete" ? !Array.isArray(v.nodeIds) || !v.nodeIds.length : !Array.isArray(v.nodes) || !v.nodes.length) throw new CapabilityError("INVALID_INPUT", "write payload must contain a non-empty batch"); return v as unknown as CanvasWriteInput; }

@@ -4,14 +4,47 @@
 
 ```ts
 
+import { AssetImportSource } from '@pixi-board/capabilities';
+import { AssetRef } from '@pixi-board/core';
 import { BoardCapabilities } from '@pixi-board/capabilities';
 import { BoardChangeSet } from '@pixi-board/capabilities';
+import { ContentFit } from '@pixi-board/core';
 import { JsonValue } from '@pixi-board/capabilities';
 import { RequestOptions } from '@pixi-board/capabilities';
 
 // @public (undocumented)
 export type AgentCallOptions = RequestOptions & {
     origin?: string;
+};
+
+// @public (undocumented)
+export type AgentNodeCreate = {
+    id?: string;
+    type: string;
+    name?: string;
+    content?: string;
+    path?: string;
+    source?: AssetImportSource;
+    fileName?: string;
+    mimeType?: string;
+    relativePath?: string;
+    rootPath?: string;
+    baseUrl?: string;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    rotation?: number;
+    zIndex?: number;
+    locked?: boolean;
+    visible?: boolean;
+    fit?: ContentFit;
+    props?: JsonValue;
+};
+
+// @public (undocumented)
+export type AgentNodeUpdate = Omit<AgentNodeCreate, "type"> & {
+    id: string;
 };
 
 // @public (undocumented)
@@ -109,39 +142,10 @@ export const canvasReadSchema: {
 // @public (undocumented)
 export type CanvasWriteInput = {
     type: "create";
-    nodes: Array<{
-        id?: string;
-        type: string;
-        name?: string;
-        content?: string;
-        path?: string;
-        x?: number;
-        y?: number;
-        width?: number;
-        height?: number;
-        rotation?: number;
-        zIndex?: number;
-        locked?: boolean;
-        visible?: boolean;
-        props?: JsonValue;
-    }>;
+    nodes: Array<AgentNodeCreate>;
 } | {
     type: "update";
-    nodes: Array<{
-        id: string;
-        content?: string;
-        path?: string;
-        name?: string;
-        x?: number;
-        y?: number;
-        width?: number;
-        height?: number;
-        rotation?: number;
-        zIndex?: number;
-        locked?: boolean;
-        visible?: boolean;
-        props?: JsonValue;
-    }>;
+    nodes: Array<AgentNodeUpdate>;
 } | {
     type: "delete";
     nodeIds: string[];
@@ -179,6 +183,8 @@ export type CompactNode = {
     };
     rotation?: number;
     zIndex?: number;
+    fit?: ContentFit;
+    assetRefs?: Record<string, AssetRef>;
     props?: JsonValue;
 };
 
