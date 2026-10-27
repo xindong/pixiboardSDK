@@ -312,8 +312,8 @@ export class HistoryController {
         this.patchGenerations.set(patch, generation);
         if (inverse?.op === "node:replace") this.patchGenerations.set(inverse, generation);
       } else if (patch.op === "node:remove") {
-        const generation = this.nodeGenerations.get(patch.node.id) ?? 0;
-        this.nodeGenerations.delete(patch.node.id);
+        const generation = this.nodeGenerations.get(patch.nodeId) ?? 0;
+        this.nodeGenerations.delete(patch.nodeId);
         if (inverse?.op === "node:insert") this.patchGenerations.set(inverse, generation);
       }
     });
@@ -402,7 +402,10 @@ function rebaseNodeMediaFields(
 
   const propKeys = Object.keys(update.props);
   if (propKeys.length > 0) {
-    const props = { ...record(next.props) };
+    const props: Record<string, JsonValue> = {};
+    for (const [key, value] of Object.entries(record(next.props))) {
+      if (value !== undefined) props[key] = value;
+    }
     let propsChanged = false;
     for (const key of propKeys) {
       if (jsonEqual(props[key], update.props[key])) continue;
