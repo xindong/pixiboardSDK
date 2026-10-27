@@ -1,0 +1,105 @@
+name: PR API reports (temporary)
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-api-reports-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+
+jobs:
+  generate-api-reports:
+    name: Generate and upload 9 API reports
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@v4
+
+      - name: Set up SDK workspace
+        uses: ./.github/actions/setup-sdk
+
+      - name: Build release packages
+        id: build_release
+        continue-on-error: true
+        run: pnpm build:release
+
+      - name: Generate standard API reports
+        id: api_report
+        continue-on-error: true
+        run: pnpm api:report
+
+      - name: Generate browser API report
+        id: browser_report
+        continue-on-error: true
+        run: pnpm --filter pixiboardjs exec api-extractor run --local --config api-extractor.browser.json
+
+      - name: Generate node API report
+        id: node_report
+        continue-on-error: true
+        run: pnpm --filter pixiboardjs exec api-extractor run --local --config api-extractor.node.json
+
+      - name: Generate types API report
+        id: types_report
+        continue-on-error: true
+        run: pnpm --filter pixiboardjs exec api-extractor run --local --config api-extractor.types.json
+
+      - name: Generate agent schemas API report
+        id: schemas_report
+        continue-on-error: true
+        run: pnpm --filter @pixi-board/agent-tools exec api-extractor run --local --config api-extractor.schemas.json
+
+      - name: Verify compilation, report generation, and 9 report files
+        id: verify_reports
+        shell: bash
+        env:
+          BUILD_RELEASE_OUTCOME: ${{ steps.build_release.outcome }}
+          API_REPORT_OUTCOME: ${{ steps.api_report.outcome }}
+          BROWSER_REPORT_OUTCOME: ${{ steps.browser_report.outcome }}
+          NODE_REPORT_OUTCOME: ${{ steps.node_report.outcome }}
+          TYPES_REPORT_OUTCOME: ${{ steps.types_report.outcome }}
+          SCHEMAS_REPORT_OUTCOME: ${{ steps.schemas_report.outcome }}
+        run: |
+          set -euo pipefail
+
+          test "$BUILD_RELEASE_OUTCOME" = "success"
+          test "$API_REPORT_OUTCOME" = "success"
+          test "$BROWSER_REPORT_OUTCOME" = "success"
+          test "$NODE_REPORT_OUTCOME" = "success"
+          test "$TYPES_REPORT_OUTCOME" = "success"
+          test "$SCHEMAS_REPORT_OUTCOME" = "success"
+
+          reports=(
+            packages/core/etc/pixi-board-core.api.md
+            packages/capabilities/etc/pixi-board-capabilities.api.md
+            packages/agent-tools/etc/pixi-board-agent-tools.api.md
+            packages/agent-tools/etc/pixi-board-agent-tools-schemas.api.md
+            packages/pixiboardjs/etc/pixiboardjs.api.md
+            packages/pixiboardjs/etc/pixiboardjs-browser.api.md
+            packages/pixiboardjs/etc/pixiboardjs-node.api.md
+            packages/pixiboardjs/etc/pixiboardjs-types.api.md
+            packages/plugin-sdk/etc/pixi-board-plugin-sdk.api.md
+          )
+
+          test "${#reports[@]}" -eq 9
+          for report in "${reports[@]}"; do
+            test -s "$report"
+          done
+
+          printf 'Verified %d API reports:\n' "${#reports[@]}"
+          printf '%s\n' "${reports[@]}"
+
+      - name: Upload API reports
+        if: always() && steps.verify_reports.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-reports-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
+          path: packages/*/etc/*.api.md
+          if-no-files-found: error
+          retention-days: 7

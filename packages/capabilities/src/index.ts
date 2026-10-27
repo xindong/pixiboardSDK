@@ -118,6 +118,10 @@ async function prepareWrite(
     const asset = raw.asset;
     return {
       ...raw,
+      x: raw.x ?? 0,
+      y: raw.y ?? 0,
+      width: raw.width ?? 100,
+      height: raw.height ?? 100,
       ...(asset ? {
         asset,
         assetRefs: raw.assetRefs ?? createMediaAssetRefs(raw.type, asset.id),

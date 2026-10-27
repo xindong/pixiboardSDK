@@ -148,7 +148,7 @@ function registerTextureNode(registry: NodeRendererRegistry, type: string): void
       try {
         await retry;
       } finally {
-        if (state.retry === retry) state.retry = undefined;
+        state.retry = undefined;
       }
     },
     destroy(view) { view.displayObject.destroy?.({ children: true }); },

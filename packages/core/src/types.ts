@@ -59,8 +59,8 @@ export type AssetRecord = {
 
 /**
  * Optional media facts shared by importers, probes and renderers. Keeping
- * these values optional makes the extension backward compatible with older
- * documents while giving new imports one canonical shape.
+ * these values optional lets each source omit facts it cannot determine while
+ * giving new imports one canonical shape.
  */
 export type MediaMetadata = {
   version?: 1;

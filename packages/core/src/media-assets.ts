@@ -79,7 +79,7 @@ export function createMediaAssetRefs(
   return refs;
 }
 
-/** Read intrinsic media size from legacy node props and explicit overrides. */
+/** Read intrinsic media size from supported node props and explicit overrides. */
 export function readIntrinsicSize(
   value: unknown,
   fallback?: Partial<Size>,

@@ -158,7 +158,7 @@ function validateAssetRefs(input: unknown, path: string): asserts input is Recor
       name !== "image" &&
       name !== "primary" &&
       name !== "original" &&
-      // `source` is a legacy image slot, but other node kinds use arbitrary
+      // `source` is an image slot, but other node kinds use arbitrary
       // source names too. Enforcement of non-image texture slots happens at
       // the rendering boundary through resolveTextureAssetRef.
       name !== "source"
