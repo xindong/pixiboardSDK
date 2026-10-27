@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { BoardCore, NodeTypeRegistry, type NodeTypeDefinition } from "@pixi-board/core";
-import { CapabilityError, createBoardCapabilities, isCapabilityError, mapCoreError, type AssetImportService } from "./index.ts";
+import { CapabilityError, createBoardCapabilities, isCapabilityError, mapCoreError, type AssetImportService, type ImportedAsset } from "./index.ts";
 
 const text: NodeTypeDefinition = { type: "text", version: 1, defaults: {}, validate: (value) => value ?? {}, getBounds: (node) => ({ minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height }) };
 function core() { const registry = new NodeTypeRegistry(); registry.register(text); return new BoardCore({ nodeTypes: registry, idFactory: (() => { let n = 0; return () => `id-${++n}`; })(), now: () => 1 }); }
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise; });
+  return { promise, resolve };
+}
 
 describe("core-backed capabilities", () => {
   it("batches nodes into one revision/change/history entry and undoes", () => {
@@ -64,6 +69,199 @@ describe("core-backed capabilities", () => {
     });
     expect(result.changeSet).toMatchObject({ addedNodeIds: ["imported"], assetChangedNodeIds: ["imported"] });
     expect(board.document.toJSON().assets).toEqual([expect.objectContaining({ id: "image-asset", kind: "image" })]);
+  });
+  it("merges concurrent user edits into a source import", async () => {
+    const board = core();
+    const imported = deferred<ImportedAsset>();
+    const importAsset: AssetImportService = () => imported.promise;
+    const caps = createBoardCapabilities(board, { import: importAsset });
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 100, height: 100, props: { label: "initial", count: 1 } }] }, { origin: "api" });
+
+    const sourceUpdate = caps.nodes.update({ nodes: [{
+      id: "media",
+      source: { type: "file", path: "/tmp/import.png" },
+      patch: { x: 10, fit: "cover", props: { tone: "warm" } },
+    }] }, { origin: "agent" });
+    await Promise.resolve();
+    await caps.nodes.update({ nodes: [{ id: "media", patch: { x: 75, props: { label: "user edit", extra: true } } }] }, { origin: "ui" });
+
+    imported.resolve({
+      asset: { id: "imported-asset", kind: "image", metadata: { mimeType: "image/png" } },
+      assetRefs: { primary: { assetId: "imported-asset", variant: "original" } },
+      width: 1200,
+      height: 600,
+      props: { label: "imported", source: "import" },
+      previewStatus: "ready",
+    });
+    const result = await sourceUpdate;
+    expect(result.nodes[0]).toMatchObject({
+      x: 75, fit: "cover",
+      props: { label: "user edit", extra: true, tone: "warm", source: "import", intrinsicWidth: 1200, intrinsicHeight: 600, previewStatus: "ready" },
+      assetRefs: { primary: { assetId: "imported-asset", variant: "original" } },
+    });
+  });
+  it("preserves a concurrent non-object props replacement", async () => {
+    const board = core(); const pending = deferred<ImportedAsset>();
+    const caps = createBoardCapabilities(board, { import: () => pending.promise });
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10, props: { label: "before" } }] });
+    const update = caps.nodes.update({ nodes: [{ id: "media", source: { type: "file", path: "media.png" }, patch: { props: { label: "stale" } } }] });
+    board.nodes.update("media", { props: ["new"] });
+    pending.resolve({ asset: { id: "new-asset", kind: "image", metadata: {} } });
+    await update;
+    expect(board.nodes.get("media")?.props).toEqual(["new"]);
+  });
+  it("rejects a source import superseded by a newer source request", async () => {
+    const board = core();
+    const imports = new Map<string, { promise: Promise<ImportedAsset>; resolve: (value: ImportedAsset) => void }>();
+    const importAsset: AssetImportService = ({ source }) => {
+      const pending = deferred<ImportedAsset>();
+      imports.set(source.type === "file" ? source.path : source.type === "url" ? source.url : source.fileName ?? "content", pending);
+      return pending.promise;
+    };
+    const caps = createBoardCapabilities(board, { import: importAsset });
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 100, height: 100, props: { label: "initial" } }] }, { origin: "api" });
+
+    const first = caps.nodes.update({ nodes: [{ id: "media", source: { type: "file", path: "first.png" }, patch: {} }] }, { origin: "agent" });
+    await Promise.resolve();
+    const second = caps.nodes.update({ nodes: [{ id: "media", source: { type: "file", path: "second.png" }, patch: {} }] }, { origin: "agent" });
+    await Promise.resolve();
+    imports.get("second.png")!.resolve({
+      asset: { id: "second-asset", kind: "image", metadata: {} },
+      props: { source: "second" },
+    });
+    await second;
+    imports.get("first.png")!.resolve({
+      asset: { id: "first-asset", kind: "image", metadata: {} },
+      props: { source: "first" },
+    });
+
+    await expect(first).rejects.toMatchObject({ code: "TRANSACTION_CONFLICT" });
+    const media = board.nodes.get("media");
+    expect(media).toMatchObject({
+      assetRefs: { primary: { assetId: "second-asset", variant: "original" } },
+      props: { label: "initial", source: "second" },
+    });
+    expect(board.assets.list().map((asset) => asset.id)).not.toContain("first-asset");
+  });
+  it("commits direct updates synchronously before callers compute their next props", async () => {
+    const board = core(); const caps = createBoardCapabilities(board);
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10, props: { first: 0, second: 0 } }] });
+    const first = caps.nodes.update({ nodes: [{ id: "media", patch: { props: { first: 1, second: 0 } } }] });
+    const current = board.nodes.get("media")!;
+    const second = caps.nodes.update({ nodes: [{ id: "media", patch: { props: { ...(current.props as Record<string, number>), second: 2 } } }] });
+    await Promise.all([first, second]);
+    expect(board.nodes.get("media")?.props).toEqual({ first: 1, second: 2 });
+  });
+  it("commits direct creates synchronously before returning the promise", async () => {
+    const board = core(); const caps = createBoardCapabilities(board);
+    const created = caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10 }] });
+    expect(board.nodes.get("media")).toMatchObject({ id: "media" });
+    await created;
+  });
+  it("merges asset refs from the transaction draft after an earlier batch update", async () => {
+    const board = core(); const caps = createBoardCapabilities(board);
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10 }] });
+    await caps.nodes.update({ nodes: [
+      { id: "media", patch: { assetRefs: { preview: { assetId: "preview", variant: "preview" } } } },
+      { id: "media", patch: {}, asset: { id: "primary", kind: "image", metadata: {} } },
+    ] });
+    expect(board.nodes.get("media")?.assetRefs).toEqual({
+      preview: { assetId: "preview", variant: "preview" },
+      primary: { assetId: "primary", variant: "original" },
+    });
+  });
+  it("rejects an import after the target is removed and recreated with the same id and type", async () => {
+    const board = core(); const pending = deferred<ImportedAsset>();
+    const caps = createBoardCapabilities(board, { import: () => pending.promise });
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10, props: { label: "old" } }] });
+    const update = caps.nodes.update({ nodes: [{ id: "media", source: { type: "file", path: "old.png" }, patch: {} }] });
+    board.nodes.remove("media");
+    board.nodes.create({ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10, props: { label: "new" } });
+    const before = board.document.toJSON();
+    pending.resolve({ asset: { id: "old-import", kind: "image", metadata: {} }, width: 400 });
+    await expect(update).rejects.toMatchObject({ code: "TRANSACTION_CONFLICT" });
+    expect(board.document.toJSON()).toEqual(before);
+    expect(board.assets.get("old-import")).toBeUndefined();
+  });
+  it("rejects an old import after refs switch sources, even when they switch back", async () => {
+    const board = core(); const pending = deferred<ImportedAsset>();
+    const caps = createBoardCapabilities(board, { import: () => pending.promise });
+    const original = { primary: { assetId: "original", variant: "original" as const } };
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10, assetRefs: original, props: { label: "keep" } }] });
+    const update = caps.nodes.update({ nodes: [{ id: "media", source: { type: "file", path: "old.png" }, patch: {} }] });
+    board.nodes.update("media", { assetRefs: { primary: { assetId: "replacement", variant: "original" } }, props: { label: "new source" } });
+    board.nodes.update("media", { assetRefs: original });
+    const before = board.document.toJSON();
+    pending.resolve({ asset: { id: "old-import", kind: "image", metadata: {} }, props: { label: "stale metadata" }, width: 123 });
+    await expect(update).rejects.toMatchObject({ code: "TRANSACTION_CONFLICT" });
+    expect(board.document.toJSON()).toEqual(before);
+    expect(board.assets.get("old-import")).toBeUndefined();
+  });
+  it("rolls back a batch when an earlier item changes the source refs of its import target", async () => {
+    const board = core(); const pending = deferred<ImportedAsset>();
+    const caps = createBoardCapabilities(board, { import: () => pending.promise });
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10, props: { label: "original" } }] });
+    const before = board.document.toJSON();
+    const update = caps.nodes.update({ nodes: [
+      { id: "media", patch: { assetRefs: { primary: { assetId: "new-source", variant: "original" } } } },
+      { id: "media", patch: {}, source: { type: "file", path: "old.png" } },
+    ] });
+    pending.resolve({ asset: { id: "old-import", kind: "image", metadata: {} }, props: { label: "stale" } });
+    await expect(update).rejects.toMatchObject({ code: "TRANSACTION_CONFLICT" });
+    expect(board.document.toJSON()).toEqual(before);
+    expect(board.assets.get("old-import")).toBeUndefined();
+  });
+  it("allows an unrelated node edit while importing and uses latest direct-asset refs", async () => {
+    const board = core(); const pending = deferred<ImportedAsset>();
+    const caps = createBoardCapabilities(board, { import: () => pending.promise });
+    await caps.nodes.create({ nodes: [
+      { id: "media", type: "text", x: 0, y: 0, width: 10, height: 10 },
+      { id: "other", type: "text", x: 0, y: 0, width: 10, height: 10 },
+    ] });
+    const update = caps.nodes.update({ nodes: [
+      { id: "media", patch: {}, asset: { id: "primary", kind: "image", metadata: {} } },
+      { id: "other", patch: {}, source: { type: "file", path: "other.png" } },
+    ] });
+    board.nodes.update("media", { assetRefs: { preview: { assetId: "preview", variant: "preview" } } });
+    pending.resolve({ asset: { id: "other-asset", kind: "image", metadata: {} } });
+    await update;
+    expect(board.nodes.get("media")?.assetRefs).toEqual({
+      preview: { assetId: "preview", variant: "preview" },
+      primary: { assetId: "primary", variant: "original" },
+    });
+    expect(board.nodes.get("other")?.assetRefs?.primary?.assetId).toBe("other-asset");
+  });
+  it("rejects source asset replacement under the same asset id", async () => {
+    const board = core(); const pending = deferred<ImportedAsset>();
+    const caps = createBoardCapabilities(board, { import: () => pending.promise });
+    await caps.assets.upsert({ assets: [{ id: "original", kind: "image", source: { path: "first.png" } }] });
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10, assetRefs: { primary: { assetId: "original", variant: "original" } } }] });
+    const update = caps.nodes.update({ nodes: [{ id: "media", source: { type: "file", path: "old.png" }, patch: {} }] });
+    await caps.assets.upsert({ assets: [{ id: "original", kind: "image", source: { path: "second.png" } }] });
+    const before = board.document.toJSON();
+    pending.resolve({ asset: { id: "old-import", kind: "image", metadata: {} } });
+    await expect(update).rejects.toMatchObject({ code: "TRANSACTION_CONFLICT" });
+    expect(board.document.toJSON()).toEqual(before);
+  });
+  it("documents that change sets hide same-transaction recreation of an identical node", async () => {
+    const board = core(); const caps = createBoardCapabilities(board);
+    await caps.nodes.create({ nodes: [
+      { id: "other", type: "text", x: 0, y: 0, width: 10, height: 10 },
+      { id: "media", type: "text", x: 0, y: 0, width: 10, height: 10, props: { label: "same" } },
+    ] });
+    const node = board.nodes.get("media")!;
+    let observed: { addedNodeIds: string[]; removedNodeIds: string[]; updatedNodeIds: string[] } | undefined;
+    const off = board.on("change", ({ changeSet }) => { observed = changeSet; });
+    board.transaction("replace identical target", () => {
+      board.nodes.remove("media");
+      board.nodes.create(node);
+      board.nodes.update("other", { x: 20 });
+    });
+    off();
+    expect(observed).toBeDefined();
+    expect(observed!.addedNodeIds).not.toContain("media");
+    expect(observed!.removedNodeIds).not.toContain("media");
+    expect(observed!.updatedNodeIds).not.toContain("media");
   });
   it("returns deletedAssetIds for asset removal", async () => {
     const board = core(); const caps = createBoardCapabilities(board);

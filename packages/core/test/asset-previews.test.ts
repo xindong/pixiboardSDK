@@ -234,6 +234,32 @@ describe("document preview references", () => {
       expect(core.document.toJSON()).toEqual(loaded);
     }
   });
+
+  it("accepts a separate image asset as a preview slot", () => {
+    const core = new BoardCore({ schemaVersion: 1 });
+    const document = {
+      schemaVersion: 1,
+      revision: 0,
+      nodes: [{
+        id: "video", type: "video", typeVersion: 1,
+        x: 0, y: 0, width: 320, height: 180, rotation: 0, zIndex: 0, props: {},
+        assetRefs: {
+          primary: { assetId: "video-asset", variant: "original" },
+          poster: { assetId: "poster-asset" },
+        },
+      }],
+      assets: [
+        { id: "video-asset", kind: "video" },
+        { id: "poster-asset", kind: "image" },
+      ],
+    };
+
+    core.document.load(document);
+
+    expect(core.document.toJSON().nodes[0].assetRefs?.poster).toEqual({
+      assetId: "poster-asset",
+    });
+  });
 });
 
 describe("background document updates", () => {

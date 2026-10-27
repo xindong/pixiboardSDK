@@ -339,12 +339,7 @@ export interface PixiBoard {
   readonly signal: AbortSignal;
   readonly capabilities: BoardCapabilities;
   readonly nodes: {
-    create<Props extends JsonValue>(input: BoardNodeCreateInput<Props> & {
-      /** Host-owned source import; uses the configured import service. */
-      source?: AssetImportSource;
-      /** Atomically persist an already-imported record and its explicit refs. */
-      asset?: import("@pixi-board/capabilities").AssetRecord;
-    }): Promise<NodeHandle<Props>>;
+    create<Props extends JsonValue = JsonValue>(input: NodeInput<Props>): Promise<NodeHandle<Props>>;
     update<Props extends JsonValue>(nodeId: string, patch: BoardNodePatch<Props>): NodeHandle<Props>;
     convert<Props extends JsonValue>(nodeId: string, input: BoardNodeConvertInput<Props>): NodeHandle<Props>;
     resize<Props extends JsonValue>(nodeId: string, request: NodeResizeRequest): NodeHandle<Props>;
@@ -432,7 +427,36 @@ export interface PixiBoard {
 }
 
 export type NodePatch<Props extends JsonValue = JsonValue> = BoardNodePatch<Props>;
-export type NodeInput<Props extends JsonValue = JsonValue> = BoardNodeCreateInput<Props>;
+type DirectNodeCreateInput<Props extends JsonValue> = Omit<
+  BoardNodeCreateInput<Props>,
+  "props"
+> & {
+  props?: Props;
+  /** Atomically persist an already-imported record and its explicit refs. */
+  asset?: import("@pixi-board/capabilities").AssetRecord;
+  source?: undefined;
+};
+type SourceNodeCreateInput = Omit<
+  BoardNodeCreateInput,
+  "x" | "y" | "width" | "height" | "props"
+> & {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  /** The import result supplies props at runtime; callers may still override them. */
+  props?: JsonValue;
+  asset?: undefined;
+  /** Host-owned source import; uses the configured import service. */
+  source: AssetImportSource;
+};
+/**
+ * Direct creation keeps geometry required; source imports may omit it and use
+ * the dimensions resolved by the configured import service.
+ */
+export type NodeInput<Props extends JsonValue = JsonValue> =
+  | DirectNodeCreateInput<Props>
+  | SourceNodeCreateInput;
 export type TransactionOrigin = ChangeOrigin;
 
 export type {
