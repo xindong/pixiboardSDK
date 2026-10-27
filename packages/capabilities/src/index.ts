@@ -168,8 +168,8 @@ type PreparedNodeUpdate =
   | { kind: "update"; id: string; patch: NonNullable<UpdateNodeInput["patch"]>; asset?: AssetRecord }
   | { kind: "source"; id: string; initial: Readonly<BoardNode>; raw: UpdateNodeInput; imported: ImportedAsset; token: number };
 
-// Include referenced records: a host can replace the source under the same
-// asset id without changing the node's refs. Unrelated assets do not conflict.
+// Include source records: a host can replace the source under the same asset
+// id without changing the node's refs. Preview-only roles are not identity.
 type SourceIdentity = {
   type: string;
   typeVersion: number;
@@ -179,8 +179,51 @@ type SourceIdentity = {
 function readSourceIdentity(core: BoardCore, nodeId: string): SourceIdentity | undefined {
   const node = core.nodes.get(nodeId);
   if (!node) return undefined;
-  const ids = [...new Set(Object.values(node.assetRefs ?? {}).map((ref) => ref.assetId))].sort();
-  return { type: node.type, typeVersion: node.typeVersion, assetRefs: node.assetRefs, assets: ids.map((id) => core.assets.get(id)) };
+  const refs = Object.fromEntries(Object.entries(node.assetRefs ?? {})
+    .filter(([role]) => !isPreviewRefRole(role))
+    .sort(([left], [right]) => left.localeCompare(right)));
+  const ids = [...new Set(Object.values(refs).map((ref) => ref.assetId))].sort();
+  return { type: node.type, typeVersion: node.typeVersion, assetRefs: refs, assets: ids.map((id) => sourceAssetIdentity(core.assets.get(id))) };
+}
+
+function isPreviewRefRole(role: string): boolean {
+  return role === "preview" || role === "poster" || role === "waveform" ||
+    role.startsWith("_documentPreview") || /^preview-[a-f0-9]{64}$/.test(role);
+}
+
+function sourceAssetIdentity(asset: Readonly<AssetRecord> | undefined): AssetRecord | undefined {
+  if (!asset) return undefined;
+  const identity = { ...asset };
+  for (const key of Object.keys(identity)) {
+    if (isPreviewAssetField(key)) delete identity[key];
+  }
+  for (const key of ["metadata", "variants", "binaries"] as const) {
+    const value = jsonObject(identity[key]);
+    if (!value) continue;
+    const filtered = { ...value };
+    for (const entry of Object.keys(filtered)) {
+      if (isPreviewAssetField(entry)) delete filtered[entry];
+    }
+    if (key === "metadata") {
+      for (const nestedKey of ["variants", "binaries"]) {
+        const nested = jsonObject(filtered[nestedKey]);
+        if (!nested) continue;
+        const remaining = { ...nested };
+        for (const entry of Object.keys(remaining)) {
+          if (isPreviewAssetField(entry)) delete remaining[entry];
+        }
+        if (Object.keys(remaining).length) filtered[nestedKey] = remaining;
+        else delete filtered[nestedKey];
+      }
+    }
+    if (Object.keys(filtered).length) identity[key] = filtered;
+    else delete identity[key];
+  }
+  return identity;
+}
+
+function isPreviewAssetField(key: string): boolean {
+  return /^(?:preview|poster|waveform)(?:$|[A-Z_-])/.test(key) || key.startsWith("_documentPreview");
 }
 
 type SourceRequestState = {
@@ -347,12 +390,14 @@ function importedUpdatePatch(
     patch.props = props;
   } else if (nodeFieldChanged(initial, latest, "props")) {
     delete patch.props;
+  } else {
+    patch.props = { ...importedProps, ...requestedProps };
   }
 
   if (nodeFieldChanged(initial, latest, "fit")) delete patch.fit;
   else patch.fit = raw.patch.fit ?? imported.fit ?? "contain";
-  if (nodeFieldChanged(initial, latest, "assetRefs")) delete patch.assetRefs;
-  else patch.assetRefs = assetRefs;
+  // Preview refs produced for the previous source must not follow the new one.
+  patch.assetRefs = assetRefs;
   return patch;
 }
 

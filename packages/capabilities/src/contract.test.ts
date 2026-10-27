@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BoardCore, NodeTypeRegistry, type NodeTypeDefinition } from "@pixi-board/core";
+import { BoardCore, NodeTypeRegistry, type JsonValue, type NodeTypeDefinition } from "@pixi-board/core";
 import { CapabilityError, createBoardCapabilities, isCapabilityError, mapCoreError, type AssetImportService, type ImportedAsset } from "./index.ts";
 
 const text: NodeTypeDefinition = { type: "text", version: 1, defaults: {}, validate: (value) => value ?? {}, getBounds: (node) => ({ minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height }) };
@@ -100,6 +100,21 @@ describe("core-backed capabilities", () => {
       assetRefs: { primary: { assetId: "imported-asset", variant: "original" } },
     });
   });
+  it.each([{ initialProps: null }, { initialProps: ["old"] }] as Array<{ initialProps: JsonValue }>)("imports media facts when unchanged props are $initialProps", async ({ initialProps }) => {
+    const board = core(); const pending = deferred<ImportedAsset>();
+    board.nodeTypes.register({ ...text, type: "raw", validate: (value) => value as JsonValue });
+    const caps = createBoardCapabilities(board, { import: () => pending.promise });
+    await caps.nodes.create({ nodes: [{ id: "media", type: "raw", x: 0, y: 0, width: 10, height: 10 }] });
+    board.nodes.update("media", { props: initialProps });
+    expect(board.nodes.get("media")?.props).toEqual(initialProps);
+    const update = caps.nodes.update({ nodes: [{ id: "media", source: { type: "file", path: "media.png" }, patch: { props: { provider: "requested", custom: true } } }] });
+    pending.resolve({ asset: { id: "new-asset", kind: "image", metadata: {} }, width: 1200, height: 600, duration: 42, previewStatus: "ready", props: { provider: "imported", imported: true } });
+    await update;
+    expect(board.nodes.get("media")?.props).toEqual({
+      provider: "requested", imported: true, custom: true,
+      intrinsicWidth: 1200, intrinsicHeight: 600, duration: 42, previewStatus: "ready",
+    });
+  });
   it("preserves a concurrent non-object props replacement", async () => {
     const board = core(); const pending = deferred<ImportedAsset>();
     const caps = createBoardCapabilities(board, { import: () => pending.promise });
@@ -109,6 +124,82 @@ describe("core-backed capabilities", () => {
     pending.resolve({ asset: { id: "new-asset", kind: "image", metadata: {} } });
     await update;
     expect(board.nodes.get("media")?.props).toEqual(["new"]);
+    expect(board.nodes.get("media")?.assetRefs?.primary?.assetId).toBe("new-asset");
+  });
+  it.each(["preview", "poster", "waveform", "_documentPreviewPage1", `preview-${"a".repeat(64)}`])("does not treat %s changes as a source change", async (role) => {
+    const board = core(); const pending = deferred<ImportedAsset>();
+    const caps = createBoardCapabilities(board, { import: () => pending.promise });
+    await caps.assets.upsert({ assets: [
+      { id: "source", kind: "image", source: { path: "source.png" } },
+      { id: "old-preview", kind: "image", metadata: { version: 1 } },
+    ] });
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10, props: { label: "before" }, assetRefs: {
+      primary: { assetId: "source", variant: "original" },
+      [role]: { assetId: "old-preview", variant: "original" },
+    } }] });
+    const update = caps.nodes.update({ nodes: [{ id: "media", source: { type: "file", path: "new.png" }, patch: {} }] });
+    await caps.assets.upsert({ assets: [{ id: "old-preview", kind: "image", metadata: { version: 2 } }] });
+    board.nodes.update("media", { assetRefs: {
+      primary: { assetId: "source", variant: "original" },
+      [role]: { assetId: "other-preview", variant: "preview" },
+    }, props: { label: "user edit" } });
+    board.nodes.update("media", { assetRefs: { primary: { assetId: "source", variant: "original" } } });
+    pending.resolve({ asset: { id: "new-source", kind: "image", metadata: {} }, assetRefs: {
+      primary: { assetId: "new-source", variant: "original" },
+      preview: { assetId: "new-source", variant: "preview" },
+    }, width: 400, props: { label: "imported" } });
+    await update;
+    expect(board.nodes.get("media")).toMatchObject({ props: { label: "user edit", intrinsicWidth: 400 }, assetRefs: {
+      primary: { assetId: "new-source", variant: "original" },
+      preview: { assetId: "new-source", variant: "preview" },
+    } });
+    expect(board.nodes.get("media")?.assetRefs).toEqual({
+      primary: { assetId: "new-source", variant: "original" },
+      preview: { assetId: "new-source", variant: "preview" },
+    });
+  });
+  it.each(["original", "source", "customSource"])("still rejects a change to the %s source role", async (role) => {
+    const board = core(); const pending = deferred<ImportedAsset>();
+    const caps = createBoardCapabilities(board, { import: () => pending.promise });
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10, assetRefs: { [role]: { assetId: "source", variant: "original" } } }] });
+    const update = caps.nodes.update({ nodes: [{ id: "media", source: { type: "file", path: "new.png" }, patch: {} }] });
+    board.nodes.update("media", { assetRefs: { [role]: { assetId: "replacement", variant: "original" } } });
+    const before = board.document.toJSON();
+    pending.resolve({ asset: { id: "new-source", kind: "image", metadata: {} } });
+    await expect(update).rejects.toMatchObject({ code: "TRANSACTION_CONFLICT" });
+    expect(board.document.toJSON()).toEqual(before);
+    expect(board.assets.get("new-source")).toBeUndefined();
+  });
+  it("allows preview metadata and variant changes on the referenced source asset", async () => {
+    const board = core(); const pending = deferred<ImportedAsset>();
+    const caps = createBoardCapabilities(board, { import: () => pending.promise });
+    const source = { id: "source", kind: "image", source: { path: "source.png" }, metadata: { mimeType: "image/png" }, binaries: { original: { hash: "original" } } };
+    await caps.assets.upsert({ assets: [source] });
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10, assetRefs: {
+      primary: { assetId: "source", variant: "original" }, preview: { assetId: "source", variant: "preview" },
+    }, props: { label: "before" } }] });
+    const update = caps.nodes.update({ nodes: [{ id: "media", source: { type: "file", path: "new.png" }, patch: {} }] });
+    await caps.assets.upsert({ assets: [{ ...source, previewStatus: "ready", metadata: {
+      ...source.metadata, previewWidth: 200, poster: { path: "poster.png" }, variants: { preview: { width: 200 } },
+    }, binaries: { ...source.binaries, preview: { hash: "preview" }, [`preview-${"a".repeat(64)}`]: { hash: "page" } }, variants: { waveform: { hash: "waveform" } } }] });
+    board.nodes.update("media", { props: { label: "user edit" } });
+    pending.resolve({ asset: { id: "new-source", kind: "image", metadata: {} }, width: 800 });
+    await update;
+    expect(board.nodes.get("media")).toMatchObject({ props: { label: "user edit", intrinsicWidth: 800 }, assetRefs: { primary: { assetId: "new-source" } } });
+  });
+  it("rejects changes to the original variant even alongside preview metadata", async () => {
+    const board = core(); const pending = deferred<ImportedAsset>();
+    const caps = createBoardCapabilities(board, { import: () => pending.promise });
+    const source = { id: "source", kind: "image", source: { path: "source.png" }, binaries: { original: { hash: "first" } } };
+    await caps.assets.upsert({ assets: [source] });
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10, assetRefs: { primary: { assetId: "source", variant: "original" } } }] });
+    const update = caps.nodes.update({ nodes: [{ id: "media", source: { type: "file", path: "new.png" }, patch: {} }] });
+    await caps.assets.upsert({ assets: [{ ...source, binaries: { original: { hash: "second" }, preview: { hash: "preview" } } }] });
+    const before = board.document.toJSON();
+    pending.resolve({ asset: { id: "new-source", kind: "image", metadata: {} } });
+    await expect(update).rejects.toMatchObject({ code: "TRANSACTION_CONFLICT" });
+    expect(board.document.toJSON()).toEqual(before);
+    expect(board.assets.get("new-source")).toBeUndefined();
   });
   it("rejects a source import superseded by a newer source request", async () => {
     const board = core();

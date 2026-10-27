@@ -77,7 +77,7 @@ function sourceRefs(node: BoardNode): ReadonlySet<string> {
   const refs = new Set<string>();
   for (const [role, ref] of Object.entries(node.assetRefs ?? {})) {
     if (!isMediaBackgroundAssetRefRole(role)) {
-      refs.add(JSON.stringify([role, ref]));
+      refs.add(JSON.stringify([role, ref.assetId, ref.variant ?? null]));
     }
   }
   return refs;

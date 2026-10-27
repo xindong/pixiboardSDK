@@ -90,6 +90,44 @@ describe("background media history rebasing", () => {
     });
   });
 
+  it("keeps previews when source ref property order changes", () => {
+    const core = createCore();
+    core.nodes.update<Props>("media", {
+      x: 40,
+      assetRefs: { primary: { variant: "original", assetId: "video" } },
+    });
+    applyBackgroundPreview(core);
+
+    core.history.undo();
+    expect(node(core)).toMatchObject({
+      x: 10,
+      props: { previewStatus: "ready" },
+      assetRefs: { poster: { assetId: "video", variant: "preview" } },
+    });
+    core.history.redo();
+    expect(node(core)).toMatchObject({
+      x: 40,
+      props: { previewStatus: "ready" },
+      assetRefs: { poster: { assetId: "video", variant: "preview" } },
+    });
+  });
+
+  it("does not project previews across source variant changes", () => {
+    const core = createCore();
+    core.nodes.update<Props>("media", {
+      assetRefs: { primary: { assetId: "video", variant: "preview" } },
+    });
+    applyBackgroundPreview(core);
+
+    core.history.undo();
+    expect(node(core).assetRefs?.primary).toEqual({ assetId: "video", variant: "original" });
+    expect(node(core).assetRefs?.poster).toBeUndefined();
+    expect(node(core).props.previewStatus).toBeUndefined();
+    core.history.redo();
+    expect(node(core).assetRefs?.poster).toEqual({ assetId: "video", variant: "preview" });
+    expect(node(core).props.previewStatus).toBe("ready");
+  });
+
   it("does not use a background write to preserve unrelated props", () => {
     const core = createCore();
     core.nodes.update<Props>("media", { props: { title: "User title" } });
