@@ -119,7 +119,7 @@ describe("background media history rebasing", () => {
     core.history.undo();
     expect(node(core).props.title).toBe("Original");
     expect(node(core).assetRefs?.custom).toBeUndefined();
-    expect(node(core).assetRefs?.poster).toBeUndefined();
+    expect(node(core).assetRefs?.poster).toEqual({ assetId: "video", variant: "preview" });
   });
 
   it("does not inject preview data into an older delete/recreate lineage", () => {
