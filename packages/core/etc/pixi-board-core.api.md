@@ -20,6 +20,9 @@ export type AssetRef = {
     variant?: AssetVariant;
 };
 
+// @public
+export type AssetRefRole = "primary" | "original" | "preview" | "poster" | "waveform" | "source" | "image" | "video" | "audio" | "model" | "html" | "markdown" | "text-file" | "file";
+
 // @public (undocumented)
 export type AssetVariant = "original" | "preview" | "waveform" | `preview-${string}`;
 
@@ -150,6 +153,7 @@ export type BoardNode<Props extends JsonValue = JsonValue> = {
     locked?: boolean;
     visible?: boolean;
     assetRefs?: Record<string, AssetRef>;
+    fit?: ContentFit;
     props: Props;
 };
 
@@ -169,7 +173,7 @@ export type BoardNodeCreateInput<Props extends JsonValue = JsonValue> = Omit<Boa
 };
 
 // @public (undocumented)
-export type BoardNodePatch<Props extends JsonValue = JsonValue> = Partial<Pick<BoardNode<Props>, "name" | "x" | "y" | "width" | "height" | "rotation" | "zIndex" | "locked" | "visible" | "assetRefs" | "props">>;
+export type BoardNodePatch<Props extends JsonValue = JsonValue> = Partial<Pick<BoardNode<Props>, "name" | "x" | "y" | "width" | "height" | "rotation" | "zIndex" | "locked" | "visible" | "assetRefs" | "fit" | "props">>;
 
 // @public (undocumented)
 export class BoardNodesController {
@@ -240,8 +244,17 @@ export type ConnectionStyle = {
     lineType: "solid" | "dashed" | "dotted";
 };
 
+// @public
+export type ContentFit = "contain" | "cover" | "stretch";
+
 // @public (undocumented)
 export function createBoardCore(options?: BoardCoreOptions): BoardCore;
+
+// @public
+export function createMediaAssetRefs(kind: string, assetId: string, available?: Partial<Record<"preview" | "poster" | "waveform", boolean>>): Record<string, AssetRef>;
+
+// @public
+export function createMediaMetadata(input: MediaMetadata_2): MediaMetadata_2;
 
 // @public
 export function createPreviewSpec(node: PreviewNode, options?: PreviewSpecOptions): PreviewSpec;
@@ -268,13 +281,22 @@ export type FitBoundsOptions = {
 };
 
 // @public
+export function fitMediaRect(frame: Size, intrinsic: Size | undefined, fit?: ContentFit): MediaLayoutRect;
+
+// @public
 export function isAssetVariant(value: unknown): value is AssetVariant;
+
+// @public (undocumented)
+export function isContentFit(value: unknown): value is ContentFit;
 
 // @public (undocumented)
 export function isDocumentPreviewType(type: string): boolean;
 
 // @public (undocumented)
 export function isPreviewNodeType(type: string): boolean;
+
+// @public (undocumented)
+export function isRenderAssetKind(value: string): value is RenderAssetKind;
 
 // @public (undocumented)
 export function isResizeHandle(value: unknown): value is ResizeHandle;
@@ -286,6 +308,30 @@ export type JsonPrimitive = null | boolean | number | string;
 export type JsonValue = JsonPrimitive | JsonValue[] | {
     [key: string]: JsonValue;
 };
+
+// @public (undocumented)
+export type MediaLayoutRect = Size & {
+    x: number;
+    y: number;
+};
+
+// @public
+type MediaMetadata_2 = {
+    version?: 1;
+    contentHash?: string;
+    mimeType?: string;
+    width?: number;
+    height?: number;
+    duration?: number;
+    orientation?: number;
+    relativePath?: string;
+    rootId?: string;
+    baseUrl?: string;
+};
+export { MediaMetadata_2 as MediaMetadata }
+
+// @public
+export type MediaNodeValue = Readonly<BoardNode<JsonValue>>;
 
 // @public (undocumented)
 export function mergeBounds(bounds: WorldBounds[]): WorldBounds | undefined;
@@ -404,6 +450,9 @@ export type Point = {
 };
 
 // @public
+export function preferredMediaNodeSize(intrinsic: Size | undefined, maxWidth?: number, maxHeight?: number): Size;
+
+// @public
 export type PreviewNode = {
     type?: string;
     name?: string;
@@ -449,10 +498,16 @@ export type PreviewStatus = "pending" | "queued" | "running" | "ready" | "error"
 // @public
 export function previewStatusLabel(node: Pick<PreviewNode, "type" | "name" | "props">, typeLabel: string): string;
 
+// @public
+export function readIntrinsicSize(value: unknown, fallback?: Partial<Size>): Size | undefined;
+
 // @public (undocumented)
 export type RegisterNodeTypeOptions = {
     replace?: boolean;
 };
+
+// @public (undocumented)
+export type RenderAssetKind = "image" | "video" | "audio" | "model" | "html" | "markdown" | "text-file" | "file";
 
 // @public (undocumented)
 export const RESIZE_HANDLES: readonly ResizeHandle[];
@@ -512,6 +567,9 @@ export function resolveResize<Props extends JsonValue>(node: Readonly<BoardNode<
 // @public
 export function resolveResizeSize<Props extends JsonValue>(node: Readonly<BoardNode<Props>>, policy: ResizePolicy<Props> | undefined, request: ResizeSizeRequest): ResolvedResizeSize<Props> | undefined;
 
+// @public
+export function resolveTextureAssetRef(node: Pick<BoardNode, "type" | "assetRefs">, kind?: string): AssetRef | undefined;
+
 // @public (undocumented)
 export function rotatedRectBounds(node: BoardNode): WorldBounds;
 
@@ -544,6 +602,9 @@ export type Size = {
     height: number;
 };
 
+// @public
+export const TEXTURE_REF_ROLES: Readonly<Record<RenderAssetKind, readonly string[]>>;
+
 // @public (undocumented)
 export class TransactionConflictError extends PixiBoardCoreError {
 }
@@ -551,6 +612,7 @@ export class TransactionConflictError extends PixiBoardCoreError {
 // @public (undocumented)
 export type TransactionOptions = {
     origin?: ChangeOrigin;
+    recordHistory?: boolean;
     coalesceKey?: string;
 };
 
