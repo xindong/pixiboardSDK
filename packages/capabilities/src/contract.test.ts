@@ -100,6 +100,47 @@ describe("core-backed capabilities", () => {
       assetRefs: { primary: { assetId: "imported-asset", variant: "original" } },
     });
   });
+  it("replaces old source preview and media facts while preserving concurrent user edits", async () => {
+    const board = core(); const pending = deferred<ImportedAsset>();
+    const caps = createBoardCapabilities(board, { import: () => pending.promise });
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10, assetRefs: { primary: { assetId: "old", variant: "original" } }, props: {
+      label: "before", removed: true, previewStatus: "pending", previewError: "old error", previewRequestId: "old-request",
+      previewSpec: { page: 2 }, previewKey: "old-key", pageCount: 4, previewWarnings: ["old"], previewQuality: "detail",
+      previewJobId: "old-job", fileExtension: "pdf", intrinsicWidth: 100, intrinsicHeight: 50, duration: 10,
+      mediaContentHash: "old-hash", mediaPreparationStatus: "pending", mediaPreparationError: "old error",
+      mediaAutoSize: true, mediaAutoSizeBaseline: { width: 10 },
+    } }] });
+    const update = caps.nodes.update({ nodes: [{ id: "media", source: { type: "file", path: "new.png" }, patch: { props: {
+      label: "requested", tone: "warm", previewStatus: "pending", previewError: "stale request", intrinsicHeight: 50,
+    } } }] });
+    board.nodes.update("media", { props: {
+      label: "user edit", added: true, previewStatus: "failed", previewError: "old preview failed", previewRequestId: "old-request",
+      previewSpec: { page: 2 }, previewKey: "old-key", pageCount: 4, previewWarnings: ["old"], previewQuality: "detail",
+      previewJobId: "old-job", fileExtension: "pdf", intrinsicWidth: 120, intrinsicHeight: 50, duration: 10,
+      mediaContentHash: "old-hash", mediaPreparationStatus: "failed", mediaPreparationError: "old error",
+      mediaAutoSize: true, mediaAutoSizeBaseline: { width: 10 },
+    } });
+    pending.resolve({ asset: { id: "new", kind: "image", metadata: {} }, width: 800, previewStatus: "ready", props: {
+      label: "imported", mediaContentHash: "new-hash", previewKey: "new-key",
+    } });
+    await update;
+    expect(board.nodes.get("media")?.props).toEqual({
+      label: "user edit", added: true, tone: "warm", intrinsicWidth: 800,
+      previewStatus: "ready", mediaContentHash: "new-hash", previewKey: "new-key",
+    });
+    expect(board.nodes.get("media")?.assetRefs?.primary?.assetId).toBe("new");
+  });
+  it("clears old source-owned props when the new importer supplies none", async () => {
+    const board = core(); const pending = deferred<ImportedAsset>();
+    const caps = createBoardCapabilities(board, { import: () => pending.promise });
+    await caps.nodes.create({ nodes: [{ id: "media", type: "text", x: 0, y: 0, width: 10, height: 10, props: {
+      label: "keep", previewStatus: "failed", previewError: "old", intrinsicWidth: 100, duration: 10,
+    } }] });
+    const update = caps.nodes.update({ nodes: [{ id: "media", source: { type: "file", path: "new.png" }, patch: {} }] });
+    pending.resolve({ asset: { id: "new", kind: "image", metadata: {} } });
+    await update;
+    expect(board.nodes.get("media")?.props).toEqual({ label: "keep" });
+  });
   it.each([{ initialProps: null }, { initialProps: ["old"] }] as Array<{ initialProps: JsonValue }>)("imports media facts when unchanged props are $initialProps", async ({ initialProps }) => {
     const board = core(); const pending = deferred<ImportedAsset>();
     board.nodeTypes.register({ ...text, type: "raw", validate: (value) => value as JsonValue });

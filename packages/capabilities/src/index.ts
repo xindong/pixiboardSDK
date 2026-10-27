@@ -357,6 +357,15 @@ function importedCreateInput(raw: CreateNodeInput, imported: ImportedAsset): Pre
   } as PreparedNodeInput;
 }
 
+// These fields describe the source or its background preparation, not the
+// user's node edits. Keep this aligned with core's media background fields.
+const SOURCE_OWNED_PROP_KEYS = new Set([
+  "previewRequestId", "previewStatus", "previewError", "previewSpec", "previewKey",
+  "pageCount", "previewWarnings", "previewQuality", "fileExtension", "previewJobId",
+  "intrinsicWidth", "intrinsicHeight", "duration", "mediaContentHash",
+  "mediaPreparationStatus", "mediaPreparationError", "mediaAutoSize", "mediaAutoSizeBaseline",
+]);
+
 function importedUpdatePatch(
   raw: UpdateNodeInput,
   initial: Readonly<BoardNode>,
@@ -370,7 +379,8 @@ function importedUpdatePatch(
   const requestedProps = jsonObject(raw.patch.props);
   const patch = { ...raw.patch } as NonNullable<UpdateNodeInput["patch"]> & Record<string, unknown>;
   const importedProps = importedMetadata(imported);
-  const userChangedProps = latestProps ? changedKeys(initialProps, latestProps) : [];
+  const userChangedProps = latestProps ? changedKeys(initialProps, latestProps).filter((key) => !SOURCE_OWNED_PROP_KEYS.has(key)) : [];
+  const sourceOwnedKeys = [...SOURCE_OWNED_PROP_KEYS];
 
   for (const key of Object.keys(patch)) {
     if (key === "props" || key === "assetRefs" || key === "fit") continue;
@@ -379,9 +389,9 @@ function importedUpdatePatch(
 
   if (latestProps) {
     const props: Record<string, JsonValue> = {
-      ...latestProps,
+      ...withoutKeys(latestProps, sourceOwnedKeys),
       ...withoutKeys(importedProps, userChangedProps),
-      ...requestedProps,
+      ...withoutKeys(requestedProps ?? {}, sourceOwnedKeys),
     };
     for (const key of userChangedProps) {
       if (Object.hasOwn(latestProps, key)) props[key] = latestProps[key];
@@ -391,7 +401,7 @@ function importedUpdatePatch(
   } else if (nodeFieldChanged(initial, latest, "props")) {
     delete patch.props;
   } else {
-    patch.props = { ...importedProps, ...requestedProps };
+    patch.props = { ...importedProps, ...withoutKeys(requestedProps ?? {}, sourceOwnedKeys) };
   }
 
   if (nodeFieldChanged(initial, latest, "fit")) delete patch.fit;
