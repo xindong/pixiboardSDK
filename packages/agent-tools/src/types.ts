@@ -1,4 +1,5 @@
-import type { AssetImportSource, AssetRecord, AssetRef, BoardChangeSet, BoardCapabilities, ContentFit, JsonValue, RequestOptions } from "@pixi-board/capabilities";
+import type { AssetImportSource, AssetRecord, BoardChangeSet, BoardCapabilities, JsonValue, RequestOptions } from "@pixi-board/capabilities";
+import type { AssetRef, ContentFit } from "@pixi-board/core";
 export type CanvasReadInput =
   | { type: "nodes"; ids?: string[]; types?: string[]; limit?: number; cursor?: string; fields?: string[] }
   | { type: "assets"; ids?: string[]; kinds?: string[]; limit?: number; cursor?: string; fields?: string[] }
