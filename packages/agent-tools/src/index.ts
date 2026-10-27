@@ -1,7 +1,7 @@
 import { CapabilityError, isCapabilityError, type BoardCapabilities } from "@pixi-board/capabilities";
 import { canvasReadSchema, canvasWriteSchema } from "./schemas.ts";
 import type { AgentCallOptions, AgentTools, CanvasOutput, CanvasReadInput, CanvasWriteInput, CompactAsset, CompactNode } from "./types.ts";
-import type { AssetImportSource, AssetRecord, BoardNode, JsonValue } from "@pixi-board/capabilities";
+import type { AssetImportSource, AssetRecord, BoardNode, CreateNodeInput, JsonValue } from "@pixi-board/capabilities";
 export * from "./types.ts";
 export * from "./schemas.ts";
 
@@ -24,20 +24,21 @@ async function write(c: BoardCapabilities, input: CanvasWriteInput, options: Age
   const writeOptions = { ...options, origin: options.origin ?? "agent:canvas" };
   if (input.type === "delete") { const r = await c.nodes.delete({ nodeIds: input.nodeIds }, writeOptions); return { type: "delete", deletedNodeIds: [...(r.deletedNodeIds ?? [])], revision: r.revision, changeSet: r.changeSet, requestId: options.requestId }; }
   if (input.type === "create") {
-    const nodes = input.nodes.map((node) => {
+    const nodes = input.nodes.map((node): CreateNodeInput => {
       const { content, path, source, ...rest } = node;
       const { fileName, mimeType, relativePath, rootPath, baseUrl, ...geometry } = rest;
       const hasSource = source !== undefined || content !== undefined || path !== undefined;
-      return {
+      const positioned = {
         x: 0,
         y: 0,
-        ...(hasSource ? {} : { width: 100, height: 100 }),
         rotation: 0,
         zIndex: 0,
         ...geometry,
-        ...(hasSource
-          ? { source: agentSource(source, content, path, { fileName, mimeType, relativePath, rootPath, baseUrl }) }
-          : {}),
+      };
+      if (!hasSource) return { width: 100, height: 100, ...positioned };
+      return {
+        ...positioned,
+        source: agentSource(source, content, path, { fileName, mimeType, relativePath, rootPath, baseUrl }),
       };
     });
     const r = await c.nodes.create({ nodes }, writeOptions); return { type: "create", nodes: r.nodes.map((node) => compact(node)), revision: r.revision, changed: r.changed, changeSet: r.changeSet, requestId: options.requestId };
