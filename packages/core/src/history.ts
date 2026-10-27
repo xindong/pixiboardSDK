@@ -30,6 +30,8 @@ export type HistoryMediaBackgroundUpdate = {
   nodeId: string;
   sourceType: string;
   sourceRefs: ReadonlySet<string>;
+  /** Preview changes belong to the request active before the background write. */
+  previewRequestIdBefore: JsonValue | undefined;
   /** Assets are document-global, so a parent media ref can outlive a node. */
   assetRefs: Record<string, AssetRef | undefined>;
   /** Only fields explicitly listed here are carried across history rebases. */
@@ -38,8 +40,7 @@ export type HistoryMediaBackgroundUpdate = {
 
 /**
  * Service-owned fields that can arrive after import/preview preparation.
- * `previewRequestId` and user-editable props are intentionally absent: the
- * former identifies the current editor request, not a preview result.
+ * The request id is handled separately, as part of a request-scoped update.
  */
 const MEDIA_BACKGROUND_PROP_KEYS = [
   "previewStatus",
@@ -67,25 +68,17 @@ const MEDIA_BACKGROUND_ASSET_REF_ROLES = new Set([
   "waveform",
 ]);
 
-const SOURCE_ASSET_REF_ROLES = [
-  "primary",
-  "original",
-  "source",
-  "image",
-  "video",
-  "audio",
-  "model",
-  "html",
-  "markdown",
-  "text-file",
-  "file",
-] as const;
+const PREVIEW_REQUEST_PROP_KEYS = new Set([
+  "previewRequestId", "previewStatus", "previewError", "previewSpec",
+  "previewKey", "pageCount", "previewWarnings", "previewQuality", "previewJobId",
+]);
 
 function sourceRefs(node: BoardNode): ReadonlySet<string> {
   const refs = new Set<string>();
-  for (const role of SOURCE_ASSET_REF_ROLES) {
-    const ref = node.assetRefs?.[role];
-    if (ref) refs.add(`${role}:${ref.assetId}:${ref.variant ?? ""}`);
+  for (const [role, ref] of Object.entries(node.assetRefs ?? {})) {
+    if (!isMediaBackgroundAssetRefRole(role)) {
+      refs.add(JSON.stringify([role, ref]));
+    }
   }
   return refs;
 }
@@ -120,6 +113,12 @@ export function createHistoryMediaBackgroundUpdate(
   for (const key of MEDIA_BACKGROUND_PROP_KEYS) {
     if (!jsonEqual(beforeProps[key], afterProps[key])) props[key] = afterProps[key];
   }
+  // A background request transition is atomic: never attach its pending
+  // status to an older, unrelated history-owned request token (or vice versa).
+  if (!jsonEqual(beforeProps.previewRequestId, afterProps.previewRequestId)) {
+    props.previewRequestId = afterProps.previewRequestId;
+    props.previewStatus = afterProps.previewStatus;
+  }
 
   const assetRefs: Record<string, AssetRef | undefined> = {};
   const beforeRefs = before.assetRefs ?? {};
@@ -138,6 +137,7 @@ export function createHistoryMediaBackgroundUpdate(
     nodeId: after.id,
     sourceType: before.type,
     sourceRefs: afterSources,
+    previewRequestIdBefore: beforeProps.previewRequestId,
     assetRefs,
     props,
   };
@@ -359,9 +359,12 @@ function rebaseNodeMediaFields(
   update: HistoryMediaBackgroundUpdate,
 ): BoardNode {
   let next = node;
+  // A historical request transition is an undoable user decision. Preview
+  // state and derivatives from another request must not cross that boundary.
+  const sameRequest = jsonEqual(record(node.props).previewRequestId, update.previewRequestIdBefore);
 
   const roles = Object.keys(update.assetRefs);
-  if (roles.length > 0) {
+  if (sameRequest && roles.length > 0) {
     const refs = { ...(next.assetRefs ?? {}) };
     let refsChanged = false;
     for (const role of roles) {
@@ -385,6 +388,7 @@ function rebaseNodeMediaFields(
     }
     let propsChanged = false;
     for (const key of propKeys) {
+      if (!sameRequest && PREVIEW_REQUEST_PROP_KEYS.has(key)) continue;
       if (jsonEqual(props[key], update.props[key])) continue;
       propsChanged = true;
       if (update.props[key] === undefined) delete props[key];

@@ -9,6 +9,7 @@ import {
 
 type Props = {
   previewStatus?: string;
+  previewRequestId?: string | null;
   title: string;
 };
 
@@ -89,7 +90,7 @@ describe("background media history rebasing", () => {
     });
   });
 
-  it("does not use a background write to preserve unrelated props or refs", () => {
+  it("does not use a background write to preserve unrelated props", () => {
     const core = createCore();
     core.nodes.update<Props>("media", { props: { title: "User title" } });
     core.transaction("Apply preview", () => {
@@ -97,10 +98,9 @@ describe("background media history rebasing", () => {
         assetRefs: {
           ...(node(core).assetRefs ?? {}),
           poster: { assetId: "video", variant: "preview" },
-          custom: { assetId: "user-ref" },
         },
         props: {
-          title: "User title",
+          title: "Background title",
           previewStatus: "ready",
         } as Props,
       });
@@ -108,18 +108,104 @@ describe("background media history rebasing", () => {
     core.nodes.update<Props>("media", { props: { title: "Edited after preview" } });
 
     // Undo the user's post-preview edit normally: its own snapshot legitimately
-    // contains both the background-written ref and the preview.
+    // contains the background-written title and preview.
     core.history.undo();
-    expect(node(core).props.title).toBe("User title");
-    expect(node(core).assetRefs?.custom).toEqual({ assetId: "user-ref" });
+    expect(node(core).props.title).toBe("Background title");
     expect(node(core).assetRefs?.poster).toEqual({ assetId: "video", variant: "preview" });
 
-    // The older entry is rebased only for media fields, so it does not smuggle
-    // the background-written custom ref into the pre-background state.
+    // The older entry is rebased only for media fields, not the title.
     core.history.undo();
     expect(node(core).props.title).toBe("Original");
-    expect(node(core).assetRefs?.custom).toBeUndefined();
     expect(node(core).assetRefs?.poster).toEqual({ assetId: "video", variant: "preview" });
+  });
+
+  it("does not project a preview across a custom source role change", () => {
+    const core = createCore();
+    core.nodes.update("media", {
+      assetRefs: { primary: { assetId: "video", variant: "original" }, customSource: { assetId: "old" } },
+    });
+    core.history.clear();
+    core.nodes.update("media", {
+      assetRefs: { primary: { assetId: "video", variant: "original" }, customSource: { assetId: "new" } },
+    });
+    applyBackgroundPreview(core);
+
+    core.history.undo();
+    expect(node(core).assetRefs?.customSource).toEqual({ assetId: "old" });
+    expect(node(core).assetRefs?.poster).toBeUndefined();
+    expect(node(core).props.previewStatus).toBeUndefined();
+    core.history.redo();
+    expect(node(core).assetRefs?.customSource).toEqual({ assetId: "new" });
+    expect(node(core).assetRefs?.poster).toEqual({ assetId: "video", variant: "preview" });
+    expect(node(core).props.previewStatus).toBe("ready");
+  });
+
+  it("does not rebase a background transaction that changes a custom source", () => {
+    const core = createCore();
+    core.nodes.update("media", { x: 40 });
+    core.transaction("Replace source and preview", () => {
+      core.nodes.update<Props>("media", {
+        assetRefs: { ...node(core).assetRefs, customSource: { assetId: "new" }, poster: { assetId: "new" } },
+        props: { title: "Original", previewStatus: "ready" },
+      });
+    }, { recordHistory: false });
+    core.history.undo();
+    expect(node(core).assetRefs?.customSource).toBeUndefined();
+    expect(node(core).assetRefs?.poster).toBeUndefined();
+    expect(node(core).props.previewStatus).toBeUndefined();
+  });
+
+  it("rebases a background request token and status together without changing older requests", () => {
+    const core = createCore();
+    core.nodes.update<Props>("media", { props: { title: "Original", previewRequestId: "user", previewStatus: "ready" } });
+    core.nodes.update("media", { x: 40 });
+    core.history.undo();
+    core.transaction("Start background request", () => {
+      core.nodes.update<Props>("media", { props: { ...node(core).props, previewRequestId: "background", previewStatus: "pending" } });
+    }, { recordHistory: false });
+
+    core.history.redo();
+    expect(node(core).props).toMatchObject({ previewRequestId: "background", previewStatus: "pending" });
+    core.history.undo();
+    expect(node(core).props).toMatchObject({ previewRequestId: "background", previewStatus: "pending" });
+    core.history.undo();
+    expect(node(core).props.previewRequestId).toBeUndefined();
+    expect(node(core).props.previewStatus).toBeUndefined();
+    core.history.redo();
+    expect(node(core).props).toMatchObject({ previewRequestId: "background", previewStatus: "pending" });
+  });
+
+  it("keeps an older history-owned request and its status when a newer request finishes", () => {
+    const core = createCore();
+    core.nodes.update<Props>("media", { props: { title: "Original", previewRequestId: "first", previewStatus: "pending" } });
+    core.nodes.update<Props>("media", { props: { title: "Original", previewRequestId: "second", previewStatus: "pending" } });
+    core.transaction("Finish request", () => {
+      core.nodes.update<Props>("media", {
+        props: { ...node(core).props, previewStatus: "ready" },
+        assetRefs: { ...node(core).assetRefs, poster: { assetId: "video", variant: "preview" } },
+      });
+    }, { recordHistory: false });
+    core.history.undo();
+    expect(node(core).props).toMatchObject({ previewRequestId: "first", previewStatus: "pending" });
+    expect(node(core).assetRefs?.poster).toBeUndefined();
+    core.history.redo();
+    expect(node(core).props).toMatchObject({ previewRequestId: "second", previewStatus: "ready" });
+    expect(node(core).assetRefs?.poster).toEqual({ assetId: "video", variant: "preview" });
+  });
+
+  it("keeps an unchanged pending status paired when the background request token changes", () => {
+    const core = createCore();
+    core.transaction("Set initial request", () => {
+      core.nodes.update<Props>("media", { props: { title: "Original", previewRequestId: "first", previewStatus: "pending" } });
+    }, { recordHistory: false });
+    core.nodes.update("media", { x: 40 });
+    core.transaction("Replace background request", () => {
+      core.nodes.update<Props>("media", { props: { ...node(core).props, previewRequestId: "second" } });
+    }, { recordHistory: false });
+    core.history.undo();
+    expect(node(core).props).toMatchObject({ previewRequestId: "second", previewStatus: "pending" });
+    core.history.redo();
+    expect(node(core).props).toMatchObject({ previewRequestId: "second", previewStatus: "pending" });
   });
 
   it("does not inject preview data into an older delete/recreate lineage", () => {
