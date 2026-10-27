@@ -147,10 +147,10 @@ const recordHistory = Symbol("recordHistory");
 const rebaseMediaBackground = Symbol("rebaseMediaBackground");
 
 type NodeGenerations = Map<string, number>;
-type EntryGenerations = {
-  before: NodeGenerations;
-  after: NodeGenerations;
-};
+// Undefined means the node is absent; generation 0 represents a node that
+// existed when history was cleared and has not been inserted since.
+type GenerationChange = { before: number | undefined; after: number | undefined };
+type EntryGenerations = Map<string, GenerationChange>;
 
 export class HistoryController {
   private undoStack: HistoryEntry[] = [];
@@ -214,14 +214,21 @@ export class HistoryController {
     // any observer sees live geometry, but the user thinks of the whole drag
     // as one action — fold the frames into the entry the gesture opened.
     if (entry.coalesceKey !== undefined && previous?.coalesceKey === entry.coalesceKey) {
-      previous.forward = this.compactPatches([...previous.forward, ...entry.forward]);
+      // compactReplaces keeps the original patch objects, including their
+      // individual generation tags when a structural entry reuses an id.
+      previous.forward = compactReplaces([...previous.forward, ...entry.forward]);
       // Inverse patches run newest-frame-first, so the gesture's original
       // state sits at the end and survives compaction.
-      previous.inverse = this.compactPatches([...entry.inverse, ...previous.inverse]);
+      previous.inverse = compactReplaces([...entry.inverse, ...previous.inverse]);
       const generationState = this.entryGenerations.get(previous);
       const nextGenerationState = this.entryGenerations.get(entry);
       if (generationState && nextGenerationState) {
-        generationState.after = new Map(nextGenerationState.after);
+        for (const [id, change] of nextGenerationState) {
+          const existing = generationState.get(id);
+          const before = existing ? existing.before : change.before;
+          if (before === change.after) generationState.delete(id);
+          else generationState.set(id, { before, after: change.after });
+        }
       }
       this.redoStack = [];
       this.emit();
@@ -278,74 +285,44 @@ export class HistoryController {
   }
 
   private captureEntryGenerations(entry: HistoryEntry): void {
-    const before = new Map(this.nodeGenerations);
-    // `clear()` intentionally forgets which ids currently exist. Bootstrap a
-    // lineage lazily for replace/remove patches, but never for a node inserted
-    // by this entry: that is a new generation even when the id was reused.
-    const present = new Set(this.nodeGenerations.keys());
-    const insertedHere = new Set<string>();
-    for (const patch of entry.forward) {
-      if (patch.op === "node:insert") {
-        present.add(patch.node.id);
-        insertedHere.add(patch.node.id);
-        continue;
-      }
-      if (patch.op !== "node:replace" && patch.op !== "node:remove") continue;
-      const nodeId = patch.op === "node:replace" ? patch.node.id : patch.nodeId;
-      if (!present.has(nodeId) && !insertedHere.has(nodeId)) {
-        this.nodeGenerations.set(nodeId, 0);
-        before.set(nodeId, 0);
-        present.add(nodeId);
-      }
-      if (patch.op === "node:remove") present.delete(nodeId);
-    }
+    // Only visit ids in this entry. Lazily tag pre-existing nodes as 0 on
+    // replace/remove; ordinary replacements do not need a retained delta.
+    const before = new Map<string, number | undefined>();
     entry.forward.forEach((patch, forwardIndex) => {
       const inverse = entry.inverse[entry.forward.length - 1 - forwardIndex];
       if (patch.op === "node:insert") {
+        if (!before.has(patch.node.id)) before.set(patch.node.id, this.nodeGenerations.get(patch.node.id));
         const generation = this.nextNodeGeneration++;
         this.nodeGenerations.set(patch.node.id, generation);
         this.patchGenerations.set(patch, generation);
         if (inverse && hasNodeSnapshot(inverse)) this.patchGenerations.set(inverse, generation);
       } else if (patch.op === "node:replace") {
         const generation = this.nodeGenerations.get(patch.node.id) ?? 0;
+        if (!before.has(patch.node.id)) before.set(patch.node.id, generation);
         this.nodeGenerations.set(patch.node.id, generation);
         this.patchGenerations.set(patch, generation);
         if (inverse?.op === "node:replace") this.patchGenerations.set(inverse, generation);
       } else if (patch.op === "node:remove") {
         const generation = this.nodeGenerations.get(patch.nodeId) ?? 0;
+        if (!before.has(patch.nodeId)) before.set(patch.nodeId, generation);
         this.nodeGenerations.delete(patch.nodeId);
         if (inverse?.op === "node:insert") this.patchGenerations.set(inverse, generation);
       }
     });
-    this.entryGenerations.set(entry, { before, after: new Map(this.nodeGenerations) });
+    const changes: EntryGenerations = new Map();
+    for (const [id, previous] of before) {
+      const after = this.nodeGenerations.get(id);
+      if (previous !== after) changes.set(id, { before: previous, after });
+    }
+    this.entryGenerations.set(entry, changes);
   }
 
   private restoreGenerations(entry: HistoryEntry, side: "before" | "after"): void {
-    const generations = this.entryGenerations.get(entry);
-    if (generations) this.nodeGenerations = new Map(generations[side]);
-  }
-
-  private compactPatches(patches: DataPatch[]): DataPatch[] {
-    const generationByNode = new Map<string, number>();
-    for (const patch of patches) {
-      if (!hasNodeSnapshot(patch)) continue;
-      const generation = this.patchGenerations.get(patch);
-      if (generation !== undefined) {
-        generationByNode.set(patch.node.id, generation);
-        continue;
-      }
-      const current = this.nodeGenerations.get(patch.node.id);
-      if (current !== undefined) generationByNode.set(patch.node.id, current);
+    for (const [id, change] of this.entryGenerations.get(entry) ?? []) {
+      const generation = change[side];
+      if (generation === undefined) this.nodeGenerations.delete(id);
+      else this.nodeGenerations.set(id, generation);
     }
-    const compacted = compactReplaces(patches);
-    // Compaction creates replacement patch objects. Carry lineage metadata to
-    // them or later background writes cannot safely rebase coalesced gestures.
-    for (const patch of compacted) {
-      if (!hasNodeSnapshot(patch)) continue;
-      const generation = generationByNode.get(patch.node.id);
-      if (generation !== undefined) this.patchGenerations.set(patch, generation);
-    }
-    return compacted;
   }
 
   private emit(): void {
