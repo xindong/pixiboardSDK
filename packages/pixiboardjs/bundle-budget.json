@@ -1,7 +1,7 @@
 {
   "files": {
     "dist/index.js": 250000,
-    "dist/browser.js": 270000,
+    "dist/browser.js": 290000,
     "dist/node.js": 250000,
     "dist/types.js": 10000
   }

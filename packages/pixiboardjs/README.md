@@ -115,5 +115,6 @@ from `pixiboardjs/browser`; no private workspace imports are needed. See the
 for lifecycle, style and host integration details. Call `destroy()` on controllers
 when removing a host surface.
 
-The browser ESM budget is 270,000 bytes (uncompressed) for the native connection
-renderer and node-agent additions; the root and Node budgets are unchanged.
+The browser ESM budget is 290,000 bytes (uncompressed) for the native connection
+renderer, node-agent, and media import and preview runtime. The alpha.6 release
+candidate measured 285,882 bytes in CI; the root and Node budgets are unchanged.
