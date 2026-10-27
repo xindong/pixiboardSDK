@@ -8,8 +8,10 @@ import {
 import { mergeBounds, rotatedRectBounds } from "./geometry";
 import {
   createHistoryController,
+  createHistoryMediaBackgroundUpdate,
   HistoryController,
   type HistoryEntry,
+  type HistoryMediaBackgroundUpdate,
 } from "./history";
 import { assertJsonValue, cloneValue, deepFreeze, immutableClone, jsonEqual } from "./json";
 import { NodeTypeRegistry } from "./node-type-registry";
@@ -112,6 +114,7 @@ export class BoardCore {
   private rejectedAsyncTransactionCallbacks = 0;
   private readonly viewportState: ViewportController;
   private readonly recordHistory: (entry: HistoryEntry) => void;
+  private readonly rebaseMediaBackground: (updates: readonly HistoryMediaBackgroundUpdate[]) => void;
 
   constructor(options: BoardCoreOptions = {}) {
     this.nodeTypes = options.nodeTypes ?? new NodeTypeRegistry();
@@ -155,6 +158,7 @@ export class BoardCore {
     });
     this.history = history.controller;
     this.recordHistory = history.record;
+    this.rebaseMediaBackground = history.rebaseMediaBackground;
     this.nodes = new BoardNodesController(this);
     this.assets = new BoardAssetsController(this);
     this.document = new BoardDocumentController(this);
@@ -211,7 +215,11 @@ export class BoardCore {
         );
       }
       this.activeTransaction = undefined;
-      this.commitTransaction(transaction, options.recordHistory !== false);
+      this.commitTransaction(
+        transaction,
+        options.recordHistory !== false,
+        options.recordHistory === false,
+      );
       return result;
     } catch (error) {
       this.activeTransaction = undefined;
@@ -232,7 +240,7 @@ export class BoardCore {
       inverse: direction === "undo" ? entry.forward : entry.inverse,
     };
     applyDataPatches(transaction.draft, transaction.forward);
-    return this.commitTransaction(transaction, false)!;
+    return this.commitTransaction(transaction, false, false)!;
   }
 
   getBounds(nodeId: string): WorldBounds {
@@ -321,6 +329,7 @@ export class BoardCore {
   private commitTransaction(
     transaction: ActiveTransaction,
     recordHistory: boolean,
+    rebaseBackgroundHistory = false,
   ): BoardChangeSet | undefined {
     if (transaction.forward.length === 0 && recordHistory) return undefined;
     const before = this.store;
@@ -353,10 +362,32 @@ export class BoardCore {
         forward: transaction.forward,
         inverse: transaction.inverse,
       });
+    } else if (rebaseBackgroundHistory) {
+      this.rebaseHistoryAfterBackgroundWrite(before, after, transaction.forward);
     }
     changeSet.metadataChanged = transaction.forward.some(patch => patch.op === "metadata:replace") && !jsonEqual(before.getMetadata(), after.getMetadata());
     this.emitChange(changeSet);
     return changeSet;
+  }
+
+  private rebaseHistoryAfterBackgroundWrite(
+    before: RuntimeDocumentStore,
+    after: RuntimeDocumentStore,
+    patches: DataPatch[],
+  ): void {
+    const updates: HistoryMediaBackgroundUpdate[] = [];
+    const seen = new Set<string>();
+    for (const patch of patches) {
+      if (patch.op !== "node:replace") continue;
+      if (seen.has(patch.node.id)) continue;
+      const afterNode = after.getNodeReference(patch.node.id);
+      const beforeNode = before.getNodeReference(patch.node.id);
+      if (!afterNode || !beforeNode) continue;
+      seen.add(patch.node.id);
+      const update = createHistoryMediaBackgroundUpdate(beforeNode, afterNode);
+      if (update) updates.push(update);
+    }
+    this.rebaseMediaBackground(updates);
   }
 
   private emitChange(changeSet: BoardChangeSet): void {
