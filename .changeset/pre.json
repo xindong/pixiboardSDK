@@ -23,6 +23,7 @@
     "browser-persistence-concurrent-variants",
     "connections-node-agent",
     "generic-asset-previews",
+    "media-import-preview",
     "p6-publishability",
     "public-capabilities-agent-tools",
     "resize-policy-transformer",

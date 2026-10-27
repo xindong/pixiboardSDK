@@ -11,6 +11,8 @@ import {
 import {
   CapabilityUnavailableError,
   createBoardCapabilities,
+  type AssetImportService,
+  type AssetImportSource,
   type BoardCapabilities,
   type RequestOptions,
 } from "@pixi-board/capabilities";
@@ -38,11 +40,18 @@ import type {
 
 export * from "./errors";
 export type * from "./types";
+export type { AssetImportRequest, AssetImportService, AssetImportSource, ImportedAsset } from "@pixi-board/capabilities";
 export {
   isAssetVariant,
+  isContentFit,
   isDocumentPreviewType,
   isPreviewNodeType,
   createPreviewSpec,
+  resolveTextureAssetRef,
+  fitMediaRect,
+  createMediaAssetRefs,
+  createMediaMetadata,
+  preferredMediaNodeSize,
   previewStatusLabel,
 } from "@pixi-board/core";
 // Re-exported so a host can compute handle placement and cursors itself when
@@ -195,13 +204,20 @@ class PixiBoardFacade implements PixiBoard {
     const capabilities = createBoardCapabilities(this.core, {
       preview: options.preview,
       capture: options.capture,
+      import: options.import,
     });
     this.capabilities = scopeCapabilities(capabilities, this.signal, () => this.assertAlive());
 
     this.nodes = {
       create: async <Props extends JsonValue>(input: Parameters<PixiBoard["nodes"]["create"]>[0]) => {
         this.assertAlive();
-        const node = this.core.nodes.create(input as never);
+        if (!input.source && !input.asset) {
+          const node = this.core.nodes.create(input as never);
+          return this.node<Props>(node.id);
+        }
+        const result = await this.capabilities.nodes.create({ nodes: [input as never] }, { origin: "api" });
+        const node = result.nodes[0];
+        if (!node) throw new Error("Imported node was not created");
         return this.node<Props>(node.id);
       },
       update: <Props extends JsonValue>(nodeId: string, patch: BoardNodePatch<Props>) => {

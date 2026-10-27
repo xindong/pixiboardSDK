@@ -1,6 +1,7 @@
 import { isAssetVariant } from "./asset-variant";
 import { DocumentValidationError, NodeValidationError } from "./errors";
 import { assertJsonValue, cloneValue } from "./json";
+import { isContentFit, TEXTURE_REF_ROLES } from "./media-assets";
 import type { NodeTypeRegistry } from "./node-type-registry";
 import type {
   AssetRecord,
@@ -114,6 +115,9 @@ export function validateNode(input: unknown, path = "node"): BoardNode {
     throw new DocumentValidationError(`${path}.visible must be a boolean`);
   }
   if (!("props" in input)) throw new DocumentValidationError(`${path}.props is required`);
+  if (input.fit !== undefined && !isContentFit(input.fit)) {
+    throw new DocumentValidationError(`${path}.fit must be contain, cover, or stretch`);
+  }
   if (input.assetRefs !== undefined) validateAssetRefs(input.assetRefs, `${path}.assetRefs`);
   return { ...(cloneValue(input) as BoardNode), id, type, typeVersion };
 }
@@ -148,6 +152,19 @@ function validateAssetRefs(input: unknown, path: string): asserts input is Recor
     readString(ref, "assetId", `${path}.${name}`);
     if (ref.variant !== undefined && !isAssetVariant(ref.variant)) {
       throw new DocumentValidationError(`${path}.${name}.variant is invalid`);
+    }
+    const invalidTextureSlot = Object.values(TEXTURE_REF_ROLES).some((roles) =>
+      roles.includes(name) &&
+      name !== "image" &&
+      name !== "primary" &&
+      name !== "original" &&
+      // `source` is a legacy image slot, but other node kinds use arbitrary
+      // source names too. Enforcement of non-image texture slots happens at
+      // the rendering boundary through resolveTextureAssetRef.
+      name !== "source"
+    );
+    if (invalidTextureSlot && (ref.variant === undefined || ref.variant === "original")) {
+      throw new DocumentValidationError(`${path}.${name} must reference a generated preview variant`);
     }
   }
 }

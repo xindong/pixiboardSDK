@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   BoardCore,
   DocumentValidationError,
+  NodeTypeRegistry,
+  createMediaAssetRefs,
   createPreviewSpec,
+  fitMediaRect,
   isAssetVariant,
   previewStatusLabel,
+  resolveTextureAssetRef,
+  rotatedRectBounds,
 } from "../src";
 
 const digest = "0123456789abcdef".repeat(4);
@@ -32,6 +37,47 @@ describe("asset variant contracts", () => {
     ]) {
       expect(isAssetVariant(value), JSON.stringify(value)).toBe(false);
     }
+  });
+});
+
+describe("media rendering contracts", () => {
+  it("resolves only pixel-producing roles and excludes original media or documents", () => {
+    expect(resolveTextureAssetRef({ type: "video", assetRefs: { poster: { assetId: "poster" } } })).toEqual({ assetId: "poster" });
+    expect(resolveTextureAssetRef({ type: "video", assetRefs: { primary: { assetId: "video" } } })).toBeUndefined();
+    expect(resolveTextureAssetRef({ type: "video", assetRefs: { source: { assetId: "video-source" } } })).toBeUndefined();
+    expect(resolveTextureAssetRef({ type: "audio", assetRefs: { primary: { assetId: "audio" } } })).toBeUndefined();
+    expect(resolveTextureAssetRef({ type: "markdown", assetRefs: { markdown: { assetId: "source" }, primary: { assetId: "source" } } })).toBeUndefined();
+    expect(resolveTextureAssetRef({ type: "markdown", assetRefs: { [variant]: { assetId: "document", variant } } })).toEqual({ assetId: "document", variant });
+    expect(resolveTextureAssetRef({ type: "image", assetRefs: { primary: { assetId: "image" } } })).toEqual({ assetId: "image" });
+    expect(resolveTextureAssetRef({ type: "image", assetRefs: { source: { assetId: "legacy-image" } } })).toEqual({ assetId: "legacy-image" });
+    expect(resolveTextureAssetRef({ type: "image", assetRefs: { [variant]: { assetId: "image", variant } } })).toEqual({ assetId: "image", variant });
+    expect(createMediaAssetRefs("video", "video", { poster: true })).toEqual({
+      primary: { assetId: "video", variant: "original" },
+      poster: { assetId: "video", variant: "preview" },
+    });
+  });
+
+  it("centers contained content, crops covered content, and keeps stretch as an explicit fill", () => {
+    expect(fitMediaRect({ width: 100, height: 100 }, { width: 200, height: 100 })).toEqual({
+      x: 0, y: 25, width: 100, height: 50,
+    });
+    expect(fitMediaRect({ width: 100, height: 100 }, { width: 200, height: 100 }, "cover")).toEqual({
+      x: -50, y: 0, width: 200, height: 100,
+    });
+    expect(fitMediaRect({ width: 100, height: 100 }, { width: 200, height: 100 }, "stretch")).toEqual({
+      x: 0, y: 0, width: 100, height: 100,
+    });
+  });
+
+  it("persists canonical fit through node creation and rejects invalid values", () => {
+    const nodeTypes = new NodeTypeRegistry();
+    nodeTypes.register({ type: "card", version: 1, validate: value => value as { title: string }, getBounds: rotatedRectBounds });
+    const core = new BoardCore({ schemaVersion: 1, nodeTypes });
+    const created = core.nodes.create({ type: "card", x: 0, y: 0, width: 100, height: 100, fit: "cover", props: { title: "Card" } });
+    expect(created.fit).toBe("cover");
+    expect(core.document.toJSON().nodes[0].fit).toBe("cover");
+    expect(() => core.nodes.create({ type: "card", x: 0, y: 0, width: 100, height: 100, fit: "fill", props: {} } as any))
+      .toThrow(DocumentValidationError);
   });
 });
 
@@ -187,5 +233,29 @@ describe("document preview references", () => {
       expect(() => core.document.load(rejected)).toThrow(DocumentValidationError);
       expect(core.document.toJSON()).toEqual(loaded);
     }
+  });
+});
+
+describe("background document updates", () => {
+  it("can emit a change without creating an undo entry", () => {
+    const nodeTypes = new NodeTypeRegistry();
+    nodeTypes.register({ type: "custom", version: 1, validate: value => value as { previewStatus?: string }, getBounds: rotatedRectBounds });
+    const core = new BoardCore({
+      nodeTypes,
+      document: {
+        schemaVersion: 1,
+        revision: 0,
+        nodes: [{
+          id: "node", type: "custom", typeVersion: 1,
+          x: 0, y: 0, width: 10, height: 10, rotation: 0, zIndex: 0, props: {},
+        }],
+        assets: [],
+      },
+    });
+    core.transaction("Apply server preview", () => {
+      core.nodes.update("node", { props: { previewStatus: "ready" } });
+    }, { origin: "preview", recordHistory: false });
+    expect(core.document.snapshot().nodes[0].props).toEqual({ previewStatus: "ready" });
+    expect(core.history.canUndo()).toBe(false);
   });
 });

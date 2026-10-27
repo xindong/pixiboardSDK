@@ -211,7 +211,7 @@ export class BoardCore {
         );
       }
       this.activeTransaction = undefined;
-      this.commitTransaction(transaction, true);
+      this.commitTransaction(transaction, options.recordHistory !== false);
       return result;
     } catch (error) {
       this.activeTransaction = undefined;
@@ -424,6 +424,7 @@ export class BoardNodesController {
         ...(input.locked === undefined ? {} : { locked: input.locked }),
         ...(input.visible === undefined ? {} : { visible: input.visible }),
         ...(input.assetRefs === undefined ? {} : { assetRefs: cloneValue(input.assetRefs) }),
+        ...(input.fit === undefined ? {} : { fit: input.fit }),
       }) as BoardNode<Props>;
       const validated = this.core.nodeTypes.validateNode(node);
       const index = transaction.draft.nodeCount();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BoardCore, NodeTypeRegistry, type NodeTypeDefinition } from "@pixi-board/core";
-import { CapabilityError, createBoardCapabilities, isCapabilityError, mapCoreError } from "./index.ts";
+import { CapabilityError, createBoardCapabilities, isCapabilityError, mapCoreError, type AssetImportService } from "./index.ts";
 
 const text: NodeTypeDefinition = { type: "text", version: 1, defaults: {}, validate: (value) => value ?? {}, getBounds: (node) => ({ minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height }) };
 function core() { const registry = new NodeTypeRegistry(); registry.register(text); return new BoardCore({ nodeTypes: registry, idFactory: (() => { let n = 0; return () => `id-${++n}`; })(), now: () => 1 }); }
@@ -27,6 +27,43 @@ describe("core-backed capabilities", () => {
     expect((await caps.document.snapshot()).revision).toBe(before.revision);
     await caps.selection.set(["a"], { origin: "ui" }); expect(await caps.selection.get()).toEqual(["a"]);
     await caps.viewport.set({ scale: 2, offset: { x: 3, y: 4 } }, { origin: "ui" }); expect(await caps.viewport.get()).toEqual({ scale: 2, offset: { x: 3, y: 4 } });
+  });
+  it("imports media metadata and commits the asset plus intrinsic-sized node atomically", async () => {
+    const board = core(); const calls: unknown[] = [];
+    const importAsset: AssetImportService = (input) => {
+      calls.push(input);
+      return {
+        asset: { id: "image-asset", kind: "image", metadata: { mimeType: "image/png" } },
+        assetRefs: {
+          primary: { assetId: "image-asset", variant: "original" },
+          preview: { assetId: "image-asset", variant: "preview" },
+        },
+        width: 1200,
+        height: 600,
+        duration: 42,
+        previewStatus: "ready",
+      };
+    };
+    const caps = createBoardCapabilities(board, { import: importAsset });
+    const result = await caps.nodes.create({ nodes: [{
+      id: "imported", type: "text", fit: "cover",
+      source: { type: "file", path: "/tmp/wide.png", rootPath: "/tmp", relativePath: "wide.png", mimeType: "image/png" },
+    }] }, { origin: "agent" });
+    expect(calls).toEqual([expect.objectContaining({
+      nodeType: "text", mimeType: "image/png",
+      source: expect.objectContaining({ type: "file", path: "/tmp/wide.png", rootPath: "/tmp", relativePath: "wide.png" }),
+    })]);
+    expect(result).toMatchObject({ revision: 1, changed: true });
+    expect(result.nodes[0]).toMatchObject({
+      width: 320, height: 160, fit: "cover",
+      assetRefs: {
+        primary: { assetId: "image-asset", variant: "original" },
+        preview: { assetId: "image-asset", variant: "preview" },
+      },
+      props: { intrinsicWidth: 1200, intrinsicHeight: 600, duration: 42, previewStatus: "ready" },
+    });
+    expect(result.changeSet).toMatchObject({ addedNodeIds: ["imported"], assetChangedNodeIds: ["imported"] });
+    expect(board.document.toJSON().assets).toEqual([expect.objectContaining({ id: "image-asset", kind: "image" })]);
   });
   it("returns deletedAssetIds for asset removal", async () => {
     const board = core(); const caps = createBoardCapabilities(board);

@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { BoardCore, NodeTypeRegistry, type NodeTypeDefinition } from "@pixi-board/core";
-import { BoardDestroyedError, createBoardCapabilities, type BoardCapabilities } from "@pixi-board/capabilities";
+import { BoardDestroyedError, createBoardCapabilities, type AssetImportService, type BoardCapabilities } from "@pixi-board/capabilities";
 import { createPixiBoardAgentTools } from "./index.ts";
 
 const text: NodeTypeDefinition = { type: "text", version: 1, defaults: {}, validate: (value) => value ?? {}, getBounds: (node) => ({ minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height }) };
-function tools() { const registry = new NodeTypeRegistry(); registry.register(text); const core = new BoardCore({ nodeTypes: registry, idFactory: (() => { let n = 0; return () => `id-${++n}`; })(), now: () => 1 }); const capabilities: BoardCapabilities = createBoardCapabilities(core); return { core, capabilities, tools: createPixiBoardAgentTools(capabilities) }; }
+const importAsset: AssetImportService = async ({ source, nodeType }) => ({
+  asset: {
+    id: `asset-${nodeType}`,
+    kind: nodeType,
+    metadata: { relativePath: source.relativePath ?? "content.txt" },
+  },
+  assetRefs: { primary: { assetId: `asset-${nodeType}`, variant: "original" } },
+  width: 200,
+  height: 100,
+  props: { sourceType: source.type },
+});
+function tools() { const registry = new NodeTypeRegistry(); registry.register(text); const core = new BoardCore({ nodeTypes: registry, idFactory: (() => { let n = 0; return () => `id-${++n}`; })(), now: () => 1 }); const capabilities: BoardCapabilities = createBoardCapabilities(core, { import: importAsset }); return { core, capabilities, tools: createPixiBoardAgentTools(capabilities) }; }
 describe("agent canvas contract", () => {
   it("preserves requestId and uses discriminated writes", async () => { const fixture = tools(); const response = await fixture.tools.call("canvas.write", { type: "create", nodes: [{ id: "a", type: "text" }] }, { requestId: "req-1" }); expect(response.ok).toBe(true); if (response.ok) expect(response.data).toMatchObject({ revision: 1, requestId: "req-1" }); expect(fixture.core.history.canUndo()).toBe(true); });
   it("serializes invalid input and rejects unsupported fields", async () => { const fixture = tools(); const response = await fixture.tools.call("canvas.write", { type: "delete", nodeIds: ["a"], nodes: [] }, { requestId: "req-2" }); expect(response.ok).toBe(false); if (!response.ok) expect(response.error).toMatchObject({ code: "INVALID_INPUT", requestId: "req-2" }); });

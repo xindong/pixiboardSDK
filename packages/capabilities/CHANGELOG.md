@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0-alpha.6
+
+### Patch Changes
+
+- Preserve original media resources, fit imported content to its natural dimensions, and provide Node media preparation for reliable image, video, and audio previews. Support non-history media updates and safer asset import contracts.
+- Updated dependencies
+  - @pixi-board/core@0.1.0-alpha.6
+
 ## 0.1.0-alpha.5
 
 ### Patch Changes

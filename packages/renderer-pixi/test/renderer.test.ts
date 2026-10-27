@@ -82,6 +82,183 @@ describe("renderer-pixi vertical slice", () => {
 
     await renderer.destroy();
   });
+  it("never decodes original video or audio assets as texture previews", async () => {
+    const { app, factory } = fake();
+    factory.createImage = vi.fn(() => ({ destroy: vi.fn() }));
+    const acquireTexture = vi.fn(async () => ({ texture: { width: 320, height: 180 } }));
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, acquireTexture });
+    await renderer.init();
+
+    await renderer.rebuild(doc([
+      { ...node("video", "video"), assetRefs: { primary: { assetId: "video-original", variant: "original" }, source: { assetId: "video-source" } } },
+      { ...node("audio", "audio"), assetRefs: { primary: { assetId: "audio-original", variant: "original" } } },
+    ], 1));
+
+    expect(acquireTexture).not.toHaveBeenCalled();
+    expect((renderer.activeViews.get("video") as any).state.image.visible).toBe(false);
+    expect((renderer.activeViews.get("audio") as any).state.image.visible).toBe(false);
+    await renderer.destroy();
+  });
+  it("uses only rendered previews for document nodes", async () => {
+    const { app, factory } = fake();
+    factory.createImage = vi.fn(() => ({ destroy: vi.fn() }));
+    const acquireTexture = vi.fn(async () => ({ texture: { width: 100, height: 100 } }));
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, acquireTexture });
+    await renderer.init();
+
+    await renderer.rebuild(doc([
+      { ...node("markdown", "markdown"), assetRefs: { markdown: { assetId: "source.md" }, primary: { assetId: "source.md" } } },
+      { ...node("html", "html"), assetRefs: { html: { assetId: "source.html" } } },
+      { ...node("model", "model"), assetRefs: { model: { assetId: "source.glb" } } },
+    ], 1));
+
+    expect(acquireTexture).not.toHaveBeenCalled();
+    expect((renderer.activeViews.get("markdown") as any).state.image.visible).toBe(false);
+    expect((renderer.activeViews.get("html") as any).state.image.visible).toBe(false);
+    expect((renderer.activeViews.get("model") as any).state.image.visible).toBe(false);
+    await renderer.destroy();
+  });
+  it("keeps rendering when a preview texture fails to decode", async () => {
+    const { app, factory } = fake();
+    factory.createImage = vi.fn(() => ({ destroy: vi.fn() }));
+    const renderer = new PixiBoardRenderer({
+      applicationFactory: () => app,
+      viewFactory: factory,
+      acquireTexture: async () => { throw new Error("decode failed"); },
+    });
+    await renderer.init();
+
+    await expect(renderer.rebuild(doc([
+      { ...node("video", "video"), assetRefs: { poster: { assetId: "broken-poster" } } },
+    ], 1))).resolves.toBeUndefined();
+
+    const view = renderer.activeViews.get("video") as any;
+    expect(view.state.image.visible).toBe(true);
+    expect(view.state.lease).toBeUndefined();
+    expect(view.displayObject.texture).toBeUndefined();
+    await renderer.destroy();
+  });
+  it("contains, covers, and stretches media independently from node placement", async () => {
+    const { app, factory } = fake();
+    factory.createImage = vi.fn(() => ({ destroy: vi.fn() }));
+    const renderer = new PixiBoardRenderer({
+      applicationFactory: () => app,
+      viewFactory: factory,
+      acquireTexture: async () => ({ texture: { width: 200, height: 100 } }),
+    });
+    await renderer.init();
+    const imageNode = (id: string, fit: "contain" | "cover" | "stretch", props: Record<string, unknown> = {}) => ({
+      ...node(id, "image", 12),
+      y: 34,
+      width: 100,
+      height: 100,
+      rotation: 0.5,
+      zIndex: 3,
+      props: { fit, ...props },
+      assetRefs: { preview: { assetId: `${id}-preview` } },
+    });
+
+    await renderer.rebuild(doc([
+      imageNode("contained", "contain"),
+      imageNode("covered", "cover"),
+      imageNode("stretched", "stretch"),
+    ], 1));
+
+    const contained = (renderer.activeViews.get("contained") as any);
+    expect(contained.displayObject).toMatchObject({ x: 12, y: 34, rotation: 0.5, zIndex: 3 });
+    expect(contained.state.image).toMatchObject({ x: 0, y: 25, width: 100, height: 50 });
+    expect(contained.state.content.mask).toBeUndefined();
+
+    const covered = (renderer.activeViews.get("covered") as any);
+    expect(covered.state.image).toMatchObject({ x: -50, y: 0, width: 200, height: 100 });
+    expect(covered.state.content.mask).toBe(covered.state.clip);
+    expect(covered.state.clip.visible).toBe(true);
+
+    const stretched = (renderer.activeViews.get("stretched") as any);
+    expect(stretched.state.image).toMatchObject({ x: 0, y: 0, width: 100, height: 100 });
+    expect(stretched.state.content.mask).toBeUndefined();
+    expect(stretched.state.clip.visible).toBe(false);
+    await renderer.destroy();
+  });
+  it("updates fit from props without recreating the view or reacquiring its texture", async () => {
+    const { app, factory } = fake();
+    factory.createImage = vi.fn(() => ({ destroy: vi.fn() }));
+    const acquireTexture = vi.fn(async () => ({ texture: { width: 200, height: 100 } }));
+    const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory, acquireTexture });
+    await renderer.init();
+    const image = { ...node("image", "image"), width: 100, height: 100, props: { mediaFit: "contain" }, assetRefs: { preview: { assetId: "preview" } } };
+    await renderer.rebuild(doc([image], 1));
+    const view = renderer.activeViews.get("image");
+
+    await renderer.apply(update([{ ...image, props: { mediaFit: "stretch" } }], 2), { revision: 2, transactionId: "fit", origin: "api", addedNodeIds: [], updatedNodeIds: ["image"], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 });
+
+    expect(renderer.activeViews.get("image")).toBe(view);
+    expect(acquireTexture).toHaveBeenCalledTimes(1);
+    expect((view as any).state.image).toMatchObject({ x: 0, y: 0, width: 100, height: 100 });
+    await renderer.destroy();
+  });
+  it("uses persisted intrinsic dimensions before texture pixel dimensions", async () => {
+    const { app, factory } = fake();
+    factory.createImage = vi.fn(() => ({ destroy: vi.fn() }));
+    const renderer = new PixiBoardRenderer({
+      applicationFactory: () => app,
+      viewFactory: factory,
+      acquireTexture: async () => ({ texture: { width: 200, height: 200 } }),
+    });
+    await renderer.init();
+
+    await renderer.rebuild(doc([{
+      ...node("image", "image"),
+      width: 100,
+      height: 100,
+      props: { intrinsicWidth: 200, intrinsicHeight: 100 },
+      assetRefs: { preview: { assetId: "preview" } },
+    }], 1));
+
+    expect((renderer.activeViews.get("image") as any).state.image).toMatchObject({ x: 0, y: 25, width: 100, height: 50 });
+    await renderer.destroy();
+  });
+  it("reflows an existing view when intrinsic dimensions arrive in props", async () => {
+    const { app, factory } = fake();
+    factory.createImage = vi.fn(() => ({ destroy: vi.fn() }));
+    const renderer = new PixiBoardRenderer({
+      applicationFactory: () => app,
+      viewFactory: factory,
+      acquireTexture: async () => ({ texture: { width: 100, height: 100 } }),
+    });
+    await renderer.init();
+    const image = { ...node("image", "image"), width: 100, height: 100, assetRefs: { preview: { assetId: "preview" } } };
+    await renderer.rebuild(doc([image], 1));
+    const view = renderer.activeViews.get("image");
+
+    await renderer.apply(update([{ ...image, props: { intrinsicWidth: 200, intrinsicHeight: 100 } }], 2), { revision: 2, transactionId: "intrinsic", origin: "api", addedNodeIds: [], updatedNodeIds: ["image"], removedNodeIds: [], assetChangedNodeIds: [], selectionChanged: false, viewportChanged: false, timestamp: 1 });
+
+    expect(renderer.activeViews.get("image")).toBe(view);
+    expect((view as any).state.image).toMatchObject({ x: 0, y: 25, width: 100, height: 50 });
+    await renderer.destroy();
+  });
+  it("prefers canonical node fit and reports a texture size from the lease", async () => {
+    const { app, factory } = fake();
+    factory.createImage = vi.fn(() => ({ destroy: vi.fn() }));
+    const renderer = new PixiBoardRenderer({
+      applicationFactory: () => app,
+      viewFactory: factory,
+      acquireTexture: async () => ({ texture: {}, width: 200, height: 100 }),
+    });
+    await renderer.init();
+
+    await renderer.rebuild(doc([{
+      ...node("image", "image"),
+      width: 100,
+      height: 100,
+      fit: "cover",
+      props: { fit: "contain" },
+      assetRefs: { preview: { assetId: "preview" } },
+    }], 1));
+
+    expect((renderer.activeViews.get("image") as any).state.image).toMatchObject({ x: -50, y: 0, width: 200, height: 100 });
+    await renderer.destroy();
+  });
   it("reports the visible id set, distinguishing 'no culling information' from an empty set", async () => {
     const { app, factory } = fake(); const renderer = new PixiBoardRenderer({ applicationFactory: () => app, viewFactory: factory }); await renderer.init();
     await renderer.rebuild(doc([node("near"), node("far", "rect", 1000)], 1));
