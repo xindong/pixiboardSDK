@@ -329,5 +329,5 @@ export function attachCanvasSettings(site) {
   const actions = document.querySelector('#selection-actions')
   if (actions) observer.observe(actions, { childList: true, subtree: true })
   apply()
-  return () => { disposed = true; storageSettings.dispose(); disposeHelp(); unsubscribe(); unsubscribeViewport?.(); unsubscribeStorage(); observer.disconnect(); modal.remove(); button.remove(); style.remove() }
+  return () => { disposed = true; storageSettings.dispose(); disposeHelp(); unsubscribe(); unsubscribeViewport?.(); unsubscribeStorage(); observer.disconnect(); modal.remove(); button.remove(); style.remove(); }
 }

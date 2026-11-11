@@ -1,6 +1,5 @@
 // Presentation and explanations stay separate from settings storage/application.
 const INFO_ICON = '<svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.4"/><path d="M10 9v5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="10" cy="6" r=".9" fill="currentColor"/></svg>'
-const CHEVRON_ICON = '<svg class="settings-chevron" width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 const escape = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]))
 
 const HELP = {
@@ -49,7 +48,6 @@ function row(key, title, control, text = false) {
 }
 const local = (key, title, type, rest = '') => row(key, title, `<input name="${key}" type="${type}" ${rest}>`)
 const toggle = (key, title) => row(key, title, `<input data-prompt="${key}" type="checkbox" role="switch">`)
-const text = (key, title, max, rows = 4) => row(key, title, `<textarea data-prompt="${key}" maxlength="${max}" rows="${rows}" spellcheck="false"></textarea>`, true)
 const choice = (name, value, title, type = 'radio') => `<label class="node-choice"><input type="${type}" ${type === 'checkbox' ? `data-prompt="${name}"` : `name="${name}" value="${value}"`}><span>${title}</span></label>`
 function group(title, badge, contents) {
   return `<section class="settings-group"><h4 class="settings-group-heading"><span class="settings-group-title">${title}</span></h4><div class="settings-group-body">${contents}</div></section>`
@@ -63,13 +61,13 @@ export const settingsMarkup = `<header><div><h2 id="dsh-settings-title">画布�
   <form method="dialog" class="settings-pages">
     <section data-page="canvas">
       <div class="settings-page-heading"><h3>画布视图</h3><p>只调整浏览方式，保存在当前浏览器并应用到全部画布。</p></div>
-      ${group('缩放范围', '立即应用', local('canvas.minZoom', '最小缩放', 'number', 'min="5" max="100" step="5" aria-description="百分比"') + local('canvas.maxZoom', '最大缩放', 'number', 'min="20" max="1000" step="25" aria-description="百分比"') + '<p class="settings-help">单位为 %，同时约束滚轮、快捷键和视图恢复。</p>', true)}
-      ${group('背景与辅助', '浏览器偏好', local('canvas.background', '画布背景', 'color') + local('canvas.grid', '显示网格', 'checkbox', 'role="switch"'), true)}
+      ${group('缩放范围', '立即应用', local('canvas.minZoom', '最小缩放', 'number', 'min="5" max="100" step="5" aria-description="百分比"') + local('canvas.maxZoom', '最大缩放', 'number', 'min="20" max="1000" step="25" aria-description="百分比"') + '<p class="settings-help">单位为 %，同时约束滚轮、快捷键和视图恢复。</p>')}
+      ${group('背景与辅助', '浏览器偏好', local('canvas.background', '画布背景', 'color') + local('canvas.grid', '显示网格', 'checkbox', 'role="switch"'))}
     </section>
     <section data-page="connections" class="settings-connections-page" hidden>
       <div class="settings-page-heading"><h3>节点连线</h3><p>样式统一应用到已有和新建连线。选中后按 Delete / Backspace 删除。</p></div>
-      ${group('显示与交互', '立即应用', local('connections.enabled', '开启连线', 'checkbox', 'role="switch"'), true)}
-      ${group('方向与渐变', '统一样式', local('connections.startColor', '起点颜色', 'color') + local('connections.endColor', '终点颜色', 'color') + local('connections.startOpacity', '起点不透明度', 'number', 'min="0" max="100" step="5" aria-description="百分比"') + local('connections.endOpacity', '终点不透明度', 'number', 'min="0" max="100" step="5" aria-description="百分比"') + '<p class="settings-help">源节点右侧 → 目标节点左侧。不透明度单位为 %。</p>', true)}
+      ${group('显示与交互', '立即应用', local('connections.enabled', '开启连线', 'checkbox', 'role="switch"'))}
+      ${group('方向与渐变', '统一样式', local('connections.startColor', '起点颜色', 'color') + local('connections.endColor', '终点颜色', 'color') + local('connections.startOpacity', '起点不透明度', 'number', 'min="0" max="100" step="5" aria-description="百分比"') + local('connections.endOpacity', '终点不透明度', 'number', 'min="0" max="100" step="5" aria-description="百分比"') + '<p class="settings-help">源节点右侧 → 目标节点左侧。不透明度单位为 %。</p>')}
       ${group('线条外观', '统一样式', local('connections.width', '线宽', 'number', 'min="0.5" max="6" step="0.1"') + `<div class="settings-row"><div class="settings-field-label"><span>线型</span>${info('connections.lineType')}</div><div class="line-type-options">${choice('connections.lineType', 'solid', '实线')}${choice('connections.lineType', 'dashed', '虚线')}${choice('connections.lineType', 'dotted', '点线')}</div></div>`)}
     </section>
     <section data-page="agent" class="settings-agent-page" hidden>
