@@ -88,7 +88,7 @@ export class MediaLibrary {
   private readonly leases = new Map<string, { url: string; revoke: () => void }>();
   private readonly opfsSupported: boolean;
   /** Whether the latest document preview drew real content (vs. a fallback card). */
-  readonly documentPreviewNotes = new Map<string, { rendered: boolean; note?: string }>();
+  readonly documentPreviewNotes = new Map<string, { rendered: boolean; note?: string; width?: number; height?: number }>();
 
   constructor() {
     this.opfsSupported = typeof navigator?.storage?.getDirectory === "function";
@@ -184,7 +184,7 @@ export class MediaLibrary {
     } else {
       const result = await renderDocumentPreview(file, kind, state.previewSpec);
       preview = result.blob;
-      this.documentPreviewNotes.set(assetId, { rendered: result.rendered, note: result.note });
+      this.documentPreviewNotes.set(assetId, { rendered: result.rendered, note: result.note, width: result.width, height: result.height });
       state = {
         ...state,
         previewStatus: result.rendered ? "ready" : "unsupported",
@@ -193,14 +193,22 @@ export class MediaLibrary {
       };
     }
     await this.adapter.putDerivative(assetId, "preview", preview);
+    // Mirror the plugin: keep the document node at the standard width and let
+    // its height follow the preview's natural aspect so the whole file shows.
+    let nodeWidth = kind === "model" ? MODEL_NODE_WIDTH : DOCUMENT_NODE_WIDTH;
+    let nodeHeight = kind === "model" ? MODEL_NODE_HEIGHT : DOCUMENT_NODE_HEIGHT;
+    const dims = this.documentPreviewNotes.get(assetId);
+    if (kind !== "model" && dims?.width && dims?.height) {
+      nodeHeight = Math.max(1, Math.round(nodeWidth * dims.height / dims.width));
+    }
     return {
       assetId,
       kind,
       name: file.name,
       mimeType: file.type,
       size: file.size,
-      width: kind === "model" ? MODEL_NODE_WIDTH : DOCUMENT_NODE_WIDTH,
-      height: kind === "model" ? MODEL_NODE_HEIGHT : DOCUMENT_NODE_HEIGHT,
+      width: nodeWidth,
+      height: nodeHeight,
       hasPreview: true,
       ...state,
     };
@@ -290,7 +298,7 @@ export class MediaLibrary {
     } else {
       const result = await renderDocumentPreview(file, kind, spec);
       preview = result.blob;
-      this.documentPreviewNotes.set(assetId, { rendered: result.rendered, note: result.note });
+      this.documentPreviewNotes.set(assetId, { rendered: result.rendered, note: result.note, width: result.width, height: result.height });
     }
     if (!isCurrent()) return false;
     // Each requesting node retains its own result; another copy may have a

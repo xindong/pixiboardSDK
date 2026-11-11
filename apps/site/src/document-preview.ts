@@ -3,9 +3,13 @@ import type MarkdownIt from 'markdown-it'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import type { MediaKind } from './media'
 
-export type DocumentPreviewResult = { blob: Blob; rendered: boolean; note?: string }
+export type DocumentPreviewResult = { blob: Blob; rendered: boolean; note?: string; width: number; height: number }
 
-const NODE_RATIO = 220 / 320
+// Mirror the plugin: render at a fixed layout width and capture the document's
+// natural height (bounded to 5x width) so the whole document is visible and the
+// node can auto-size to the content aspect. No decorative footer is added.
+const LAYOUT_WIDTH = 640
+const MAX_HEIGHT = LAYOUT_WIDTH * 5
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif'
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace'
 
@@ -32,10 +36,6 @@ const TEXT_EXTENSIONS = new Set(['txt', 'log', 'csv', 'json', 'xml', 'yaml', 'ym
 
 function themeFor(ext: string, kind: MediaKind) { return FORMAT[ext] ?? KIND_FORMAT[kind] ?? KIND_FORMAT.file }
 function extensionOf(file: File): string { return file.name.toLowerCase().split('.').pop() ?? '' }
-function targetSize(spec?: Partial<PreviewSpec>) {
-  const width = Math.min(1024, Math.max(640, Math.round((spec?.width ?? 320) * 2)))
-  return { width, height: Math.round(width * NODE_RATIO) }
-}
 function makeCanvas(width: number, height: number) {
   const canvas = document.createElement('canvas')
   canvas.width = width
@@ -59,12 +59,6 @@ function formatBytes(size: number): string {
   const units = ['B', 'KB', 'MB', 'GB']
   const power = Math.min(units.length - 1, Math.floor(Math.log(size) / Math.log(1024)))
   return (size / 1024 ** power).toFixed(power === 0 ? 0 : 1) + ' ' + units[power]
-}
-function clampText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
-  if (ctx.measureText(text).width <= maxWidth) return text
-  let clipped = text
-  while (clipped.length > 1 && ctx.measureText(clipped + '…').width > maxWidth) clipped = clipped.slice(0, -1)
-  return clipped + '…'
 }
 function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
   const lines: string[] = []
@@ -91,56 +85,23 @@ function getMarkdown(): Promise<MarkdownIt> {
   return markdownRenderer
 }
 
-/** Compose a document thumbnail: rendered content on top, a format footer below. */
-function composeThumbnail(content: HTMLCanvasElement | null, width: number, height: number, theme: { accent: string; label: string }, name: string, subtitle: string): HTMLCanvasElement {
-  const { canvas, ctx } = makeCanvas(width, height)
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, width, height)
-  const footerH = Math.max(34, Math.round(height * 0.1))
-  const contentH = height - footerH
-  if (content) {
-    ctx.save()
-    ctx.beginPath()
-    ctx.rect(0, 0, width, contentH)
-    ctx.clip()
-    const scale = width / content.width
-    ctx.drawImage(content, 0, 0, width, content.height * scale)
-    ctx.restore()
-  }
-  ctx.fillStyle = theme.accent
-  ctx.fillRect(0, contentH, width, footerH)
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'middle'
-  ctx.fillStyle = 'rgba(255,255,255,0.96)'
-  ctx.font = '700 ' + Math.round(footerH * 0.4) + 'px ' + SANS
-  const labelW = ctx.measureText(theme.label).width
-  ctx.fillText(theme.label, width * 0.035, contentH + footerH / 2 + 1)
-  const nameX = width * 0.035 + labelW + footerH * 0.45
-  ctx.font = '600 ' + Math.round(footerH * 0.34) + 'px ' + SANS
-  ctx.fillText(clampText(ctx, name, width * 0.66 - nameX), nameX, contentH + footerH / 2 + 1)
-  ctx.textAlign = 'right'
-  ctx.fillStyle = 'rgba(255,255,255,0.82)'
-  ctx.font = '400 ' + Math.round(footerH * 0.3) + 'px ' + SANS
-  ctx.fillText(clampText(ctx, subtitle, width * 0.28), width * 0.965, contentH + footerH / 2 + 1)
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'alphabetic'
-  return canvas
-}
-
-/** Render DOM content offscreen and rasterize it with a robust screenshot engine. */
-async function rasterizeDom(width: number, contentH: number, padding: string, render: (inner: HTMLElement) => Promise<void>): Promise<HTMLCanvasElement> {
+/** Render DOM at the layout width and capture its full natural height. */
+async function rasterizeDom(padding: string, render: (inner: HTMLElement) => Promise<void>): Promise<HTMLCanvasElement> {
   const { domToCanvas } = await import('modern-screenshot')
   const host = document.createElement('div')
-  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:' + width + 'px;background:#ffffff;z-index:-1;pointer-events:none;'
+  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:' + LAYOUT_WIDTH + 'px;background:#ffffff;z-index:-1;pointer-events:none;'
   const inner = document.createElement('div')
-  inner.style.cssText = 'box-sizing:border-box;width:' + width + 'px;height:' + contentH + 'px;overflow:hidden;background:#ffffff;padding:' + padding + ';'
+  inner.style.cssText = 'box-sizing:border-box;width:' + LAYOUT_WIDTH + 'px;background:#ffffff;padding:' + padding + ';'
   host.append(inner)
   document.body.append(host)
   try {
     await render(inner)
     await new Promise(resolve => requestAnimationFrame(() => resolve(undefined)))
+    const natural = Math.min(MAX_HEIGHT, Math.max(1, Math.ceil(inner.scrollHeight)))
+    inner.style.height = natural + 'px'
+    inner.style.overflow = 'hidden'
     return await domToCanvas(inner, {
-      width, height: contentH, scale: 2, backgroundColor: '#ffffff', timeout: 12000,
+      width: LAYOUT_WIDTH, height: natural, scale: 1, backgroundColor: '#ffffff', timeout: 12000,
       filter: node => !(node instanceof HTMLElement && (node.tagName === 'SCRIPT' || node.tagName === 'BUTTON')),
     })
   } finally {
@@ -161,11 +122,11 @@ function sanitizeHtml(html: string): string {
     .replace(/\son\w+='[^']*'/gi, '')
 }
 
-async function renderMarkdownContent(file: File, width: number, contentH: number): Promise<HTMLCanvasElement> {
+async function renderMarkdownContent(file: File): Promise<HTMLCanvasElement> {
   const text = await file.slice(0, 400000).text()
   const markdown = await getMarkdown()
   const html = sanitizeHtml(markdown.render(text))
-  return rasterizeDom(width, contentH, '24px 28px', async inner => {
+  return rasterizeDom('24px 28px', async inner => {
     inner.style.font = '15px/1.65 ' + SANS
     inner.style.color = '#1f2937'
     const style = document.createElement('style')
@@ -177,11 +138,11 @@ async function renderMarkdownContent(file: File, width: number, contentH: number
   })
 }
 
-async function renderHtmlContent(file: File, width: number, contentH: number): Promise<HTMLCanvasElement> {
+async function renderHtmlContent(file: File): Promise<HTMLCanvasElement> {
   const text = await file.slice(0, 400000).text()
   const bodyMatch = text.match(/<body[^>]*>([\s\S]*?)<\/body>/i)
   const body = bodyMatch ? bodyMatch[1] : text.replace(/<head[\s\S]*?<\/head>/i, '').replace(/<\/?(html|!DOCTYPE)[^>]*>/gi, '')
-  return rasterizeDom(width, contentH, '24px 28px', async inner => {
+  return rasterizeDom('24px 28px', async inner => {
     inner.style.font = '15px/1.65 ' + SANS
     inner.style.color = '#1f2937'
     const style = document.createElement('style')
@@ -193,48 +154,40 @@ async function renderHtmlContent(file: File, width: number, contentH: number): P
   })
 }
 
-async function renderDocxContent(file: File, width: number, contentH: number): Promise<HTMLCanvasElement> {
+async function renderDocxContent(file: File): Promise<HTMLCanvasElement> {
   const { renderAsync } = await import('docx-preview')
   const buffer = await file.arrayBuffer()
-  return rasterizeDom(width, contentH, '0', async inner => {
+  return rasterizeDom('20px 26px', async inner => {
     inner.style.background = '#ffffff'
+    inner.style.font = '14px/1.6 ' + SANS
     await renderAsync(buffer, inner, undefined, {
       inWrapper: false, ignoreWidth: true, ignoreHeight: true, breakPages: false,
       renderHeaders: false, renderFooters: false, renderFootnotes: false, renderEndnotes: false,
       useBase64URL: true, className: 'docx-thumb',
     })
-    inner.style.padding = '20px 26px'
-    inner.style.font = '14px/1.6 ' + SANS
   })
 }
 
-async function renderPptxContent(file: File, width: number, contentH: number): Promise<HTMLCanvasElement> {
+async function renderPptxContent(file: File): Promise<HTMLCanvasElement> {
   const { init } = await import('pptx-preview')
   const { domToCanvas } = await import('modern-screenshot')
   const buffer = await file.arrayBuffer()
   const host = document.createElement('div')
-  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:' + width + 'px;background:#ffffff;z-index:-1;pointer-events:none;'
+  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:' + LAYOUT_WIDTH + 'px;background:#ffffff;z-index:-1;pointer-events:none;'
   const inner = document.createElement('div')
-  inner.style.cssText = 'width:' + width + 'px;background:#ffffff;'
+  inner.style.cssText = 'width:' + LAYOUT_WIDTH + 'px;background:#ffffff;'
   host.append(inner)
   document.body.append(host)
   let previewer: { destroy: () => void } | undefined
   try {
-    previewer = init(inner, { width, mode: 'list' })
+    previewer = init(inner, { width: LAYOUT_WIDTH, mode: 'list' })
     await (previewer as unknown as { preview: (b: ArrayBuffer) => Promise<unknown> }).preview(buffer)
     await new Promise(resolve => requestAnimationFrame(() => resolve(undefined)))
     const slide = inner.querySelector('.pptx-preview-slide-wrapper') || inner
-    const slideCanvas = await domToCanvas(slide, {
-      scale: 2, backgroundColor: '#ffffff', timeout: 12000,
+    return await domToCanvas(slide, {
+      scale: 1, backgroundColor: '#ffffff', timeout: 12000,
       filter: node => !(node instanceof HTMLElement && (node.tagName === 'SCRIPT' || node.tagName === 'BUTTON')),
     })
-    const { canvas, ctx } = makeCanvas(width, contentH)
-    ctx.fillStyle = '#f1f5f9'
-    ctx.fillRect(0, 0, width, contentH)
-    const scale = Math.min(width / slideCanvas.width, contentH / slideCanvas.height)
-    const drawW = slideCanvas.width * scale, drawH = slideCanvas.height * scale
-    ctx.drawImage(slideCanvas, (width - drawW) / 2, (contentH - drawH) / 2, drawW, drawH)
-    return canvas
   } finally {
     previewer?.destroy()
     host.remove()
@@ -262,7 +215,7 @@ async function extractXlsxGrid(file: File): Promise<string[][]> {
   const grid: string[][] = []
   const rowRe = /<row[^>]*>([\s\S]*?)<\/row>/g
   let rowMatch: RegExpExecArray | null
-  while ((rowMatch = rowRe.exec(sheet)) !== null && grid.length < 14) {
+  while ((rowMatch = rowRe.exec(sheet)) !== null && grid.length < 200) {
     const cells: string[] = []
     const cellRe = /<c\s+r="([A-Z]+)[0-9]+"[^>]*?(?:\st="(\w+)")?[^>]*>(?:<v>([\s\S]*?)<\/v>|<is><t[^>]*>([\s\S]*?)<\/t><\/is>)?<\/c>/g
     let cellMatch: RegExpExecArray | null
@@ -273,17 +226,17 @@ async function extractXlsxGrid(file: File): Promise<string[][]> {
       if (inline !== undefined) text = decodeEntities(inline)
       else if (type === 's' && value !== undefined) text = strings[Number(value)] ?? ''
       else if (value !== undefined) text = decodeEntities(value)
-      if (col < 10) cells[col] = text
+      if (col < 12) cells[col] = text
     }
-    grid.push(Array.from({ length: 10 }, (_, i) => cells[i] ?? ''))
+    grid.push(Array.from({ length: 12 }, (_, i) => cells[i] ?? ''))
   }
   return grid
 }
 
-async function renderXlsxContent(file: File, width: number, contentH: number): Promise<HTMLCanvasElement> {
+async function renderXlsxContent(file: File): Promise<HTMLCanvasElement> {
   const grid = await extractXlsxGrid(file)
   const usedCols = grid.reduce((max, row) => Math.max(max, row.reduce((last, cell, i) => cell !== '' ? i + 1 : last, 0)), 0) || 1
-  return rasterizeDom(width, contentH, '18px 20px', async inner => {
+  return rasterizeDom('18px 20px', async inner => {
     const table = document.createElement('table')
     table.style.cssText = 'border-collapse:collapse;width:100%;font:13px/1.5 ' + SANS + ';color:#1f2937;table-layout:fixed;'
     grid.forEach((row, rowIndex) => {
@@ -300,27 +253,30 @@ async function renderXlsxContent(file: File, width: number, contentH: number): P
   })
 }
 
-async function renderTextContent(file: File, width: number, contentH: number, override?: string): Promise<HTMLCanvasElement> {
+async function renderTextContent(file: File, override?: string): Promise<HTMLCanvasElement> {
   const raw = override ?? await file.slice(0, 200000).text()
   const text = raw.replace(/\t/g, '    ').replace(/\u0000/g, '')
-  const { canvas, ctx } = makeCanvas(width, contentH)
+  const pad = 28
+  const fontSize = 15
+  const lineHeight = Math.round(fontSize * 1.6)
+  const measure = makeCanvas(LAYOUT_WIDTH, 8).ctx
+  measure.font = '400 ' + fontSize + 'px ' + MONO
+  const maxLines = Math.max(1, Math.floor((MAX_HEIGHT - pad * 2) / lineHeight))
+  const lines = wrapLines(measure, text.trim() || '（空文件）', LAYOUT_WIDTH - pad * 2, maxLines)
+  const height = Math.min(MAX_HEIGHT, Math.max(120, lines.length * lineHeight + pad * 2))
+  const { canvas, ctx } = makeCanvas(LAYOUT_WIDTH, height)
   ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, width, contentH)
-  const pad = Math.round(width * 0.05)
-  const fontSize = Math.round(width * 0.026)
+  ctx.fillRect(0, 0, LAYOUT_WIDTH, height)
   ctx.fillStyle = '#1f2937'
   ctx.font = '400 ' + fontSize + 'px ' + MONO
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
-  const lineHeight = Math.round(fontSize * 1.6)
-  const maxLines = Math.max(1, Math.floor((contentH - pad * 2) / lineHeight))
-  const lines = wrapLines(ctx, text.trim() || '（空文件）', width - pad * 2, maxLines)
   lines.forEach((line, index) => ctx.fillText(line, pad, pad + index * lineHeight))
   ctx.textBaseline = 'alphabetic'
   return canvas
 }
 
-async function renderPdfContent(file: File, width: number, contentH: number, spec?: Partial<PreviewSpec>): Promise<HTMLCanvasElement> {
+async function renderPdfContent(file: File, spec?: Partial<PreviewSpec>): Promise<HTMLCanvasElement> {
   const pdfjs = await import('pdfjs-dist')
   pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
   const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer(), isEvalSupported: false, useSystemFonts: true }).promise
@@ -328,30 +284,14 @@ async function renderPdfContent(file: File, width: number, contentH: number, spe
     const pageNumber = Math.min(Math.max(1, spec?.page ?? 1), pdf.numPages)
     const page = await pdf.getPage(pageNumber)
     const base = page.getViewport({ scale: 1 })
-    const fit = Math.min((width * 0.92) / base.width, (contentH * 0.94) / base.height)
-    const viewport = page.getViewport({ scale: fit * 2 })
-    const pageCanvas = document.createElement('canvas')
-    pageCanvas.width = Math.ceil(viewport.width)
-    pageCanvas.height = Math.ceil(viewport.height)
-    const pageCtx = pageCanvas.getContext('2d')
-    if (!pageCtx) throw new Error('无法创建画布上下文')
-    await page.render({ canvasContext: pageCtx, viewport }).promise
-    const { canvas, ctx } = makeCanvas(width, contentH)
-    ctx.fillStyle = '#e9edf3'
-    ctx.fillRect(0, 0, width, contentH)
-    const drawW = viewport.width / 2, drawH = viewport.height / 2
-    const offsetX = (width - drawW) / 2, offsetY = (contentH - drawH) / 2
-    ctx.save()
-    ctx.shadowColor = 'rgba(15,23,42,0.25)'
-    ctx.shadowBlur = width * 0.025
-    ctx.shadowOffsetY = width * 0.008
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(offsetX, offsetY, drawW, drawH)
-    ctx.restore()
-    ctx.drawImage(pageCanvas, offsetX, offsetY, drawW, drawH)
-    ctx.strokeStyle = 'rgba(15,23,42,0.12)'
-    ctx.lineWidth = 1
-    ctx.strokeRect(offsetX, offsetY, drawW, drawH)
+    const scale = LAYOUT_WIDTH / base.width
+    const viewport = page.getViewport({ scale })
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.ceil(viewport.width)
+    canvas.height = Math.ceil(viewport.height)
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('无法创建画布上下文')
+    await page.render({ canvasContext: ctx, viewport, background: '#ffffff' }).promise
     return canvas
   } finally {
     void pdf.destroy()
@@ -362,7 +302,6 @@ function xmlText(xml: string, paragraphBreak: RegExp): string {
   return decodeEntities(xml.replace(paragraphBreak, '\n').replace(/<[^>]+>/g, '')).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 
-/** Readable text fallback for Office packages when faithful rendering fails. */
 export async function extractOfficeText(file: File, ext: string): Promise<string> {
   const { unzipSync } = await import('fflate')
   const entries = unzipSync(new Uint8Array(await file.arrayBuffer()))
@@ -381,12 +320,13 @@ export async function extractOfficeText(file: File, ext: string): Promise<string
   return ''
 }
 
-async function cardContent(file: File, width: number, contentH: number, theme: { accent: string; label: string }, note: string): Promise<HTMLCanvasElement> {
-  const { canvas, ctx } = makeCanvas(width, contentH)
+async function cardContent(file: File, theme: { accent: string; label: string }, note: string): Promise<HTMLCanvasElement> {
+  const width = LAYOUT_WIDTH, height = Math.round(LAYOUT_WIDTH * 0.62)
+  const { canvas, ctx } = makeCanvas(width, height)
   ctx.fillStyle = '#f7f8fb'
-  ctx.fillRect(0, 0, width, contentH)
-  const badge = Math.round(width * 0.18)
-  const bx = (width - badge) / 2, by = Math.round(contentH * 0.2)
+  ctx.fillRect(0, 0, width, height)
+  const badge = Math.round(width * 0.16)
+  const bx = (width - badge) / 2, by = Math.round(height * 0.18)
   ctx.fillStyle = theme.accent
   if (typeof ctx.roundRect === 'function') { ctx.beginPath(); ctx.roundRect(bx, by, badge, badge, badge * 0.22); ctx.fill() }
   else ctx.fillRect(bx, by, badge, badge)
@@ -395,62 +335,60 @@ async function cardContent(file: File, width: number, contentH: number, theme: {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText(theme.label.slice(0, 4), bx + badge / 2, by + badge / 2)
-  ctx.fillStyle = '#475569'
-  ctx.font = '400 ' + Math.round(width * 0.028) + 'px ' + SANS
-  const lines = wrapLines(ctx, note, width * 0.8, 3)
-  lines.forEach((line, index) => ctx.fillText(line, width / 2, by + badge + Math.round(contentH * 0.12) + index * Math.round(width * 0.045)))
+  ctx.fillStyle = '#334155'
+  ctx.font = '600 ' + Math.round(width * 0.03) + 'px ' + SANS
+  ctx.fillText(file.name || theme.label, width / 2, by + badge + Math.round(height * 0.12))
+  ctx.fillStyle = '#64748b'
+  ctx.font = '400 ' + Math.round(width * 0.026) + 'px ' + SANS
+  ctx.fillText(formatBytes(file.size), width / 2, by + badge + Math.round(height * 0.2))
+  const lines = wrapLines(ctx, note, width * 0.8, 2)
+  lines.forEach((line, index) => ctx.fillText(line, width / 2, by + badge + Math.round(height * 0.3) + index * Math.round(width * 0.04)))
   ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'
   return canvas
 }
 
 export async function renderDocumentPreview(file: File, kind: MediaKind, spec?: Partial<PreviewSpec>): Promise<DocumentPreviewResult> {
-  const { width, height } = targetSize(spec)
-  const footerH = Math.max(34, Math.round(height * 0.1))
-  const contentH = height - footerH
   const ext = extensionOf(file)
   const theme = themeFor(ext, kind)
-  const name = file.name || theme.label
-  const finish = async (content: HTMLCanvasElement | null, rendered: boolean, note?: string) => ({
-    blob: await toBlob(composeThumbnail(content, width, height, theme, name, formatBytes(file.size))),
-    rendered, note,
+  const finish = async (canvas: HTMLCanvasElement, rendered: boolean, note?: string) => ({
+    blob: await toBlob(canvas), rendered, note, width: canvas.width, height: canvas.height,
   })
   const textFallback = async (note?: string) => {
     let text = ''
     try { text = await extractOfficeText(file, ext) } catch { text = '' }
-    if (text.trim()) return finish(await renderTextContent(file, width, contentH, text), true)
-    return finish(await cardContent(file, width, contentH, theme, note ?? '未能提取到内容预览，原文件已保存。'), false, note)
+    if (text.trim()) return finish(await renderTextContent(file, text), true)
+    return finish(await cardContent(file, theme, note ?? '未能提取到内容预览，原文件已保存。'), false, note)
   }
   try {
-    if (ext === 'pdf' || file.type === 'application/pdf') {
-      return finish(await renderPdfContent(file, width, contentH, spec), true)
-    }
+    if (ext === 'pdf' || file.type === 'application/pdf') return finish(await renderPdfContent(file, spec), true)
     if (ext === 'docx') {
-      try { return finish(await renderDocxContent(file, width, contentH), true) }
+      try { return finish(await renderDocxContent(file), true) }
       catch { return textFallback('Word 忠实渲染失败，已改用文本预览。') }
     }
     if (ext === 'pptx') {
-      try { return finish(await renderPptxContent(file, width, contentH), true) }
+      try { return finish(await renderPptxContent(file), true) }
       catch { return textFallback('幻灯片忠实渲染失败，已改用文本预览。') }
     }
     if (ext === 'xlsx') {
-      try { return finish(await renderXlsxContent(file, width, contentH), true) }
+      try { return finish(await renderXlsxContent(file), true) }
       catch { return textFallback('表格渲染失败，已改用文本预览。') }
     }
     if (kind === 'markdown') {
-      try { return finish(await renderMarkdownContent(file, width, contentH), true) }
-      catch { return finish(await renderTextContent(file, width, contentH), true) }
+      try { return finish(await renderMarkdownContent(file), true) }
+      catch { return finish(await renderTextContent(file), true) }
     }
     if (kind === 'html') {
-      try { return finish(await renderHtmlContent(file, width, contentH), true) }
-      catch { return finish(await renderTextContent(file, width, contentH), true) }
+      try { return finish(await renderHtmlContent(file), true) }
+      catch { return finish(await renderTextContent(file), true) }
     }
     if (kind === 'text-file' || (kind === 'file' && (TEXT_EXTENSIONS.has(ext) || file.type.startsWith('text/')))) {
-      return finish(await renderTextContent(file, width, contentH), true)
+      return finish(await renderTextContent(file), true)
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return finish(await cardContent(file, width, contentH, theme, '预览生成失败：' + message), false, message)
+    return finish(await cardContent(file, theme, '预览生成失败：' + message), false, message)
   }
-  return finish(await cardContent(file, width, contentH, theme, '此格式暂不支持内容预览，原文件已保存，可下载查看。'), false, '此格式暂不支持内容预览，原文件已保存。')
+  return finish(await cardContent(file, theme, '此格式暂不支持内容预览，原文件已保存，可下载查看。'), false, '此格式暂不支持内容预览，原文件已保存。')
 }
+

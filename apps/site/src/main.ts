@@ -555,8 +555,15 @@ configureLocalPreviewRenderer(async (board, node, spec) => {
   const current = board.nodes.get(node.id);
   if (current) {
     const assetRefs = Object.fromEntries(Object.entries(current.assetRefs ?? {}).filter(([key]) => !key.startsWith("_refreshPreview")));
-    board.nodes.update(node.id, { assetRefs: { ...assetRefs, preview: { assetId, variant },
-      [`_refreshPreview${Date.now()}`]: { assetId, variant } } });
+    const patch: Record<string, unknown> = { assetRefs: { ...assetRefs, preview: { assetId, variant },
+      [`_refreshPreview${Date.now()}`]: { assetId, variant } } };
+    const dims = mediaLibrary.documentPreviewNotes.get(assetId);
+    if (node.type !== "model" && dims?.width && dims?.height) {
+      const nextHeight = Math.max(1, Math.round(current.width * dims.height / dims.width));
+      patch.height = nextHeight;
+      patch.props = { ...current.props, intrinsicWidth: current.width, intrinsicHeight: nextHeight };
+    }
+    board.nodes.update(node.id, patch);
   }
   const note = mediaLibrary.documentPreviewNotes.get(assetId);
   return { rendered: note?.rendered ?? node.type === "model", note: note?.note };
