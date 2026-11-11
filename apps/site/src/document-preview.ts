@@ -214,21 +214,30 @@ function columnIndex(ref: string): number {
 
 // Only decompress the two parts we render, and bound both per-entry and total
 // expanded size so a high-ratio workbook cannot stall the main thread.
-const XLSX_MAX_UNZIP = 32 * 1024 * 1024
-async function extractXlsxGrid(file: File): Promise<string[][]> {
+const OFFICE_MAX_UNZIP = 32 * 1024 * 1024
+// Decompress only accepted entries, bounding per-entry and total expanded size
+// so a high-ratio archive cannot stall the main thread. overLimit reports when
+// needed content was skipped so callers degrade to a card instead of a blank.
+async function unzipLimited(bytes: Uint8Array, accept: (name: string) => boolean): Promise<{ entries: Record<string, Uint8Array>; overLimit: boolean }> {
   const { unzipSync } = await import('fflate')
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  const needed = new Set(['xl/sharedStrings.xml', 'xl/worksheets/sheet1.xml'])
   let total = 0
+  let overLimit = false
   const entries = unzipSync(bytes, {
     filter: entry => {
-      if (!needed.has(entry.name)) return false
+      if (!accept(entry.name)) return false
       const size = entry.originalSize ?? entry.size ?? 0
-      if (size > XLSX_MAX_UNZIP) return false
+      if (size > OFFICE_MAX_UNZIP) { overLimit = true; return false }
       total += size
-      return total <= XLSX_MAX_UNZIP
+      if (total > OFFICE_MAX_UNZIP) { overLimit = true; return false }
+      return true
     },
   })
+  return { entries, overLimit }
+}
+async function extractXlsxGrid(file: File): Promise<{ grid: string[][]; overLimit: boolean }> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  const { entries, overLimit } = await unzipLimited(bytes, name => name === 'xl/sharedStrings.xml' || name === 'xl/worksheets/sheet1.xml')
+  if (overLimit) return { grid: [], overLimit: true }
   const decoder = new TextDecoder('utf-8')
   const read = (name: string) => entries[name] ? decoder.decode(entries[name]) : ''
   const parser = new DOMParser()
@@ -262,11 +271,13 @@ async function extractXlsxGrid(file: File): Promise<string[][]> {
       grid.push(Array.from({ length: 12 }, (_, i) => cells[i] ?? ''))
     }
   }
-  return grid
+  return { grid, overLimit: false }
 }
 
 async function renderXlsxContent(file: File): Promise<HTMLCanvasElement> {
-  const grid = await extractXlsxGrid(file)
+  const { grid, overLimit } = await extractXlsxGrid(file)
+  if (overLimit) throw new Error('XLSX_OVER_LIMIT')
+  if (!grid.length) throw new Error('XLSX_EMPTY')
   const usedCols = grid.reduce((max, row) => Math.max(max, row.reduce((last, cell, i) => cell !== '' ? i + 1 : last, 0)), 0) || 1
   return rasterizeDom('18px 20px', async inner => {
     const table = document.createElement('table')
@@ -338,8 +349,17 @@ function xmlText(xml: string, paragraphTag: string): string {
 }
 
 export async function extractOfficeText(file: File, ext: string): Promise<string> {
-  const { unzipSync } = await import('fflate')
-  const entries = unzipSync(new Uint8Array(await file.arrayBuffer()))
+  // XLSX uses the bounded grid reader; never full-unzip the workbook here.
+  if (ext === 'xlsx') {
+    const { grid, overLimit } = await extractXlsxGrid(file)
+    if (overLimit) return ''
+    return grid.map(row => row.filter(Boolean).join('  |  ')).filter(Boolean).join('\n')
+  }
+  const accept = ext === 'docx' ? (n: string) => n === 'word/document.xml'
+    : ext === 'pptx' ? (n: string) => /^ppt\/slides\/slide\d+\.xml$/.test(n)
+    : () => false
+  const { entries, overLimit } = await unzipLimited(new Uint8Array(await file.arrayBuffer()), accept)
+  if (overLimit) return ''
   const decoder = new TextDecoder('utf-8')
   const read = (name: string) => entries[name] ? decoder.decode(entries[name]) : ''
   if (ext === 'docx') return xmlText(read('word/document.xml'), 'w:p')
@@ -347,10 +367,6 @@ export async function extractOfficeText(file: File, ext: string): Promise<string
     const slides = Object.keys(entries).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n))
       .sort((a, b) => Number(a.match(/slide(\d+)/)![1]) - Number(b.match(/slide(\d+)/)![1]))
     return slides.slice(0, 100).map((name, index) => '〔幻灯片 ' + (index + 1) + '〕\n' + xmlText(read(name), 'a:p')).join('\n\n')
-  }
-  if (ext === 'xlsx') {
-    const grid = await extractXlsxGrid(file)
-    return grid.map(row => row.filter(Boolean).join('  |  ')).filter(Boolean).join('\n')
   }
   return ''
 }
@@ -407,7 +423,12 @@ export async function renderDocumentPreview(file: File, kind: MediaKind, spec?: 
     }
     if (ext === 'xlsx') {
       try { return finish(await renderXlsxContent(file), true) }
-      catch { return textFallback('表格渲染失败，已改用文本预览。') }
+      catch (error) {
+        if (error instanceof Error && error.message === 'XLSX_OVER_LIMIT') {
+          return finish(await cardContent(file, theme, '表格过大，暂不生成内容预览，原文件已保存。'), false, '表格过大，暂不生成内容预览。')
+        }
+        return textFallback('表格渲染失败，已改用文本预览。')
+      }
     }
     if (kind === 'markdown') {
       try { return finish(await renderMarkdownContent(file), true) }
