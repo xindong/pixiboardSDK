@@ -549,13 +549,17 @@ configureLocalPreviewRenderer(async (board, node, spec) => {
   if (!changed && isCurrent()) throw new Error("找不到原始资源，暂无预览。");
   if (!changed || !isCurrent()) return;
   const variant: AssetVariant = typeof changed === "string" ? changed : "preview";
-  if (variant === "preview") textureCache.delete(`${assetId}:preview`);
+  for (const key of [...textureCache.keys()]) {
+    if (key.startsWith(`${assetId}:preview`)) textureCache.delete(key);
+  }
   const current = board.nodes.get(node.id);
   if (current) {
     const assetRefs = Object.fromEntries(Object.entries(current.assetRefs ?? {}).filter(([key]) => !key.startsWith("_refreshPreview")));
     board.nodes.update(node.id, { assetRefs: { ...assetRefs, preview: { assetId, variant },
       [`_refreshPreview${Date.now()}`]: { assetId, variant } } });
   }
+  const note = mediaLibrary.documentPreviewNotes.get(assetId);
+  return { rendered: note?.rendered ?? node.type === "model", note: note?.note };
 });
 
 async function decodeToBitmap(url: string): Promise<ImageBitmap | HTMLImageElement> {
@@ -1637,10 +1641,11 @@ function freeSpaceAnchor(board: PixiBoard): { x: number; y: number } {
 }
 
 function mediaTag(node: Readonly<BoardNode>): string {
-  const typeLabel = KIND_ICON[node.type as MediaKind] ?? node.type.toUpperCase();
+  const props = node.props as Partial<MediaProps>;
+  const ext = typeof props.fileExtension === "string" ? props.fileExtension.toLowerCase() : "";
+  const typeLabel = DOCUMENT_TAG[ext] ?? KIND_ICON[node.type as MediaKind] ?? node.type.toUpperCase();
   const previewLabel = previewTypeLabel(node, typeLabel);
   if (previewLabel) return previewLabel;
-  const props = node.props as Partial<MediaProps>;
   if (node.type === "image" || node.type === "video" || node.type === "audio") {
     if (props.mediaPreparationStatus === "pending" || props.mediaPreparationStatus === "processing") return `${typeLabel}:处理中`;
     if (props.mediaPreparationStatus === "error" || props.mediaPreparationStatus === "failed") return `${typeLabel}:准备失败`;
@@ -1653,6 +1658,12 @@ function mediaTag(node: Readonly<BoardNode>): string {
 }
 
 const KIND_ICON: Record<MediaKind, string> = { image: "IMG", video: "VID", audio: "AUD", model: "3D", html: "HTML", markdown: "MD", "text-file": "TXT", file: "FILE" };
+const DOCUMENT_TAG: Record<string, string> = {
+  pdf: "PDF", doc: "DOC", docx: "DOCX", xls: "XLS", xlsx: "XLSX", ppt: "PPT", pptx: "PPTX",
+  md: "MD", markdown: "MD", html: "HTML", htm: "HTML", txt: "TXT", log: "LOG", csv: "CSV",
+  json: "JSON", xml: "XML", yaml: "YAML", yml: "YML", js: "JS", ts: "TS", py: "PY", sh: "SH",
+  css: "CSS", sql: "SQL", zip: "ZIP",
+};
 
 function isMediaKind(type: string): type is MediaKind {
   return ["image", "video", "audio", "model", "html", "markdown", "text-file", "file"].includes(type);
