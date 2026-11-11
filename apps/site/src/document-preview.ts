@@ -111,21 +111,43 @@ async function rasterizeDom(padding: string, render: (inner: HTMLElement) => Pro
 
 const RICH_ELEMENT_CSS = 'h1{font-size:24px;font-weight:700;margin:0 0 12px;color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:8px}h2{font-size:20px;font-weight:700;margin:16px 0 10px;color:#0f172a}h3{font-size:17px;font-weight:600;margin:14px 0 8px;color:#1e293b}p{margin:0 0 10px}ul,ol{margin:0 0 10px;padding-left:24px}li{margin:3px 0}code{font:13px ' + MONO + ';background:#f1f5f9;padding:2px 5px;border-radius:4px;color:#be185d}pre{background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:8px;overflow:hidden;margin:0 0 12px}pre code{background:transparent;color:inherit;padding:0}blockquote{border-left:4px solid #cbd5e1;margin:0 0 12px;padding:4px 14px;color:#475569;background:#f8fafc}a{color:#2563eb;text-decoration:none}table{border-collapse:collapse;margin:0 0 12px}th,td{border:1px solid #e2e8f0;padding:5px 9px}th{background:#f1f5f9}hr{border:0;border-top:1px solid #e2e8f0;margin:14px 0}strong{font-weight:700;color:#0f172a}img{max-width:100%}'
 
-function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<(link|iframe|object|embed|form|input|button|meta)[^>]*>/gi, '')
-    .replace(/<img[^>]*alt="([^"]*)"[^>]*\/?>/gi, '<span style="color:#94a3b8">[图: $1]</span>')
-    .replace(/<img[^>]*\/?>/gi, '<span style="color:#94a3b8">[图片]</span>')
-    .replace(/\son\w+="[^"]*"/gi, '')
-    .replace(/\son\w+='[^']*'/gi, '')
+// DOM-based whitelist sanitization: parse inert, drop dangerous nodes and
+// attributes, then adopt clean nodes. No regex filtering and no innerHTML sink.
+const BLOCKED_ELEMENTS = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META', 'BASE', 'FORM', 'INPUT', 'BUTTON', 'TEXTAREA', 'SELECT', 'FRAME', 'FRAMESET', 'APPLET', 'NOSCRIPT', 'TEMPLATE'])
+function appendSanitizedHtml(target: HTMLElement, html: string): void {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const root = doc.body
+  const blocked: Element[] = []
+  const externalImages: Element[] = []
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_ELEMENT)
+  while (walker.nextNode()) {
+    const el = walker.currentNode as Element
+    if (BLOCKED_ELEMENTS.has(el.tagName)) { blocked.push(el); continue }
+    if (el.tagName === 'IMG' && !(el.getAttribute('src') || '').startsWith('data:')) { externalImages.push(el); continue }
+    for (const attr of [...el.attributes]) {
+      const name = attr.name.toLowerCase()
+      if (name.startsWith('on') || name === 'srcdoc') el.removeAttribute(attr.name)
+      else if ((name === 'href' || name === 'src' || name === 'xlink:href') && /^\s*(javascript|vbscript):/i.test(attr.value)) el.removeAttribute(attr.name)
+    }
+  }
+  for (const el of blocked) el.remove()
+  for (const el of externalImages) {
+    const span = doc.createElement('span')
+    span.setAttribute('style', 'color:#94a3b8')
+    span.textContent = '[图: ' + (el.getAttribute('alt') || '图片') + ']'
+    el.replaceWith(span)
+  }
+  while (root.firstChild) {
+    const child = root.firstChild
+    root.removeChild(child)
+    target.append(document.importNode(child, true))
+  }
 }
 
 async function renderMarkdownContent(file: File): Promise<HTMLCanvasElement> {
   const text = await file.slice(0, 400000).text()
   const markdown = await getMarkdown()
-  const html = sanitizeHtml(markdown.render(text))
+  const html = markdown.render(text)
   return rasterizeDom('24px 28px', async inner => {
     inner.style.font = '15px/1.65 ' + SANS
     inner.style.color = '#1f2937'
@@ -133,7 +155,7 @@ async function renderMarkdownContent(file: File): Promise<HTMLCanvasElement> {
     style.textContent = RICH_ELEMENT_CSS
     inner.append(style)
     const body = document.createElement('div')
-    body.innerHTML = html
+    appendSanitizedHtml(body, html)
     inner.append(body)
   })
 }
@@ -149,7 +171,7 @@ async function renderHtmlContent(file: File): Promise<HTMLCanvasElement> {
     style.textContent = RICH_ELEMENT_CSS
     inner.append(style)
     const container = document.createElement('div')
-    container.innerHTML = sanitizeHtml(body)
+    appendSanitizedHtml(container, body)
     inner.append(container)
   })
 }
@@ -391,4 +413,3 @@ export async function renderDocumentPreview(file: File, kind: MediaKind, spec?: 
   }
   return finish(await cardContent(file, theme, '此格式暂不支持内容预览，原文件已保存，可下载查看。'), false, '此格式暂不支持内容预览，原文件已保存。')
 }
-
