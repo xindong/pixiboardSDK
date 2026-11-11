@@ -93,6 +93,7 @@ async function rasterizeDom(padding: string, render: (inner: HTMLElement) => Pro
   host.style.cssText = 'position:fixed;left:-10000px;top:0;width:' + LAYOUT_WIDTH + 'px;background:#ffffff;z-index:-1;pointer-events:none;'
   const inner = document.createElement('div')
   inner.style.cssText = 'box-sizing:border-box;width:' + LAYOUT_WIDTH + 'px;background:#ffffff;padding:' + padding + ';'
+  inner.classList.add('px-preview')
   host.append(inner)
   document.body.append(host)
   try {
@@ -111,6 +112,10 @@ async function rasterizeDom(padding: string, render: (inner: HTMLElement) => Pro
 }
 
 const RICH_ELEMENT_CSS = 'h1{font-size:24px;font-weight:700;margin:0 0 12px;color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:8px}h2{font-size:20px;font-weight:700;margin:16px 0 10px;color:#0f172a}h3{font-size:17px;font-weight:600;margin:14px 0 8px;color:#1e293b}p{margin:0 0 10px}ul,ol{margin:0 0 10px;padding-left:24px}li{margin:3px 0}code{font:13px ' + MONO + ';background:#f1f5f9;padding:2px 5px;border-radius:4px;color:#be185d}pre{background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:8px;overflow:hidden;margin:0 0 12px}pre code{background:transparent;color:inherit;padding:0}blockquote{border-left:4px solid #cbd5e1;margin:0 0 12px;padding:4px 14px;color:#475569;background:#f8fafc}a{color:#2563eb;text-decoration:none}table{border-collapse:collapse;margin:0 0 12px}th,td{border:1px solid #e2e8f0;padding:5px 9px}th{background:#f1f5f9}hr{border:0;border-top:1px solid #e2e8f0;margin:14px 0}strong{font-weight:700;color:#0f172a}img{max-width:100%}'
+
+// Scope preview typography to the offscreen container so it never leaks into
+// the live canvas page while the preview is attached to document.body.
+const SCOPED_RICH_CSS = RICH_ELEMENT_CSS.replace(/(^|})\s*([^{}]+)\{/g, (_m, brace: string, sel: string) => brace + sel.split(',').map(s => '.px-preview ' + s.trim()).join(', ') + '{')
 
 // DOMPurify is a recognized sanitizer barrier: it returns an inert, clean
 // fragment (no script/iframe/on* /javascript:), so adopting it is safe and no
@@ -136,7 +141,7 @@ async function renderMarkdownContent(file: File): Promise<HTMLCanvasElement> {
     inner.style.font = '15px/1.65 ' + SANS
     inner.style.color = '#1f2937'
     const style = document.createElement('style')
-    style.textContent = RICH_ELEMENT_CSS
+    style.textContent = SCOPED_RICH_CSS
     inner.append(style)
     const body = document.createElement('div')
     appendSanitizedHtml(body, html)
@@ -152,7 +157,7 @@ async function renderHtmlContent(file: File): Promise<HTMLCanvasElement> {
     inner.style.font = '15px/1.65 ' + SANS
     inner.style.color = '#1f2937'
     const style = document.createElement('style')
-    style.textContent = RICH_ELEMENT_CSS
+    style.textContent = SCOPED_RICH_CSS
     inner.append(style)
     const container = document.createElement('div')
     appendSanitizedHtml(container, body)
@@ -207,40 +212,72 @@ function columnIndex(ref: string): number {
   return index - 1
 }
 
-async function extractXlsxGrid(file: File): Promise<string[][]> {
+// Only decompress the two parts we render, and bound both per-entry and total
+// expanded size so a high-ratio workbook cannot stall the main thread.
+const OFFICE_MAX_UNZIP = 32 * 1024 * 1024
+// Decompress only accepted entries, bounding per-entry and total expanded size
+// so a high-ratio archive cannot stall the main thread. overLimit reports when
+// needed content was skipped so callers degrade to a card instead of a blank.
+async function unzipLimited(bytes: Uint8Array, accept: (name: string) => boolean): Promise<{ entries: Record<string, Uint8Array>; overLimit: boolean }> {
   const { unzipSync } = await import('fflate')
-  const entries = unzipSync(new Uint8Array(await file.arrayBuffer()))
+  let total = 0
+  let overLimit = false
+  const entries = unzipSync(bytes, {
+    filter: entry => {
+      if (!accept(entry.name)) return false
+      const size = entry.originalSize ?? entry.size ?? 0
+      if (size > OFFICE_MAX_UNZIP) { overLimit = true; return false }
+      total += size
+      if (total > OFFICE_MAX_UNZIP) { overLimit = true; return false }
+      return true
+    },
+  })
+  return { entries, overLimit }
+}
+async function extractXlsxGrid(file: File): Promise<{ grid: string[][]; overLimit: boolean }> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  const { entries, overLimit } = await unzipLimited(bytes, name => name === 'xl/sharedStrings.xml' || name === 'xl/worksheets/sheet1.xml')
+  if (overLimit) return { grid: [], overLimit: true }
   const decoder = new TextDecoder('utf-8')
   const read = (name: string) => entries[name] ? decoder.decode(entries[name]) : ''
-  const shared = read('xl/sharedStrings.xml')
+  const parser = new DOMParser()
   const strings: string[] = []
-  let match: RegExpExecArray | null
-  const re = /<t[^>]*>([\s\S]*?)<\/t>/g
-  while ((match = re.exec(shared)) !== null) strings.push(decodeEntities(match[1]))
-  const sheet = read('xl/worksheets/sheet1.xml')
-  const grid: string[][] = []
-  const rowRe = /<row[^>]*>([\s\S]*?)<\/row>/g
-  let rowMatch: RegExpExecArray | null
-  while ((rowMatch = rowRe.exec(sheet)) !== null && grid.length < 200) {
-    const cells: string[] = []
-    const cellRe = /<c\s+r="([A-Z]+)[0-9]+"[^>]*?(?:\st="(\w+)")?[^>]*>(?:<v>([\s\S]*?)<\/v>|<is><t[^>]*>([\s\S]*?)<\/t><\/is>)?<\/c>/g
-    let cellMatch: RegExpExecArray | null
-    while ((cellMatch = cellRe.exec(rowMatch[1])) !== null) {
-      const col = columnIndex(cellMatch[1])
-      const type = cellMatch[2], value = cellMatch[3], inline = cellMatch[4]
-      let text = ''
-      if (inline !== undefined) text = decodeEntities(inline)
-      else if (type === 's' && value !== undefined) text = strings[Number(value)] ?? ''
-      else if (value !== undefined) text = decodeEntities(value)
-      if (col < 12) cells[col] = text
+  const sharedXml = read('xl/sharedStrings.xml')
+  if (sharedXml) {
+    const sharedDoc = parser.parseFromString(sharedXml, 'text/xml')
+    for (const si of Array.from(sharedDoc.getElementsByTagName('si'))) {
+      strings.push(Array.from(si.getElementsByTagName('t')).map(t => t.textContent || '').join(''))
     }
-    grid.push(Array.from({ length: 12 }, (_, i) => cells[i] ?? ''))
   }
-  return grid
+  const grid: string[][] = []
+  const sheetXml = read('xl/worksheets/sheet1.xml')
+  if (sheetXml) {
+    const sheetDoc = parser.parseFromString(sheetXml, 'text/xml')
+    for (const row of Array.from(sheetDoc.getElementsByTagName('row'))) {
+      if (grid.length >= 200) break
+      const cells: string[] = []
+      for (const cell of Array.from(row.getElementsByTagName('c'))) {
+        const col = columnIndex(cell.getAttribute('r') || '')
+        if (col < 0 || col >= 12) continue
+        const type = cell.getAttribute('t')
+        const v = cell.getElementsByTagName('v')[0]
+        const is = cell.getElementsByTagName('is')[0]
+        let text = ''
+        if (type === 's' && v) text = strings[Number(v.textContent)] ?? ''
+        else if (type === 'inlineStr' && is) text = Array.from(is.getElementsByTagName('t')).map(t => t.textContent || '').join('')
+        else if (v) text = v.textContent || ''
+        cells[col] = text
+      }
+      grid.push(Array.from({ length: 12 }, (_, i) => cells[i] ?? ''))
+    }
+  }
+  return { grid, overLimit: false }
 }
 
 async function renderXlsxContent(file: File): Promise<HTMLCanvasElement> {
-  const grid = await extractXlsxGrid(file)
+  const { grid, overLimit } = await extractXlsxGrid(file)
+  if (overLimit) throw new Error('XLSX_OVER_LIMIT')
+  if (!grid.length) throw new Error('XLSX_EMPTY')
   const usedCols = grid.reduce((max, row) => Math.max(max, row.reduce((last, cell, i) => cell !== '' ? i + 1 : last, 0)), 0) || 1
   return rasterizeDom('18px 20px', async inner => {
     const table = document.createElement('table')
@@ -312,8 +349,17 @@ function xmlText(xml: string, paragraphTag: string): string {
 }
 
 export async function extractOfficeText(file: File, ext: string): Promise<string> {
-  const { unzipSync } = await import('fflate')
-  const entries = unzipSync(new Uint8Array(await file.arrayBuffer()))
+  // XLSX uses the bounded grid reader; never full-unzip the workbook here.
+  if (ext === 'xlsx') {
+    const { grid, overLimit } = await extractXlsxGrid(file)
+    if (overLimit) return ''
+    return grid.map(row => row.filter(Boolean).join('  |  ')).filter(Boolean).join('\n')
+  }
+  const accept = ext === 'docx' ? (n: string) => n === 'word/document.xml'
+    : ext === 'pptx' ? (n: string) => /^ppt\/slides\/slide\d+\.xml$/.test(n)
+    : () => false
+  const { entries, overLimit } = await unzipLimited(new Uint8Array(await file.arrayBuffer()), accept)
+  if (overLimit) return ''
   const decoder = new TextDecoder('utf-8')
   const read = (name: string) => entries[name] ? decoder.decode(entries[name]) : ''
   if (ext === 'docx') return xmlText(read('word/document.xml'), 'w:p')
@@ -321,10 +367,6 @@ export async function extractOfficeText(file: File, ext: string): Promise<string
     const slides = Object.keys(entries).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n))
       .sort((a, b) => Number(a.match(/slide(\d+)/)![1]) - Number(b.match(/slide(\d+)/)![1]))
     return slides.slice(0, 100).map((name, index) => '〔幻灯片 ' + (index + 1) + '〕\n' + xmlText(read(name), 'a:p')).join('\n\n')
-  }
-  if (ext === 'xlsx') {
-    const grid = await extractXlsxGrid(file)
-    return grid.map(row => row.filter(Boolean).join('  |  ')).filter(Boolean).join('\n')
   }
   return ''
 }
@@ -381,7 +423,12 @@ export async function renderDocumentPreview(file: File, kind: MediaKind, spec?: 
     }
     if (ext === 'xlsx') {
       try { return finish(await renderXlsxContent(file), true) }
-      catch { return textFallback('表格渲染失败，已改用文本预览。') }
+      catch (error) {
+        if (error instanceof Error && error.message === 'XLSX_OVER_LIMIT') {
+          return finish(await cardContent(file, theme, '表格过大，暂不生成内容预览，原文件已保存。'), false, '表格过大，暂不生成内容预览。')
+        }
+        return textFallback('表格渲染失败，已改用文本预览。')
+      }
     }
     if (kind === 'markdown') {
       try { return finish(await renderMarkdownContent(file), true) }
