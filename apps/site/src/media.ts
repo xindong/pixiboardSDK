@@ -7,6 +7,7 @@ import {
 import type { AssetRecord, AssetVariant, BoardDocument, PreviewSpec } from "@pixi-board/core";
 import { renderModelPreview } from "./modelPreviewScene";
 import { documentPreviewImport, classifyPreviewFile, hasSitePreviewRenderer, type PreviewImportState } from "./preview";
+import { renderDocumentPreview } from "./document-preview";
 
 export type MediaKind = "image" | "video" | "audio" | "model" | "html" | "markdown" | "text-file" | "file";
 export type ModelVertex = [number, number, number];
@@ -86,6 +87,8 @@ export class MediaLibrary {
   /** Object URLs are revoked wholesale on dispose, so leases are tracked here. */
   private readonly leases = new Map<string, { url: string; revoke: () => void }>();
   private readonly opfsSupported: boolean;
+  /** Whether the latest document preview drew real content (vs. a fallback card). */
+  readonly documentPreviewNotes = new Map<string, { rendered: boolean; note?: string; width?: number; height?: number }>();
 
   constructor() {
     this.opfsSupported = typeof navigator?.storage?.getDirectory === "function";
@@ -150,7 +153,7 @@ export class MediaLibrary {
     if (kind === "video") {
       const poster = await videoPoster(file);
       await this.adapter.putDerivative(assetId, "preview", poster.blob);
-      return { assetId, kind, name: file.name, mimeType: file.type, size: file.size, duration: poster.duration, ...fitNode(poster.width, poster.height) };
+      return { assetId, kind, name: file.name, mimeType: file.type, size: file.size, duration: poster.duration, hasPreview: true, ...fitNode(poster.width, poster.height) };
     }
 
     if (kind === "audio") {
@@ -165,6 +168,7 @@ export class MediaLibrary {
         duration: waveform.duration,
         width: AUDIO_NODE_WIDTH,
         height: AUDIO_NODE_HEIGHT,
+        hasPreview: true,
       };
     }
 
@@ -179,17 +183,33 @@ export class MediaLibrary {
         preview = await filePreview(file, kind);
       }
     } else {
-      preview = await filePreview(file, kind);
+      const result = await renderDocumentPreview(file, kind, state.previewSpec);
+      preview = result.blob;
+      this.documentPreviewNotes.set(assetId, { rendered: result.rendered, note: result.note, width: result.width, height: result.height });
+      state = {
+        ...state,
+        previewStatus: result.rendered ? "ready" : "unsupported",
+        previewQuality: "thumbnail",
+        previewError: result.rendered ? null : (result.note ?? "此格式暂未提供内容预览，原文件已保存。"),
+      };
     }
     await this.adapter.putDerivative(assetId, "preview", preview);
+    // Mirror the plugin: keep the document node at the standard width and let
+    // its height follow the preview's natural aspect so the whole file shows.
+    let nodeWidth = kind === "model" ? MODEL_NODE_WIDTH : DOCUMENT_NODE_WIDTH;
+    let nodeHeight = kind === "model" ? MODEL_NODE_HEIGHT : DOCUMENT_NODE_HEIGHT;
+    const dims = this.documentPreviewNotes.get(assetId);
+    if (kind !== "model" && dims?.width && dims?.height) {
+      nodeHeight = Math.max(1, Math.round(nodeWidth * dims.height / dims.width));
+    }
     return {
       assetId,
       kind,
       name: file.name,
       mimeType: file.type,
       size: file.size,
-      width: kind === "model" ? MODEL_NODE_WIDTH : DOCUMENT_NODE_WIDTH,
-      height: kind === "model" ? MODEL_NODE_HEIGHT : DOCUMENT_NODE_HEIGHT,
+      width: nodeWidth,
+      height: nodeHeight,
       hasPreview: true,
       ...state,
     };
@@ -273,7 +293,14 @@ export class MediaLibrary {
       return true;
     }
 
-    const preview = kind === "model" ? await modelPreview(file, spec) : await filePreview(file, kind);
+    let preview: Blob;
+    if (kind === "model") {
+      preview = await modelPreview(file, spec);
+    } else {
+      const result = await renderDocumentPreview(file, kind, spec);
+      preview = result.blob;
+      this.documentPreviewNotes.set(assetId, { rendered: result.rendered, note: result.note, width: result.width, height: result.height });
+    }
     if (!isCurrent()) return false;
     // Each requesting node retains its own result; another copy may have a
     // different aspect ratio while still referencing the same original asset.
@@ -281,6 +308,9 @@ export class MediaLibrary {
     const variant: AssetVariant = `preview-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
     if (!isCurrent()) return false;
     await this.adapter.putDerivative(assetId, variant, preview);
+    // The adapter revokes its internal object URL when a derivative is replaced;
+    // drop our cached lease too or the next render decodes a revoked blob URL.
+    this.revokeLease(assetId, variant);
     return isCurrent() ? variant : false;
   }
 

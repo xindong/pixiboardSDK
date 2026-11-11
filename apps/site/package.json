@@ -11,9 +11,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "docx-preview": "0.4.1",
+    "dompurify": "3.2.6",
     "fflate": "0.8.3",
     "lucide": "^1.33.0",
+    "markdown-it": "14.1.0",
+    "modern-screenshot": "4.7.0",
+    "pdfjs-dist": "4.10.38",
     "pixiboardjs": "workspace:*",
+    "pptx-preview": "1.0.7",
     "three": "^0.185.1"
   },
   "devDependencies": {

@@ -549,13 +549,24 @@ configureLocalPreviewRenderer(async (board, node, spec) => {
   if (!changed && isCurrent()) throw new Error("找不到原始资源，暂无预览。");
   if (!changed || !isCurrent()) return;
   const variant: AssetVariant = typeof changed === "string" ? changed : "preview";
-  if (variant === "preview") textureCache.delete(`${assetId}:preview`);
+  for (const key of [...textureCache.keys()]) {
+    if (key.startsWith(`${assetId}:preview`)) textureCache.delete(key);
+  }
   const current = board.nodes.get(node.id);
   if (current) {
     const assetRefs = Object.fromEntries(Object.entries(current.assetRefs ?? {}).filter(([key]) => !key.startsWith("_refreshPreview")));
-    board.nodes.update(node.id, { assetRefs: { ...assetRefs, preview: { assetId, variant },
-      [`_refreshPreview${Date.now()}`]: { assetId, variant } } });
+    const patch: Record<string, unknown> = { assetRefs: { ...assetRefs, preview: { assetId, variant },
+      [`_refreshPreview${Date.now()}`]: { assetId, variant } } };
+    const dims = mediaLibrary.documentPreviewNotes.get(assetId);
+    if (node.type !== "model" && dims?.width && dims?.height) {
+      const nextHeight = Math.max(1, Math.round(current.width * dims.height / dims.width));
+      patch.height = nextHeight;
+      patch.props = { ...current.props, intrinsicWidth: current.width, intrinsicHeight: nextHeight };
+    }
+    board.nodes.update(node.id, patch);
   }
+  const note = mediaLibrary.documentPreviewNotes.get(assetId);
+  return { rendered: note?.rendered ?? node.type === "model", note: note?.note };
 });
 
 async function decodeToBitmap(url: string): Promise<ImageBitmap | HTMLImageElement> {
@@ -1637,10 +1648,11 @@ function freeSpaceAnchor(board: PixiBoard): { x: number; y: number } {
 }
 
 function mediaTag(node: Readonly<BoardNode>): string {
-  const typeLabel = KIND_ICON[node.type as MediaKind] ?? node.type.toUpperCase();
+  const props = node.props as Partial<MediaProps>;
+  const ext = typeof props.fileExtension === "string" ? props.fileExtension.toLowerCase() : "";
+  const typeLabel = DOCUMENT_TAG[ext] ?? KIND_ICON[node.type as MediaKind] ?? node.type.toUpperCase();
   const previewLabel = previewTypeLabel(node, typeLabel);
   if (previewLabel) return previewLabel;
-  const props = node.props as Partial<MediaProps>;
   if (node.type === "image" || node.type === "video" || node.type === "audio") {
     if (props.mediaPreparationStatus === "pending" || props.mediaPreparationStatus === "processing") return `${typeLabel}:处理中`;
     if (props.mediaPreparationStatus === "error" || props.mediaPreparationStatus === "failed") return `${typeLabel}:准备失败`;
@@ -1653,6 +1665,12 @@ function mediaTag(node: Readonly<BoardNode>): string {
 }
 
 const KIND_ICON: Record<MediaKind, string> = { image: "IMG", video: "VID", audio: "AUD", model: "3D", html: "HTML", markdown: "MD", "text-file": "TXT", file: "FILE" };
+const DOCUMENT_TAG: Record<string, string> = {
+  pdf: "PDF", doc: "DOC", docx: "DOCX", xls: "XLS", xlsx: "XLSX", ppt: "PPT", pptx: "PPTX",
+  md: "MD", markdown: "MD", html: "HTML", htm: "HTML", txt: "TXT", log: "LOG", csv: "CSV",
+  json: "JSON", xml: "XML", yaml: "YAML", yml: "YML", js: "JS", ts: "TS", py: "PY", sh: "SH",
+  css: "CSS", sql: "SQL", zip: "ZIP",
+};
 
 function isMediaKind(type: string): type is MediaKind {
   return ["image", "video", "audio", "model", "html", "markdown", "text-file", "file"].includes(type);
@@ -2037,21 +2055,33 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
     }
   });
 
+  // Pausing keeps the current frame as the node preview instead of snapping
+  // back to the imported poster.
+  const togglePlayback = () => {
+    const playback = ensurePlayback();
+    if (!playback) return;
+    void playback.controls.toggle()
+      .then(() => {
+        if (!playback.controls.isPlaying() && activeInlineElement instanceof HTMLVideoElement
+          && activeInlineElement.readyState >= 2 && !activeInlineElement.seeking) {
+          refreshVideoFramePreview(activeNodeId, activeAssetId, activeInlineElement);
+        }
+      })
+      .catch(() => undefined)
+      .finally(syncPlayback);
+  };
+
   selectionPlayback.addEventListener("click", (event) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-selection-action='toggle-playback']");
     if (!button) return;
     if (event.detail !== 0) return;
-    void ensurePlayback()?.controls.toggle()
-      .catch((error) => showToast(`播放失败：${error instanceof Error ? error.message : String(error)}`, "error"))
-      .finally(syncPlayback);
+    togglePlayback();
   });
 
   playbackToggle.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    void ensurePlayback()?.controls.toggle()
-      .catch((error) => showToast(`播放失败：${error instanceof Error ? error.message : String(error)}`, "error"))
-      .finally(syncPlayback);
+    togglePlayback();
   });
 
   playbackProgress.addEventListener("pointerdown", () => {
@@ -2285,29 +2315,9 @@ function collectDocumentAssetIds(document: BoardDocument, output: Set<string>): 
 }
 
 function showToast(message: string, tone: "info" | "error" | "success" = "info"): void {
-  let container = document.querySelector<HTMLElement>("#dsh-toast-container");
-  if (!container) {
-    container = document.createElement("div");
-    container.id = "dsh-toast-container";
-    container.setAttribute("aria-live", "polite");
-    Object.assign(container.style, {
-      position: "fixed", right: "20px", bottom: "20px", zIndex: "10000",
-      display: "flex", flexDirection: "column", gap: "8px", maxWidth: "min(420px, calc(100vw - 40px))",
-      pointerEvents: "none",
-    });
-    document.body.append(container);
-  }
-  const toast = document.createElement("div");
-  toast.textContent = message;
-  toast.setAttribute("role", tone === "error" ? "alert" : "status");
-  Object.assign(toast.style, {
-    padding: "10px 14px", borderRadius: "8px", color: "#fff", fontSize: "13px",
-    lineHeight: "1.5", overflowWrap: "anywhere", boxShadow: "0 4px 16px rgba(0,0,0,.2)",
-    background: tone === "error" ? "#b42318" : tone === "success" ? "#16734a" : "#303846",
-  });
-  container.append(toast);
-  while (container.children.length > 4) container.firstElementChild?.remove();
-  window.setTimeout(() => { toast.remove(); if (!container?.children.length) container?.remove(); }, tone === "error" ? 7000 : 3500);
+  // No floating status popups: keep the canvas clean like the plugin. Errors
+  // still surface in the console for debugging.
+  if (tone === "error") console.warn("[pixiboard]", message);
 }
 
 function exportDocument(board: PixiBoard): void {
