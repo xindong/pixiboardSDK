@@ -153,7 +153,7 @@ export class MediaLibrary {
     if (kind === "video") {
       const poster = await videoPoster(file);
       await this.adapter.putDerivative(assetId, "preview", poster.blob);
-      return { assetId, kind, name: file.name, mimeType: file.type, size: file.size, duration: poster.duration, ...fitNode(poster.width, poster.height) };
+      return { assetId, kind, name: file.name, mimeType: file.type, size: file.size, duration: poster.duration, hasPreview: true, ...fitNode(poster.width, poster.height) };
     }
 
     if (kind === "audio") {
@@ -168,6 +168,7 @@ export class MediaLibrary {
         duration: waveform.duration,
         width: AUDIO_NODE_WIDTH,
         height: AUDIO_NODE_HEIGHT,
+        hasPreview: true,
       };
     }
 
@@ -307,6 +308,9 @@ export class MediaLibrary {
     const variant: AssetVariant = `preview-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
     if (!isCurrent()) return false;
     await this.adapter.putDerivative(assetId, variant, preview);
+    // The adapter revokes its internal object URL when a derivative is replaced;
+    // drop our cached lease too or the next render decodes a revoked blob URL.
+    this.revokeLease(assetId, variant);
     return isCurrent() ? variant : false;
   }
 
