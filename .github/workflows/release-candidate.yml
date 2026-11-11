@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@v8
         with:
           script: |
             const rawSha = process.env.CANDIDATE_SHA ?? "";
@@ -67,7 +67,7 @@ jobs:
       PIXIBOARD_RELEASE_ARTIFACT_DIR: .artifacts/release
       PIXIBOARD_BUNDLE_REPORT: .artifacts/release/bundle-report.json
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.CANDIDATE_SHA }}
       - uses: ./.github/actions/setup-sdk
@@ -82,7 +82,7 @@ jobs:
           test "$(find .artifacts/release/api-reports -maxdepth 1 -name '*.api.md' | wc -l | tr -d ' ')" = 9
           test -s .artifacts/release/bundle-report.json
           test -s .artifacts/release/release-manifest.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: pixiboard-public-packages-rc-${{ env.CANDIDATE_SHA }}
           path: .artifacts/release/
@@ -96,7 +96,7 @@ jobs:
     env:
       PIXIBOARD_REQUIRE_BROWSER: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.CANDIDATE_SHA }}
       - uses: ./.github/actions/setup-sdk
@@ -112,14 +112,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 100
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.CANDIDATE_SHA }}
       - uses: ./.github/actions/setup-sdk
       - run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - run: pnpm exec playwright install --with-deps chromium
       - run: node scripts/check-performance-gate.mjs rc
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: performance-rc-${{ env.CANDIDATE_SHA }}
@@ -132,7 +132,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.CANDIDATE_SHA }}
       - uses: ./.github/actions/setup-sdk
@@ -155,7 +155,7 @@ jobs:
     env:
       PIXIBOARD_DESKTOP_PLATFORM: ${{ matrix.label }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.CANDIDATE_SHA }}
       - uses: dtolnay/rust-toolchain@stable

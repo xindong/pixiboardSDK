@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-sdk
       - run: pnpm docs:check
       - run: pnpm packages:check
@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-sdk
       - run: node scripts/run-core-gate.mjs
       - run: pnpm --filter pixiboardjs-site test
@@ -45,13 +45,13 @@ jobs:
     env:
       PIXIBOARD_REQUIRE_BROWSER: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-sdk
       - run: pnpm --filter @pixi-board/core build
       - run: pnpm --filter pixiboardjs build
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm exec playwright test --config tests/browser/playwright.config.ts --grep-invert "media-heavy"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: chromium-traces-${{ github.run_id }}
@@ -65,8 +65,8 @@ jobs:
     env:
       BASELINE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.BASELINE_SHA }}
           path: .benchmark-baseline
@@ -89,7 +89,7 @@ jobs:
             --candidate .artifacts/performance/pr/node.json \
             --tolerance 0.5 \
             | tee .artifacts/performance/pr/regression.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: performance-pr-${{ github.run_id }}
@@ -113,7 +113,7 @@ jobs:
     env:
       PIXIBOARD_DESKTOP_PLATFORM: ${{ matrix.label }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
