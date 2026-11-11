@@ -51,12 +51,33 @@ const ICONS = {
   drag: GripHorizontal,
 } satisfies Record<string, IconNode>;
 
-export type SiteIconName = keyof typeof ICONS;
+export type SiteIconName = keyof typeof ICONS | "agent";
 
 export function createIcon(
   name: SiteIconName,
   { className, size = 16, strokeWidth = 2 }: { className?: string; size?: number; strokeWidth?: number } = {},
 ): SVGElement {
+  if (name === "agent") {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const attributes = {
+      "aria-hidden": "true",
+      class: className ? `ui-icon ${className}` : "ui-icon",
+      focusable: "false",
+      viewBox: "0 0 24 24",
+      height: String(size),
+      width: String(size),
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": String(strokeWidth),
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+    };
+    for (const [key, value] of Object.entries(attributes)) svg.setAttribute(key, value);
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M21 15a4 4 0 0 1-4 4H7l-4 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z");
+    svg.append(path);
+    return svg;
+  }
   return createLucideElement(ICONS[name], {
     "aria-hidden": "true",
     class: className ? `ui-icon ${className}` : "ui-icon",

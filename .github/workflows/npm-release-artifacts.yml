@@ -23,7 +23,7 @@ jobs:
       PIXIBOARD_RELEASE_ARTIFACT_DIR: .artifacts/release
       PIXIBOARD_BUNDLE_REPORT: .artifacts/release/bundle-report.json
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: main
       - name: Require the requested main HEAD
@@ -43,7 +43,7 @@ jobs:
           pnpm --filter @pixi-board/agent-tools exec api-extractor run --local --config api-extractor.schemas.json
       - run: node scripts/check-current-document-only.mjs
       - run: pnpm release:check
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: npm-release-${{ inputs.candidate_sha }}
           path: .artifacts/release/

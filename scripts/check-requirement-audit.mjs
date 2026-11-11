@@ -227,7 +227,7 @@ rows.push(
   await exists("apps/examples-desktop-sdk/src-tauri/Cargo.toml") &&
     has(desktopTests, /routes UI, Agent and Plugin v3/) &&
     has(desktopControllerTests, /destroys the previous/) &&
-    has(desktopWorkflow, /macos-14/) &&
+    has(desktopWorkflow, /macos-15/) &&
     has(desktopWorkflow, /windows-2022/)
     ? partial(
         "desktop-tauri-scoped-parity",
