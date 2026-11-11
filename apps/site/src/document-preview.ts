@@ -1,5 +1,6 @@
 import type { PreviewSpec } from '@pixi-board/core'
 import type MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import type { MediaKind } from './media'
 
@@ -111,37 +112,20 @@ async function rasterizeDom(padding: string, render: (inner: HTMLElement) => Pro
 
 const RICH_ELEMENT_CSS = 'h1{font-size:24px;font-weight:700;margin:0 0 12px;color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:8px}h2{font-size:20px;font-weight:700;margin:16px 0 10px;color:#0f172a}h3{font-size:17px;font-weight:600;margin:14px 0 8px;color:#1e293b}p{margin:0 0 10px}ul,ol{margin:0 0 10px;padding-left:24px}li{margin:3px 0}code{font:13px ' + MONO + ';background:#f1f5f9;padding:2px 5px;border-radius:4px;color:#be185d}pre{background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:8px;overflow:hidden;margin:0 0 12px}pre code{background:transparent;color:inherit;padding:0}blockquote{border-left:4px solid #cbd5e1;margin:0 0 12px;padding:4px 14px;color:#475569;background:#f8fafc}a{color:#2563eb;text-decoration:none}table{border-collapse:collapse;margin:0 0 12px}th,td{border:1px solid #e2e8f0;padding:5px 9px}th{background:#f1f5f9}hr{border:0;border-top:1px solid #e2e8f0;margin:14px 0}strong{font-weight:700;color:#0f172a}img{max-width:100%}'
 
-// DOM-based whitelist sanitization: parse inert, drop dangerous nodes and
-// attributes, then adopt clean nodes. No regex filtering and no innerHTML sink.
-const BLOCKED_ELEMENTS = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META', 'BASE', 'FORM', 'INPUT', 'BUTTON', 'TEXTAREA', 'SELECT', 'FRAME', 'FRAMESET', 'APPLET', 'NOSCRIPT', 'TEMPLATE'])
+// DOMPurify is a recognized sanitizer barrier: it returns an inert, clean
+// fragment (no script/iframe/on* /javascript:), so adopting it is safe and no
+// raw text is ever reinterpreted as HTML.
+const FORBID_TAGS = ['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta', 'base', 'form', 'input', 'button', 'textarea', 'select', 'frame', 'frameset', 'applet', 'noscript', 'template']
 function appendSanitizedHtml(target: HTMLElement, html: string): void {
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  const root = doc.body
-  const blocked: Element[] = []
-  const externalImages: Element[] = []
-  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_ELEMENT)
-  while (walker.nextNode()) {
-    const el = walker.currentNode as Element
-    if (BLOCKED_ELEMENTS.has(el.tagName)) { blocked.push(el); continue }
-    if (el.tagName === 'IMG' && !(el.getAttribute('src') || '').startsWith('data:')) { externalImages.push(el); continue }
-    for (const attr of [...el.attributes]) {
-      const name = attr.name.toLowerCase()
-      if (name.startsWith('on') || name === 'srcdoc') el.removeAttribute(attr.name)
-      else if ((name === 'href' || name === 'src' || name === 'xlink:href') && /^\s*(javascript|vbscript):/i.test(attr.value)) el.removeAttribute(attr.name)
-    }
-  }
-  for (const el of blocked) el.remove()
-  for (const el of externalImages) {
-    const span = doc.createElement('span')
+  const fragment = DOMPurify.sanitize(html, { RETURN_DOM_FRAGMENT: true, FORBID_TAGS, FORBID_ATTR: ['srcdoc'] })
+  for (const img of Array.from(fragment.querySelectorAll('img'))) {
+    if ((img.getAttribute('src') || '').startsWith('data:')) continue
+    const span = document.createElement('span')
     span.setAttribute('style', 'color:#94a3b8')
-    span.textContent = '[图: ' + (el.getAttribute('alt') || '图片') + ']'
-    el.replaceWith(span)
+    span.textContent = '[图: ' + (img.getAttribute('alt') || '图片') + ']'
+    img.replaceWith(span)
   }
-  while (root.firstChild) {
-    const child = root.firstChild
-    root.removeChild(child)
-    target.append(document.importNode(child, true))
-  }
+  target.append(fragment)
 }
 
 async function renderMarkdownContent(file: File): Promise<HTMLCanvasElement> {
@@ -320,8 +304,11 @@ async function renderPdfContent(file: File, spec?: Partial<PreviewSpec>): Promis
   }
 }
 
-function xmlText(xml: string, paragraphBreak: RegExp): string {
-  return decodeEntities(xml.replace(paragraphBreak, '\n').replace(/<[^>]+>/g, '')).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+function xmlText(xml: string, paragraphTag: string): string {
+  const doc = new DOMParser().parseFromString(xml, 'text/xml')
+  const lines: string[] = []
+  for (const paragraph of Array.from(doc.getElementsByTagName(paragraphTag))) lines.push(paragraph.textContent || '')
+  return lines.join('\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 
 export async function extractOfficeText(file: File, ext: string): Promise<string> {
@@ -329,11 +316,11 @@ export async function extractOfficeText(file: File, ext: string): Promise<string
   const entries = unzipSync(new Uint8Array(await file.arrayBuffer()))
   const decoder = new TextDecoder('utf-8')
   const read = (name: string) => entries[name] ? decoder.decode(entries[name]) : ''
-  if (ext === 'docx') return xmlText(read('word/document.xml'), /<\/w:p>/g)
+  if (ext === 'docx') return xmlText(read('word/document.xml'), 'w:p')
   if (ext === 'pptx') {
     const slides = Object.keys(entries).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n))
       .sort((a, b) => Number(a.match(/slide(\d+)/)![1]) - Number(b.match(/slide(\d+)/)![1]))
-    return slides.slice(0, 100).map((name, index) => '〔幻灯片 ' + (index + 1) + '〕\n' + xmlText(read(name), /<\/a:p>/g)).join('\n\n')
+    return slides.slice(0, 100).map((name, index) => '〔幻灯片 ' + (index + 1) + '〕\n' + xmlText(read(name), 'a:p')).join('\n\n')
   }
   if (ext === 'xlsx') {
     const grid = await extractXlsxGrid(file)
