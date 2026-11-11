@@ -545,7 +545,8 @@ configureLocalPreviewRenderer(async (board, node, spec) => {
   if (!assetId || !isMediaKind(node.type)) throw new Error("找不到原始资源，暂无预览。");
   const requestId = (board.nodes.get(node.id)?.props as PreviewImportState | undefined)?.previewRequestId;
   const isCurrent = () => (board.nodes.get(node.id)?.props as PreviewImportState | undefined)?.previewRequestId === requestId;
-  const changed = await mediaLibrary.refreshPreview(assetId, node.type, spec, isCurrent);
+  const info: { rendered?: boolean; note?: string; width?: number; height?: number } = {};
+  const changed = await mediaLibrary.refreshPreview(assetId, node.type, spec, isCurrent, info);
   if (!changed && isCurrent()) throw new Error("找不到原始资源，暂无预览。");
   if (!changed || !isCurrent()) return;
   const variant: AssetVariant = typeof changed === "string" ? changed : "preview";
@@ -557,16 +558,14 @@ configureLocalPreviewRenderer(async (board, node, spec) => {
     const assetRefs = Object.fromEntries(Object.entries(current.assetRefs ?? {}).filter(([key]) => !key.startsWith("_refreshPreview")));
     const patch: Record<string, unknown> = { assetRefs: { ...assetRefs, preview: { assetId, variant },
       [`_refreshPreview${Date.now()}`]: { assetId, variant } } };
-    const dims = mediaLibrary.documentPreviewNotes.get(assetId);
-    if (node.type !== "model" && dims?.width && dims?.height) {
-      const nextHeight = Math.max(1, Math.round(current.width * dims.height / dims.width));
+    if (node.type !== "model" && info.width && info.height) {
+      const nextHeight = Math.max(1, Math.round(current.width * info.height / info.width));
       patch.height = nextHeight;
       patch.props = { ...current.props, intrinsicWidth: current.width, intrinsicHeight: nextHeight };
     }
     board.nodes.update(node.id, patch);
   }
-  const note = mediaLibrary.documentPreviewNotes.get(assetId);
-  return { rendered: note?.rendered ?? node.type === "model", note: note?.note };
+  return { rendered: info.rendered ?? node.type === "model", note: info.note };
 });
 
 async function decodeToBitmap(url: string): Promise<ImageBitmap | HTMLImageElement> {
@@ -2060,13 +2059,9 @@ function wireSelectionActions(board: PixiBoard, resyncMediaBadges: () => void): 
   const togglePlayback = () => {
     const playback = ensurePlayback();
     if (!playback) return;
+    // The element's own pause listener captures the paused frame; do not
+    // duplicate that work here.
     void playback.controls.toggle()
-      .then(() => {
-        if (!playback.controls.isPlaying() && activeInlineElement instanceof HTMLVideoElement
-          && activeInlineElement.readyState >= 2 && !activeInlineElement.seeking) {
-          refreshVideoFramePreview(activeNodeId, activeAssetId, activeInlineElement);
-        }
-      })
       .catch(() => undefined)
       .finally(syncPlayback);
   };

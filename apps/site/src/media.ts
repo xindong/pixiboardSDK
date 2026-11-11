@@ -87,8 +87,6 @@ export class MediaLibrary {
   /** Object URLs are revoked wholesale on dispose, so leases are tracked here. */
   private readonly leases = new Map<string, { url: string; revoke: () => void }>();
   private readonly opfsSupported: boolean;
-  /** Whether the latest document preview drew real content (vs. a fallback card). */
-  readonly documentPreviewNotes = new Map<string, { rendered: boolean; note?: string; width?: number; height?: number }>();
 
   constructor() {
     this.opfsSupported = typeof navigator?.storage?.getDirectory === "function";
@@ -174,6 +172,7 @@ export class MediaLibrary {
 
     let state = documentPreviewImport(file, kind);
     let preview: Blob;
+    let docDims: { width: number; height: number } | undefined;
     if (kind === "model" && !hasSitePreviewRenderer()) {
       try {
         preview = await modelPreview(file, state.previewSpec);
@@ -185,7 +184,7 @@ export class MediaLibrary {
     } else {
       const result = await renderDocumentPreview(file, kind, state.previewSpec);
       preview = result.blob;
-      this.documentPreviewNotes.set(assetId, { rendered: result.rendered, note: result.note, width: result.width, height: result.height });
+      docDims = { width: result.width, height: result.height };
       state = {
         ...state,
         previewStatus: result.rendered ? "ready" : "unsupported",
@@ -198,9 +197,8 @@ export class MediaLibrary {
     // its height follow the preview's natural aspect so the whole file shows.
     let nodeWidth = kind === "model" ? MODEL_NODE_WIDTH : DOCUMENT_NODE_WIDTH;
     let nodeHeight = kind === "model" ? MODEL_NODE_HEIGHT : DOCUMENT_NODE_HEIGHT;
-    const dims = this.documentPreviewNotes.get(assetId);
-    if (kind !== "model" && dims?.width && dims?.height) {
-      nodeHeight = Math.max(1, Math.round(nodeWidth * dims.height / dims.width));
+    if (kind !== "model" && docDims) {
+      nodeHeight = Math.max(1, Math.round(nodeWidth * docDims.height / docDims.width));
     }
     return {
       assetId,
@@ -262,7 +260,8 @@ export class MediaLibrary {
     await this.adapter.deleteAsset(assetId);
   }
 
-  async refreshPreview(assetId: string, kind: MediaKind, spec?: PreviewSpec, isCurrent: () => boolean = () => true): Promise<boolean | AssetVariant> {
+  async refreshPreview(assetId: string, kind: MediaKind, spec?: PreviewSpec, isCurrent: () => boolean = () => true,
+    out?: { rendered?: boolean; note?: string; width?: number; height?: number }): Promise<boolean | AssetVariant> {
     const stored = await this.adapter.getAsset(assetId, { variant: "original" });
     if (!stored) return false;
 
@@ -294,12 +293,13 @@ export class MediaLibrary {
     }
 
     let preview: Blob;
+    let docResult: { rendered: boolean; note?: string; width: number; height: number } | undefined;
     if (kind === "model") {
       preview = await modelPreview(file, spec);
     } else {
       const result = await renderDocumentPreview(file, kind, spec);
       preview = result.blob;
-      this.documentPreviewNotes.set(assetId, { rendered: result.rendered, note: result.note, width: result.width, height: result.height });
+      docResult = result;
     }
     if (!isCurrent()) return false;
     // Each requesting node retains its own result; another copy may have a
@@ -311,7 +311,14 @@ export class MediaLibrary {
     // The adapter revokes its internal object URL when a derivative is replaced;
     // drop our cached lease too or the next render decodes a revoked blob URL.
     this.revokeLease(assetId, variant);
-    return isCurrent() ? variant : false;
+    if (!isCurrent()) return false;
+    // Per-call out param (filled only for the still-current request) avoids a
+    // shared "latest result" racing between concurrent previews of one asset.
+    if (out && docResult) {
+      out.rendered = docResult.rendered; out.note = docResult.note;
+      out.width = docResult.width; out.height = docResult.height;
+    }
+    return variant;
   }
 
   async updateVideoPreviewFromElement(assetId: string, video: HTMLVideoElement): Promise<boolean> {
