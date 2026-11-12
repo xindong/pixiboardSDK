@@ -470,4 +470,11 @@ export type {
   PreviewState,
   PreviewNode,
   PreviewSpecOptions,
+  PreviewRenderer,
+  PreviewRenderInput,
+  PreviewRenderResult,
+  PreviewSource,
+  PreviewBlobLike,
+  PreviewRendererRegistryOptions,
+  RegisterPreviewRendererOptions,
 } from "@pixi-board/core";

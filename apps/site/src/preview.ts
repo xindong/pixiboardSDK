@@ -1,7 +1,5 @@
 import {
   createPreviewSpec,
-  isDocumentPreviewType,
-  isPreviewNodeType,
   previewStatusLabel,
   type AssetVariant,
   type BoardNode,
@@ -12,6 +10,7 @@ import {
 } from "@pixi-board/core";
 import type { PixiBoard } from "pixiboardjs/browser";
 import type { MediaKind } from "./media";
+import { previewRegistry } from "./preview-registry";
 
 export type PreviewImportState = Partial<PreviewState> & {
   fileExtension?: string;
@@ -54,8 +53,11 @@ export function previewProperties(value: object): PreviewImportState {
     : source[key] !== undefined).map((key) => [key, source[key]])) as PreviewImportState;
 }
 
+// This host's own node kinds that carry a preview. The SDK core has no such list.
+const DOCUMENT_NODE_TYPES: ReadonlySet<string> = new Set(["html", "markdown", "text-file", "file"]);
+function isPreviewNodeType(type: string): boolean { return DOCUMENT_NODE_TYPES.has(type) || type === "model"; }
 export function isDocumentNode(node: Readonly<BoardNode> | undefined): boolean {
-  return node !== undefined && isDocumentPreviewType(node.type);
+  return node !== undefined && DOCUMENT_NODE_TYPES.has(node.type);
 }
 export function isPreviewNode(node: Readonly<BoardNode> | undefined): boolean {
   return node !== undefined && isPreviewNodeType(node.type);
@@ -73,50 +75,23 @@ export function reportPreviewTextureReady(assetId: string, variant: AssetVariant
   currentHost?.onTextureReady?.(assetId, variant);
 }
 
-const archiveKinds = new WeakMap<File, { hasModel: boolean; error?: string }>();
-const DOCUMENT_EXTENSIONS = new Set(["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "html", "htm", "md", "markdown", "txt", "log", "csv", "json", "xml", "yaml", "yml", "css", "js", "ts", "jsx", "tsx", "py", "sh", "sql", "ini", "toml"]);
-const MODEL_FORMATS = new Set(["glb", "gltf", "fbx", "obj", "stl", "ply", "dae", "3mf", "3ds", "wrl", "vrml", "step", "stp"]);
-/** fflate's filter visits directory entries; returning false never inflates them. */
 export async function classifyPreviewFile(file: File, kind: MediaKind | undefined): Promise<MediaKind> {
   if (currentHost?.classifyFile) return currentHost.classifyFile(file, kind);
-  if (!/\.zip$/i.test(file.name)) return kind ?? "file";
-  if (file.size > 64 * 1024 * 1024) {
-    archiveKinds.set(file, { hasModel: false, error: "文件超过预览大小限制，按 ZIP 文件处理。" });
-    return "file";
-  }
-  try {
-    const { unzipSync } = await import("fflate");
-    let hasModel = false;
-    unzipSync(new Uint8Array(await file.arrayBuffer()), { filter(entry) {
-      const parts = entry.name.replaceAll("\\", "/").split("/");
-      const name = parts.at(-1) ?? "";
-      if (MODEL_FORMATS.has(name.split(".").pop()!.toLowerCase()) &&
-          !parts.some((part) => part === "__MACOSX" || part.startsWith("._"))) hasModel = true;
-      return false;
-    } });
-    archiveKinds.set(file, { hasModel });
-    return hasModel ? "model" : "file";
-  } catch {
-    archiveKinds.set(file, { hasModel: false, error: "无法读取 ZIP 目录，原文件已保存。" });
-    return "file";
-  }
+  return kind ?? "file";
 }
 
-export function documentPreviewImport(file: File, kind: MediaKind): PreviewImportState {
+export async function documentPreviewImport(file: File, kind: MediaKind): Promise<PreviewImportState> {
   if (currentHost?.importState) return currentHost.importState(file, kind);
   if (!isPreviewNodeType(kind)) return {};
   const extension = file.name.toLowerCase().split(".").pop() ?? "";
-  const archive = archiveKinds.get(file);
-  const supported = extension === "zip" ? archive?.hasModel === true
-    : kind !== "file" || DOCUMENT_EXTENSIONS.has(extension) || file.type === "application/pdf";
+  // Capability comes from the renderer registry, not from a format list.
+  const supported = (await previewRegistry.resolve({ data: file, name: file.name, extension, mime: file.type, kind })) !== undefined;
   const pending = hasSitePreviewRenderer() && supported;
   return {
     fileExtension: extension,
-    previewSpec: createPreviewSpec({ type: kind, width: 320, height: kind === "model" ? 240 : 220 }),
+    previewSpec: createPreviewSpec({ type: kind, width: 320, height: kind === "model" ? 240 : 220 }, { defaultHeight: kind === "model" ? 768 : 704 }),
     previewStatus: pending ? "pending" : "unsupported",
-    ...(!pending ? { previewError: extension === "zip" && !archive?.hasModel
-      ? archive?.error ?? "压缩包中没有支持预览的模型文件，按 ZIP 文件保存。"
-      : "此格式暂未提供内容预览，原文件已保存。" } : {}),
+    ...(!pending ? { previewError: "此格式暂未提供内容预览，原文件已保存。" } : {}),
   };
 }
 
@@ -137,7 +112,7 @@ export async function requestDocumentPreview(board: PixiBoard, nodeId: string, o
       ? node.height / node.width : node.type === "model" ? 768 / 1024 : 704 / 1024),
   } : options;
   if (currentHost?.requestPreview) return currentHost.requestPreview(board, nodeId, requestOptions);
-  const spec = createPreviewSpec(node, requestOptions);
+  const spec = createPreviewSpec(node, { ...requestOptions, defaultHeight: node.type === "model" ? 768 : 704 });
   const requestId = crypto.randomUUID();
   const assetId = node.assetRefs?.primary?.assetId ?? node.assetRefs?.preview?.assetId;
   if (assetId) localEpochs.set(assetId, (localEpochs.get(assetId) ?? 0) + 1);

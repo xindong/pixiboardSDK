@@ -959,12 +959,6 @@ export function isBrowserQuotaError(error: unknown): boolean;
 // @public (undocumented)
 export function isContentFit(value: unknown): value is ContentFit;
 
-// @public (undocumented)
-export function isDocumentPreviewType(type: string): boolean;
-
-// @public (undocumented)
-export function isPreviewNodeType(type: string): boolean;
-
 // Warning: (ae-forgotten-export) The symbol "JsonPrimitive" needs to be exported by the entry point browser.d.ts
 //
 // @public (undocumented)
@@ -1581,6 +1575,14 @@ export interface PortLifecycle {
 export function preferredMediaNodeSize(intrinsic: Size | undefined, maxWidth?: number, maxHeight?: number): Size;
 
 // @public
+export type PreviewBlobLike = {
+    readonly size: number;
+    readonly type: string;
+    slice(start?: number, end?: number): PreviewBlobLike;
+    arrayBuffer(): Promise<ArrayBuffer>;
+};
+
+// @public
 export type PreviewNode = {
     type?: string;
     name?: string;
@@ -1591,6 +1593,56 @@ export type PreviewNode = {
 
 // @public (undocumented)
 export type PreviewQuality = "thumbnail" | "detail";
+
+// @public
+export interface PreviewRenderer<Context = unknown, Data extends PreviewBlobLike = PreviewBlobLike, Out = unknown> {
+    // (undocumented)
+    readonly id: string;
+    readonly priority?: number;
+    // (undocumented)
+    render(input: PreviewRenderInput<Data>, context: Context): Promise<PreviewRenderResult<Out>>;
+    supports(source: PreviewSource<Data>): boolean | Promise<boolean>;
+}
+
+// @public
+export class PreviewRendererRegistry<Context = unknown, Data extends PreviewBlobLike = PreviewBlobLike, Out = unknown> {
+    constructor(options?: PreviewRendererRegistryOptions);
+    // (undocumented)
+    has(id: string): boolean;
+    list(): ReadonlyArray<PreviewRenderer<Context, Data, Out>>;
+    // (undocumented)
+    register(renderer: PreviewRenderer<Context, Data, Out>, options?: RegisterPreviewRendererOptions): () => void;
+    resolve(source: PreviewSource<Data>): Promise<PreviewRenderer<Context, Data, Out> | undefined>;
+}
+
+// @public (undocumented)
+export type PreviewRendererRegistryOptions = {
+    development?: boolean;
+};
+
+// @public (undocumented)
+export type PreviewRenderInput<Data extends PreviewBlobLike = PreviewBlobLike> = {
+    source: PreviewSource<Data>;
+    spec?: Partial<PreviewSpec>;
+};
+
+// @public
+export type PreviewRenderResult<Out = unknown> = {
+    blob: Out;
+    width: number;
+    height: number;
+    rendered: boolean;
+    note?: string;
+};
+
+// @public
+export type PreviewSource<Data extends PreviewBlobLike = PreviewBlobLike> = {
+    data: Data;
+    name: string;
+    extension: string;
+    mime: string;
+    kind: string;
+};
 
 // @public
 export type PreviewSpec = {
@@ -1608,6 +1660,7 @@ export type PreviewSpecOptions = {
     width?: number;
     height?: number;
     page?: number;
+    defaultHeight?: number;
 };
 
 // @public (undocumented)
@@ -1657,6 +1710,11 @@ export type PutAssetOptions = {
     signal?: AbortSignal;
     preferOpfs?: boolean;
     variant?: AssetBinaryVariant;
+};
+
+// @public (undocumented)
+export type RegisterPreviewRendererOptions = {
+    replace?: boolean;
 };
 
 // @public (undocumented)
@@ -1835,20 +1893,20 @@ export type WorldBounds = {
 
 // Warnings were encountered during analysis:
 //
-// dist/types-Cl2ogJCs.d.ts:426:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point browser.d.ts
-// dist/types-Cl2ogJCs.d.ts:426:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point browser.d.ts
-// dist/types-Cl2ogJCs.d.ts:429:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point browser.d.ts
-// dist/types-Cl2ogJCs.d.ts:435:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point browser.d.ts
-// dist/types-Cl2ogJCs.d.ts:435:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point browser.d.ts
-// dist/types-Cl2ogJCs.d.ts:436:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point browser.d.ts
-// dist/types-Cl2ogJCs.d.ts:437:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point browser.d.ts
-// dist/types-Cl2ogJCs.d.ts:440:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point browser.d.ts
-// dist/types-Cl2ogJCs.d.ts:447:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point browser.d.ts
-// dist/types-Cl2ogJCs.d.ts:454:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point browser.d.ts
-// dist/types-Cl2ogJCs.d.ts:482:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point browser.d.ts
-// dist/types-Cl2ogJCs.d.ts:682:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point browser.d.ts
-// dist/types-Cl2ogJCs.d.ts:685:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point browser.d.ts
-// dist/types-Cl2ogJCs.d.ts:686:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point browser.d.ts
+// dist/types-BHrHC5Wb.d.ts:499:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point browser.d.ts
+// dist/types-BHrHC5Wb.d.ts:499:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point browser.d.ts
+// dist/types-BHrHC5Wb.d.ts:502:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point browser.d.ts
+// dist/types-BHrHC5Wb.d.ts:508:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point browser.d.ts
+// dist/types-BHrHC5Wb.d.ts:508:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point browser.d.ts
+// dist/types-BHrHC5Wb.d.ts:509:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point browser.d.ts
+// dist/types-BHrHC5Wb.d.ts:510:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point browser.d.ts
+// dist/types-BHrHC5Wb.d.ts:513:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point browser.d.ts
+// dist/types-BHrHC5Wb.d.ts:520:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point browser.d.ts
+// dist/types-BHrHC5Wb.d.ts:527:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point browser.d.ts
+// dist/types-BHrHC5Wb.d.ts:555:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point browser.d.ts
+// dist/types-BHrHC5Wb.d.ts:755:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point browser.d.ts
+// dist/types-BHrHC5Wb.d.ts:758:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point browser.d.ts
+// dist/types-BHrHC5Wb.d.ts:759:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point browser.d.ts
 
 // (No @packageDocumentation comment for this package)
 

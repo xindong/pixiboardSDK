@@ -290,12 +290,6 @@ export function isAssetVariant(value: unknown): value is AssetVariant;
 export function isContentFit(value: unknown): value is ContentFit;
 
 // @public (undocumented)
-export function isDocumentPreviewType(type: string): boolean;
-
-// @public (undocumented)
-export function isPreviewNodeType(type: string): boolean;
-
-// @public (undocumented)
 export function isRenderAssetKind(value: string): value is RenderAssetKind;
 
 // @public (undocumented)
@@ -453,6 +447,14 @@ export type Point = {
 export function preferredMediaNodeSize(intrinsic: Size | undefined, maxWidth?: number, maxHeight?: number): Size;
 
 // @public
+export type PreviewBlobLike = {
+    readonly size: number;
+    readonly type: string;
+    slice(start?: number, end?: number): PreviewBlobLike;
+    arrayBuffer(): Promise<ArrayBuffer>;
+};
+
+// @public
 export type PreviewNode = {
     type?: string;
     name?: string;
@@ -463,6 +465,56 @@ export type PreviewNode = {
 
 // @public (undocumented)
 export type PreviewQuality = "thumbnail" | "detail";
+
+// @public
+export interface PreviewRenderer<Context = unknown, Data extends PreviewBlobLike = PreviewBlobLike, Out = unknown> {
+    // (undocumented)
+    readonly id: string;
+    readonly priority?: number;
+    // (undocumented)
+    render(input: PreviewRenderInput<Data>, context: Context): Promise<PreviewRenderResult<Out>>;
+    supports(source: PreviewSource<Data>): boolean | Promise<boolean>;
+}
+
+// @public
+export class PreviewRendererRegistry<Context = unknown, Data extends PreviewBlobLike = PreviewBlobLike, Out = unknown> {
+    constructor(options?: PreviewRendererRegistryOptions);
+    // (undocumented)
+    has(id: string): boolean;
+    list(): ReadonlyArray<PreviewRenderer<Context, Data, Out>>;
+    // (undocumented)
+    register(renderer: PreviewRenderer<Context, Data, Out>, options?: RegisterPreviewRendererOptions): () => void;
+    resolve(source: PreviewSource<Data>): Promise<PreviewRenderer<Context, Data, Out> | undefined>;
+}
+
+// @public (undocumented)
+export type PreviewRendererRegistryOptions = {
+    development?: boolean;
+};
+
+// @public (undocumented)
+export type PreviewRenderInput<Data extends PreviewBlobLike = PreviewBlobLike> = {
+    source: PreviewSource<Data>;
+    spec?: Partial<PreviewSpec>;
+};
+
+// @public
+export type PreviewRenderResult<Out = unknown> = {
+    blob: Out;
+    width: number;
+    height: number;
+    rendered: boolean;
+    note?: string;
+};
+
+// @public
+export type PreviewSource<Data extends PreviewBlobLike = PreviewBlobLike> = {
+    data: Data;
+    name: string;
+    extension: string;
+    mime: string;
+    kind: string;
+};
 
 // @public
 export type PreviewSpec = {
@@ -480,6 +532,7 @@ export type PreviewSpecOptions = {
     width?: number;
     height?: number;
     page?: number;
+    defaultHeight?: number;
 };
 
 // @public (undocumented)
@@ -503,6 +556,11 @@ export function readIntrinsicSize(value: unknown, fallback?: Partial<Size>): Siz
 
 // @public (undocumented)
 export type RegisterNodeTypeOptions = {
+    replace?: boolean;
+};
+
+// @public (undocumented)
+export type RegisterPreviewRendererOptions = {
     replace?: boolean;
 };
 

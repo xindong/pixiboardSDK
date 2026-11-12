@@ -1,5 +1,7 @@
 export * from "./asset-variant";
 export * from "./asset-previews";
+export * from "./preview-renderer";
+export * from "./preview-registry";
 export * from "./media-assets";
 export * from "./core";
 export * from "./errors";

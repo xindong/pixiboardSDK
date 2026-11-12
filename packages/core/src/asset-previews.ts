@@ -35,15 +35,9 @@ export type PreviewSpecOptions = {
   width?: number;
   height?: number;
   page?: number;
+  /** Layout height used when the node has no saved spec. Defaults to 704. */
+  defaultHeight?: number;
 };
-
-export function isDocumentPreviewType(type: string): boolean {
-  return type === "html" || type === "markdown" || type === "text-file" || type === "file";
-}
-
-export function isPreviewNodeType(type: string): boolean {
-  return isDocumentPreviewType(type) || type === "model";
-}
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -59,7 +53,7 @@ function positiveNumber(value: unknown, fallback: number): number {
 /** Pure layout calculation: never changes node geometry, camera, or persisted state. */
 export function createPreviewSpec(node: PreviewNode, options: PreviewSpecOptions = {}): PreviewSpec {
   const saved = record(record(node.props).previewSpec);
-  const defaultHeight = node.type === "model" ? 768 : 704;
+  const defaultHeight = positiveNumber(options.defaultHeight, 704);
   let width = positiveNumber(saved.width, 1024);
   let height = positiveNumber(saved.height, defaultHeight);
   let mode: PreviewSpec["mode"] = saved.mode === "fixed-viewport" ? "fixed-viewport" : "viewport";
@@ -91,18 +85,12 @@ export function createPreviewSpec(node: PreviewNode, options: PreviewSpecOptions
   return { width, height, page, mode, quality };
 }
 
-/** Short Chinese type tag. Full error details belong in previewError, never here. */
+/** Short Chinese status suffix for a host-supplied type tag. Format-specific tags are the host's job; error details belong in previewError, never here. */
 export function previewStatusLabel(
   node: Pick<PreviewNode, "type" | "name" | "props">,
   typeLabel: string,
 ): string {
   const props = record(node.props);
-  const name = typeof props.name === "string" ? props.name : node.name ?? "";
-  const isZip = (typeof props.fileExtension === "string" && props.fileExtension.toLowerCase() === "zip") || /\.zip$/i.test(name);
-  if (isZip && (node.type !== "model" ||
-    (typeof props.previewError === "string" && /ZIP_NO_MODEL/.test(props.previewError)))) {
-    typeLabel = "ZIP";
-  }
   switch (props.previewStatus) {
     case "pending":
     case "queued":

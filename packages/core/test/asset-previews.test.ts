@@ -82,11 +82,11 @@ describe("media rendering contracts", () => {
 });
 
 describe("preview layout contracts", () => {
-  it("uses a stable default viewport independent of card geometry, with a taller model viewport", () => {
+  it("uses a stable default viewport independent of card geometry, with a host-supplied default height", () => {
     const expected = { width: 1024, height: 704, page: 1, mode: "viewport", quality: "thumbnail" };
     expect(createPreviewSpec({ width: 300, height: 100 })).toEqual(expected);
     expect(createPreviewSpec({ type: "file", width: 80, height: 900 })).toEqual(expected);
-    expect(createPreviewSpec({ type: "model", width: 300, height: 100 })).toEqual({
+    expect(createPreviewSpec({ type: "model", width: 300, height: 100 }, { defaultHeight: 768 })).toEqual({
       ...expected, height: 768,
     });
   });
@@ -162,7 +162,7 @@ describe("preview layout contracts", () => {
         width: 1024, height: 704, page: 1,
       });
     }
-    expect(createPreviewSpec({ ...node, type: "model" }, { reason: "reset" })).toMatchObject({
+    expect(createPreviewSpec({ ...node, type: "model" }, { reason: "reset", defaultHeight: 768 })).toMatchObject({
       width: 1024, height: 768, mode: "fixed-viewport",
     });
     expect(createPreviewSpec({
@@ -190,19 +190,6 @@ describe("preview status labels", () => {
       expect(previewStatusLabel({ props: { previewStatus } }, "PDF")).toBe("PDF");
     }
     expect(previewStatusLabel({}, "PDF")).toBe("PDF");
-  });
-
-  it("labels ZIP_NO_MODEL as ZIP while retaining the model label for ordinary model archives", () => {
-    const model = { type: "model", name: "scene.ZIP", props: { previewStatus: "failed" } };
-    expect(previewStatusLabel(model, "3D")).toBe("3D:暂无预览");
-    expect(previewStatusLabel({
-      ...model, props: { ...model.props, previewError: "ZIP_NO_MODEL: no supported model found" },
-    }, "3D")).toBe("ZIP:暂无预览");
-    expect(previewStatusLabel({ type: "file", props: { fileExtension: "ZiP", previewStatus: "queued" } }, "文件"))
-      .toBe("ZIP:预览生成中");
-    expect(previewStatusLabel({ type: "file", name: "archive.ZIP" }, "文件")).toBe("ZIP");
-    expect(previewStatusLabel({ type: "file", name: "old.zip", props: { name: "renamed.pdf" } }, "PDF"))
-      .toBe("PDF");
   });
 });
 

@@ -30,7 +30,8 @@
     "benchmark:browser": "pnpm --filter pixiboardjs-benchmark benchmark:browser",
     "benchmark:browser:evidence": "node scripts/run-browser-benchmark-gate.mjs",
     "benchmark:test": "pnpm --filter pixiboardjs-benchmark test",
-    "benchmark:check": "pnpm --filter pixiboardjs-benchmark benchmark:check"
+    "benchmark:check": "pnpm --filter pixiboardjs-benchmark benchmark:check",
+    "format:check": "node scripts/check-no-format-knowledge.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.7",

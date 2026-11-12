@@ -35,7 +35,8 @@ const requiredFiles = [
   "docs/adr/0008-browser-storage.md",
   "docs/adr/0009-plugin-api-v3.md",
   "docs/adr/0010-public-package-scope.md",
-  "docs/adr/0011-new-document-format-only.md"
+  "docs/adr/0011-new-document-format-only.md",
+  "docs/adr/0014-preview-renderer-registry.md"
 ];
 
 for (const file of requiredFiles) {

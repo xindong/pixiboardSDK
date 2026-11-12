@@ -37,6 +37,7 @@
 - [adr/0010-public-package-scope.md](adr/0010-public-package-scope.md)
 - [adr/0011-new-document-format-only.md](adr/0011-new-document-format-only.md)
 - [adr/0012-public-capabilities-agent-tools.md](adr/0012-public-capabilities-agent-tools.md)
+- [adr/0014-preview-renderer-registry.md](adr/0014-preview-renderer-registry.md)
 
 ## 完成定义
 
