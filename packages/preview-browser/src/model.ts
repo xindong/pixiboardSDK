@@ -1,6 +1,5 @@
 import type { PreviewRenderer, PreviewRenderInput } from '@pixi-board/core'
 import type { BrowserPreviewContext } from './context'
-import { isModelExtension, probeArchiveForModel } from './model-archive'
 
 export type ModelRendererOptions = {
   /** Output background; default a light grey that reads on both light and dark boards. */
@@ -13,7 +12,11 @@ export type ModelRendererOptions = {
 
 type Thumbs = ReturnType<typeof import('mivo-model-viewer/core')['createThumbnailRenderer']>
 
-/** Renders 3D models and ZIP packages containing one, using the mivo-model-viewer SDK. */
+/** 3D formats handled by this renderer. Kept here so `supports()` never has to load the SDK. ZIP is deliberately not one of them. */
+export const MODEL_EXTENSIONS: ReadonlySet<string> = new Set(['glb', 'gltf', 'fbx', 'obj', 'stl', 'ply', 'dae', '3mf', '3ds', 'wrl', 'vrml', 'step', 'stp'])
+export function isModelExtension(extension: string): boolean { return MODEL_EXTENSIONS.has(extension.toLowerCase()) }
+
+/** Renders 3D model files using the mivo-model-viewer SDK. */
 export function createModelRenderer(options: ModelRendererOptions = {}): PreviewRenderer<BrowserPreviewContext, File, Blob> & { dispose(): void } {
   let thumbs: Promise<Thumbs> | undefined
   const get = () => thumbs ??= import('mivo-model-viewer/core').then(async sdk => {
@@ -22,10 +25,7 @@ export function createModelRenderer(options: ModelRendererOptions = {}): Preview
   })
   return {
     id: 'model',
-    async supports(source) {
-      if (source.extension === 'zip') return (await probeArchiveForModel(source.data)).hasModel
-      return isModelExtension(source.extension)
-    },
+    supports: source => isModelExtension(source.extension),
     async render({ source, spec }: PreviewRenderInput<File>) {
       const renderer = await get()
       const width = Math.round(spec?.width ?? 1024)

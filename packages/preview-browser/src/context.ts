@@ -29,6 +29,7 @@ const FORMAT: Record<string, { accent: string; label: string }> = {
   xml: { accent: '#f97316', label: 'XML' }, yaml: { accent: '#cb171e', label: 'YAML' }, yml: { accent: '#cb171e', label: 'YML' },
   js: { accent: '#f7df1e', label: 'JS' }, ts: { accent: '#3178c6', label: 'TS' },
   py: { accent: '#3776ab', label: 'PY' }, sh: { accent: '#4eaa25', label: 'SH' },
+  zip: { accent: '#475569', label: 'ZIP' },
   css: { accent: '#264de4', label: 'CSS' }, sql: { accent: '#e38c00', label: 'SQL' },
 }
 

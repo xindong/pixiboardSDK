@@ -11,9 +11,8 @@ import { textRenderer } from './text'
 import { xlsxRenderer } from './xlsx'
 
 export { extractOfficeText } from './office'
-export { createModelRenderer, type ModelRendererOptions } from './model'
+export { createModelRenderer, isModelExtension, MODEL_EXTENSIONS, type ModelRendererOptions } from './model'
 export { createPdfRenderer } from './pdf'
-export { isModelExtension, probeArchiveForModel, MODEL_EXTENSIONS } from './model-archive'
 export { createBrowserPreviewContext } from './context'
 export { cardRenderer, docxRenderer, htmlRenderer, markdownRenderer, pptxRenderer, textRenderer, xlsxRenderer }
 export type { BrowserPreviewContext } from './context'

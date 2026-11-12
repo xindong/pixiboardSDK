@@ -1,5 +1,6 @@
 import {
   createPreviewSpec,
+  previewStatusLabel,
   type AssetVariant,
   type BoardNode,
   type JsonValue,
@@ -9,9 +10,7 @@ import {
 } from "@pixi-board/core";
 import type { PixiBoard } from "pixiboardjs/browser";
 import type { MediaKind } from "./media";
-import { probeArchiveForModel } from "@pixi-board/preview-browser/model-archive";
 import { previewRegistry } from "./preview-registry";
-import { previewTypeLabelFor } from "./preview-labels";
 
 export type PreviewImportState = Partial<PreviewState> & {
   fileExtension?: string;
@@ -64,7 +63,7 @@ export function isPreviewNode(node: Readonly<BoardNode> | undefined): boolean {
   return node !== undefined && isPreviewNodeType(node.type);
 }
 export function previewTypeLabel(node: Readonly<BoardNode>, typeLabel: string): string | undefined {
-  const label = previewTypeLabelFor(node, typeLabel);
+  const label = previewStatusLabel(node, typeLabel);
   return label === typeLabel ? undefined : label;
 }
 
@@ -76,29 +75,23 @@ export function reportPreviewTextureReady(assetId: string, variant: AssetVariant
   currentHost?.onTextureReady?.(assetId, variant);
 }
 
-/** A ZIP is a model node only when the viewer SDK can find a model inside; otherwise it stays a plain file. */
 export async function classifyPreviewFile(file: File, kind: MediaKind | undefined): Promise<MediaKind> {
   if (currentHost?.classifyFile) return currentHost.classifyFile(file, kind);
-  if (!/\.zip$/i.test(file.name)) return kind ?? "file";
-  return (await probeArchiveForModel(file)).hasModel ? "model" : "file";
+  return kind ?? "file";
 }
 
 export async function documentPreviewImport(file: File, kind: MediaKind): Promise<PreviewImportState> {
   if (currentHost?.importState) return currentHost.importState(file, kind);
   if (!isPreviewNodeType(kind)) return {};
   const extension = file.name.toLowerCase().split(".").pop() ?? "";
-  const archive = extension === "zip" ? await probeArchiveForModel(file) : undefined;
   // Capability comes from the renderer registry, not from a format list.
-  const supported = extension === "zip" ? archive?.hasModel === true
-    : (await previewRegistry.resolve({ data: file, name: file.name, extension, mime: file.type, kind })) !== undefined;
+  const supported = (await previewRegistry.resolve({ data: file, name: file.name, extension, mime: file.type, kind })) !== undefined;
   const pending = hasSitePreviewRenderer() && supported;
   return {
     fileExtension: extension,
     previewSpec: createPreviewSpec({ type: kind, width: 320, height: kind === "model" ? 240 : 220 }, { defaultHeight: kind === "model" ? 768 : 704 }),
     previewStatus: pending ? "pending" : "unsupported",
-    ...(!pending ? { previewError: extension === "zip" && !archive?.hasModel
-      ? archive?.error ?? "压缩包中没有支持预览的模型文件，按 ZIP 文件保存。"
-      : "此格式暂未提供内容预览，原文件已保存。" } : {}),
+    ...(!pending ? { previewError: "此格式暂未提供内容预览，原文件已保存。" } : {}),
   };
 }
 
