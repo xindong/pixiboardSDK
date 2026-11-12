@@ -9,15 +9,15 @@ SDK 提供资产引用、预览状态和逻辑布局契约。宿主负责文件�
 ```ts
 import {
   isAssetVariant,
-  isDocumentPreviewType,
-  isPreviewNodeType,
   createPreviewSpec,
   previewStatusLabel,
+  PreviewRendererRegistry,
 } from "pixiboardjs";
 import type {
   AssetRef, AssetVariant,
   PreviewStatus, PreviewQuality, PreviewSpec, PreviewState,
   PreviewNode, PreviewSpecOptions,
+  PreviewRenderer, PreviewRenderInput, PreviewRenderResult, PreviewSource,
 } from "pixiboardjs/types";
 ```
 
@@ -55,13 +55,14 @@ await browserAdapter.putDerivative(assetId, candidate, binary);
 | `previewRequestId`、`previewJobId` | 可选 `string \| null`，宿主关联请求与任务 |
 | `previewError` | 可选 `string \| null`，保存完整错误信息供详情界面使用 |
 
-`isDocumentPreviewType(type: string)` 识别 `html`、`markdown`、`text-file`、`file`。`isPreviewNodeType(type: string)` 额外识别 `model`。这些函数只分类，不注册节点类型，也不判断文件能否成功渲染。
+SDK 不再提供"哪些节点类型带预览"的分类函数（旧的 `isDocumentPreviewType`、`isPreviewNodeType` 已移除）：节点类型与格式清单属于宿主，不属于 core。判断"某个文件能否被预览"请向[预览渲染器注册表](#预览渲染器)提问。
 
-`createPreviewSpec(node: PreviewNode, options?: PreviewSpecOptions): PreviewSpec` 是纯函数。最小输入为 `{ width, height, props? }`；可选 `type: 'model'` 选择模型默认高度。
+`createPreviewSpec(node: PreviewNode, options?: PreviewSpecOptions): PreviewSpec` 是纯函数。最小输入为 `{ width, height, props? }`。
 
-- 默认逻辑视口为 1024 × 704，模型为 1024 × 768，`page: 1`、`mode: 'viewport'`、`quality: 'thumbnail'`。
+- 默认逻辑视口为 1024 × 704，`page: 1`、`mode: 'viewport'`、`quality: 'thumbnail'`。
 - 已保存的 `props.previewSpec` 为计算基准，普通调用不随卡片大小、缩放或屏幕像素密度重新布局。
 - `options.reason` 为 `reset` 或 `refresh` 时，保留已保存的逻辑宽度（缺省 1024），仅采用当前卡片的高宽比计算高度，设为 `mode: 'fixed-viewport'`，默认质量为 `detail`。无有效卡片比例时采用对应类型的默认比例。
+- `options.defaultHeight` 指定没有已保存 spec 时的逻辑高度（默认 704，例如宿主给 3D 卡片传 768）；core 不识别任何节点类型。
 - `options.quality`、`width`、`height`、`page` 可显式覆盖；宽高覆盖在 reset/refresh 的比例计算之后应用。
 - 宽高为正整数，单边不超过 4096，总像素数不超过 8,000,000；按比例缩小，最终舍入也受总像素上限约束。
 - 缺失、NaN、Infinity、非数值或非正尺寸回退到默认值；可解析的数值字符串兼容旧的持久化数据。页码取正整数，无效值回退到 1，上限为 `Number.MAX_SAFE_INTEGER`。
@@ -78,9 +79,9 @@ const state: PreviewState = {
 // 任务结束时，宿主检查 requestId，写入二进制、引用、quality 与 ready/error。
 ```
 
-## 中文短标签与 ZIP
+## 中文短标签
 
-`previewStatusLabel(node, typeLabel): string` 返回完整的短标签：
+`previewStatusLabel(node, typeLabel): string` 在宿主给出的类型标签后附加状态：
 
 | 状态 | 示例 |
 | --- | --- |
@@ -88,6 +89,56 @@ const state: PreviewState = {
 | `error` / `failed` / `unsupported` | `PDF:暂无预览` |
 | `ready` / 未设置 / 未识别状态 | `PDF` |
 
-ZIP 通过 `props.fileExtension` 或文件名后缀识别，后缀不区分大小写。非模型 ZIP 使用 `ZIP` 类型标签；模型 ZIP 通常保留模型标签，若 `previewError` 包含 `ZIP_NO_MODEL` 则使用 `ZIP`。文件名优先采用 `props.name`，否则采用节点 `name`。
+类型标签（`PDF`、`ZIP`、`3D` 等）由宿主决定，core 不做任何格式识别。完整失败原因保存在 `previewError`，不拼接到短标签。宿主自行决定是否在详情、提示或重试界面展示原因。
 
-完整失败原因保存在 `previewError`，不拼接到短标签。宿主自行决定是否在详情、提示或重试界面展示原因。
+## 预览渲染器
+
+一种格式对应一个 `PreviewRenderer`。SDK core **不内置任何渲染器**，只定义接口和注册表；SDK 自带的格式与你自己添加的格式用同一个 `register()`，没有特殊通道。
+
+```ts
+import { PreviewRendererRegistry } from "pixiboardjs";
+import type { PreviewRenderer } from "pixiboardjs/types";
+
+// Context 是宿主传给 render() 的能力（DOM 光栅化、Worker 等），core 视为不透明。
+type Ctx = { toPng(canvas: HTMLCanvasElement): Promise<Blob> };
+
+const epub: PreviewRenderer<Ctx, File, Blob> = {
+  id: "epub",
+  priority: 0, // 越大越先匹配；兜底渲染器用很小的值
+  supports: (source) => source.extension === "epub", // 可以是 async，必要时读取文件头
+  async render({ source, spec }, ctx) {
+    const canvas = await drawCover(source.data, spec);
+    return { blob: await ctx.toPng(canvas), width: canvas.width, height: canvas.height, rendered: true };
+  },
+};
+
+const registry = new PreviewRendererRegistry<Ctx, File, Blob>();
+registry.register(epub);
+const renderer = await registry.resolve({ data: file, name: file.name, extension: "epub", mime: file.type, kind: "file" });
+```
+
+约定：
+
+- `resolve(source)` 按 `priority` 从高到低、同优先级按注册顺序询问 `supports()`，返回第一个命中的渲染器；没有命中返回 `undefined`。`supports()` 抛错视为未命中，不会遮住低优先级渲染器。
+- `render()` 返回 `{ blob, width, height, rendered, note? }`。`rendered: false` 表示只生成了占位卡片，内容没有渲染出来，宿主应把状态写成 `unsupported` 并展示 `note`。`render()` 抛错由宿主捕获并降级。
+- `PreviewSource.kind` 是宿主自己的分类，core 不解读。同一 id 重复注册会抛错；`replace` 仅在 `development: true` 的注册表里允许，规则与 `NodeTypeRegistry` 一致。
+- 渲染器是可信代码，由宿主显式注册，不要做成"任意插件自动注册"。
+- 渲染器只负责"文件 → 预览图"。它**不创建节点类型**：`.epub` 这类格式仍然是宿主已有的 `file` 节点，只是预览图由新渲染器生成。需要全新的卡片种类（自己的尺寸、交互）时，节点类型仍由宿主定义。
+- 导入、渲染、写回 `previewStatus` 与过期请求处理的管线由宿主实现（见上文"状态与布局"）。站点演示是一份参考实现。
+
+## 浏览器内置渲染器（`@pixi-board/preview-browser`）
+
+仓库内的私有包，提供 PDF、DOCX、PPTX、XLSX、Markdown、HTML、纯文本、3D 模型（基于 `mivo-model-viewer`）和兜底占位卡片渲染器，全部通过上面的接口实现：
+
+```ts
+import { createBuiltinPreviewRegistry, renderPreview } from "@pixi-board/preview-browser";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
+const registry = createBuiltinPreviewRegistry({ pdfWorkerSrc: pdfWorkerUrl });
+registry.register(myEpubRenderer);               // 与内置渲染器同级
+const result = await renderPreview(registry, file, "file");  // 渲染失败时返回 rendered: false 的占位卡片
+```
+
+- `createBuiltinPreviewRegistry` 的 `pdfWorkerSrc` 由宿主打包器提供；`model` 选项可传 `background`、`timeoutMs` 与 `configure(sdk)`（例如设置 Draco 解码器路径）。
+- 模型渲染器只接收模型扩展名；ZIP 按普通文件处理，不尝试解析为模型。
+- 这个包当前未发布到 npm，源码直接导出；发布前需要补构建和 API report。

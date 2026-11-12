@@ -40,6 +40,8 @@ packages/
 
 等接口稳定后再把 capabilities 和 adapters 拆为独立 workspace package。
 
+`@pixi-board/preview-browser` 是仓库内的私有包（未发布）：浏览器端预览渲染器，依赖 `core` 的 `PreviewRenderer` 接口，被站点使用；`core` 不依赖它，也不含任何格式知识（见 [ADR 0014](adr/0014-preview-renderer-registry.md)）。
+
 ## 依赖方向
 
 ```text

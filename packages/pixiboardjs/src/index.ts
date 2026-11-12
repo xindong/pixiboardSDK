@@ -44,9 +44,8 @@ export type { AssetImportRequest, AssetImportService, AssetImportSource, Importe
 export {
   isAssetVariant,
   isContentFit,
-  isDocumentPreviewType,
-  isPreviewNodeType,
   createPreviewSpec,
+  PreviewRendererRegistry,
   resolveTextureAssetRef,
   fitMediaRect,
   createMediaAssetRefs,
