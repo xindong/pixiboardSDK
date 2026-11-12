@@ -7,7 +7,7 @@ import {
 import type { AssetRecord, AssetVariant, BoardDocument, PreviewSpec } from "@pixi-board/core";
 import { renderModelPreview } from "./modelPreviewScene";
 import { documentPreviewImport, classifyPreviewFile, hasSitePreviewRenderer, type PreviewImportState } from "./preview";
-import { renderDocumentPreview } from "./document-preview";
+import { renderDocumentPreview } from "./preview-renderers";
 
 export type MediaKind = "image" | "video" | "audio" | "model" | "html" | "markdown" | "text-file" | "file";
 export type ModelVertex = [number, number, number];
@@ -170,7 +170,7 @@ export class MediaLibrary {
       };
     }
 
-    let state = documentPreviewImport(file, kind);
+    let state = await documentPreviewImport(file, kind);
     let preview: Blob;
     let docDims: { width: number; height: number } | undefined;
     if (kind === "model" && !hasSitePreviewRenderer()) {

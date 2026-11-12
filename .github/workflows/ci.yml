@@ -25,6 +25,7 @@ jobs:
       - uses: ./.github/actions/setup-sdk
       - run: pnpm docs:check
       - run: pnpm packages:check
+      - run: pnpm format:check
       - run: node scripts/check-current-document-only.mjs
       - run: pnpm test:browser-boundary
 
