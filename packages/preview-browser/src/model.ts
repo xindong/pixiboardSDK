@@ -19,10 +19,18 @@ export function isModelExtension(extension: string): boolean { return MODEL_EXTE
 /** Renders 3D model files using the mivo-model-viewer SDK. */
 export function createModelRenderer(options: ModelRendererOptions = {}): PreviewRenderer<BrowserPreviewContext, File, Blob> & { dispose(): void } {
   let thumbs: Promise<Thumbs> | undefined
-  const get = () => thumbs ??= import('mivo-model-viewer/core').then(async sdk => {
-    await options.configure?.(sdk)
-    return sdk.createThumbnailRenderer({ idleMs: 30_000 })
-  })
+  const get = (): Promise<Thumbs> => {
+    if (!thumbs) {
+      const pending: Promise<Thumbs> = import('mivo-model-viewer/core').then(async sdk => {
+        await options.configure?.(sdk)
+        return sdk.createThumbnailRenderer({ idleMs: 30_000 })
+      })
+      thumbs = pending
+      // A failed init must not stay cached, or every later model (and retry) would fail the same way.
+      pending.catch(() => { if (thumbs === pending) thumbs = undefined })
+    }
+    return thumbs
+  }
   return {
     id: 'model',
     supports: source => isModelExtension(source.extension),
