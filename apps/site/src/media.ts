@@ -5,9 +5,8 @@ import {
   NativeOpfsPort,
 } from "@pixi-board/adapter-browser";
 import type { AssetRecord, AssetVariant, BoardDocument, PreviewSpec } from "@pixi-board/core";
-import { renderModelPreview } from "./modelPreviewScene";
 import { documentPreviewImport, classifyPreviewFile, hasSitePreviewRenderer, type PreviewImportState } from "./preview";
-import { renderDocumentPreview } from "./preview-renderers";
+import { renderDocumentPreview } from "./preview-registry";
 
 export type MediaKind = "image" | "video" | "audio" | "model" | "html" | "markdown" | "text-file" | "file";
 export type ModelVertex = [number, number, number];
@@ -171,27 +170,15 @@ export class MediaLibrary {
     }
 
     let state = await documentPreviewImport(file, kind);
-    let preview: Blob;
-    let docDims: { width: number; height: number } | undefined;
-    if (kind === "model" && !hasSitePreviewRenderer()) {
-      try {
-        preview = await modelPreview(file, state.previewSpec);
-        state = { ...state, previewStatus: "ready", previewQuality: "thumbnail", previewError: null };
-      } catch (error) {
-        state = { ...state, previewStatus: "error", previewError: error instanceof Error ? error.message : String(error) };
-        preview = await filePreview(file, kind);
-      }
-    } else {
-      const result = await renderDocumentPreview(file, kind, state.previewSpec);
-      preview = result.blob;
-      docDims = { width: result.width, height: result.height };
-      state = {
-        ...state,
-        previewStatus: result.rendered ? "ready" : "unsupported",
-        previewQuality: "thumbnail",
-        previewError: result.rendered ? null : (result.note ?? "此格式暂未提供内容预览，原文件已保存。"),
-      };
-    }
+    const result = await renderDocumentPreview(file, kind, state.previewSpec);
+    const preview: Blob = result.blob;
+    const docDims = { width: result.width, height: result.height };
+    state = {
+      ...state,
+      previewStatus: result.rendered ? "ready" : "unsupported",
+      previewQuality: "thumbnail",
+      previewError: result.rendered ? null : (result.note ?? "此格式暂未提供内容预览，原文件已保存。"),
+    };
     await this.adapter.putDerivative(assetId, "preview", preview);
     // Mirror the plugin: keep the document node at the standard width and let
     // its height follow the preview's natural aspect so the whole file shows.
@@ -294,9 +281,7 @@ export class MediaLibrary {
 
     let preview: Blob;
     let docResult: { rendered: boolean; note?: string; width: number; height: number } | undefined;
-    if (kind === "model") {
-      preview = await modelPreview(file, spec);
-    } else {
+    {
       const result = await renderDocumentPreview(file, kind, spec);
       preview = result.blob;
       docResult = result;
@@ -570,10 +555,6 @@ async function audioWaveform(file: Blob): Promise<{ blob: Blob; duration?: numbe
     }
   }
   return { blob: await canvasBlob(canvas), duration };
-}
-
-async function modelPreview(file: File, spec?: Partial<PreviewSpec>): Promise<Blob> {
-  return withTimeout(renderModelPreview(file, spec), 20_000, "模型预览超时，暂无预览，原文件已保存。");
 }
 
 export async function modelVertices(file: File, extension: string): Promise<ModelVertex[]> {

@@ -9,7 +9,8 @@ import {
 } from "@pixi-board/core";
 import type { PixiBoard } from "pixiboardjs/browser";
 import type { MediaKind } from "./media";
-import { previewRegistry } from "./preview-renderers";
+import { probeArchiveForModel } from "@pixi-board/preview-browser/model-archive";
+import { previewRegistry } from "./preview-registry";
 import { previewTypeLabelFor } from "./preview-labels";
 
 export type PreviewImportState = Partial<PreviewState> & {
@@ -75,39 +76,18 @@ export function reportPreviewTextureReady(assetId: string, variant: AssetVariant
   currentHost?.onTextureReady?.(assetId, variant);
 }
 
-const archiveKinds = new WeakMap<File, { hasModel: boolean; error?: string }>();
-const MODEL_FORMATS = new Set(["glb", "gltf", "fbx", "obj", "stl", "ply", "dae", "3mf", "3ds", "wrl", "vrml", "step", "stp"]);
-/** fflate's filter visits directory entries; returning false never inflates them. */
+/** A ZIP is a model node only when the viewer SDK can find a model inside; otherwise it stays a plain file. */
 export async function classifyPreviewFile(file: File, kind: MediaKind | undefined): Promise<MediaKind> {
   if (currentHost?.classifyFile) return currentHost.classifyFile(file, kind);
   if (!/\.zip$/i.test(file.name)) return kind ?? "file";
-  if (file.size > 64 * 1024 * 1024) {
-    archiveKinds.set(file, { hasModel: false, error: "文件超过预览大小限制，按 ZIP 文件处理。" });
-    return "file";
-  }
-  try {
-    const { unzipSync } = await import("fflate");
-    let hasModel = false;
-    unzipSync(new Uint8Array(await file.arrayBuffer()), { filter(entry) {
-      const parts = entry.name.replaceAll("\\", "/").split("/");
-      const name = parts.at(-1) ?? "";
-      if (MODEL_FORMATS.has(name.split(".").pop()!.toLowerCase()) &&
-          !parts.some((part) => part === "__MACOSX" || part.startsWith("._"))) hasModel = true;
-      return false;
-    } });
-    archiveKinds.set(file, { hasModel });
-    return hasModel ? "model" : "file";
-  } catch {
-    archiveKinds.set(file, { hasModel: false, error: "无法读取 ZIP 目录，原文件已保存。" });
-    return "file";
-  }
+  return (await probeArchiveForModel(file)).hasModel ? "model" : "file";
 }
 
 export async function documentPreviewImport(file: File, kind: MediaKind): Promise<PreviewImportState> {
   if (currentHost?.importState) return currentHost.importState(file, kind);
   if (!isPreviewNodeType(kind)) return {};
   const extension = file.name.toLowerCase().split(".").pop() ?? "";
-  const archive = archiveKinds.get(file);
+  const archive = extension === "zip" ? await probeArchiveForModel(file) : undefined;
   // Capability comes from the renderer registry, not from a format list.
   const supported = extension === "zip" ? archive?.hasModel === true
     : (await previewRegistry.resolve({ data: file, name: file.name, extension, mime: file.type, kind })) !== undefined;

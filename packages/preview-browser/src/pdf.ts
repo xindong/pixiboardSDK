@@ -1,12 +1,11 @@
 import type { PreviewRenderer, PreviewRenderInput } from '@pixi-board/core'
 import type { BrowserPreviewContext } from './context'
 import type { PreviewSpec } from '@pixi-board/core'
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
-async function drawPdf(ctx: BrowserPreviewContext, file: File, spec?: Partial<PreviewSpec>): Promise<HTMLCanvasElement> {
+async function drawPdf(ctx: BrowserPreviewContext, workerSrc: string, file: File, spec?: Partial<PreviewSpec>): Promise<HTMLCanvasElement> {
   const { layoutWidth } = ctx
   const pdfjs = await import('pdfjs-dist')
-  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+  pdfjs.GlobalWorkerOptions.workerSrc = workerSrc
   const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer(), isEvalSupported: false, useSystemFonts: true }).promise
   try {
     const pageNumber = Math.min(Math.max(1, spec?.page ?? 1), pdf.numPages)
@@ -25,11 +24,16 @@ async function drawPdf(ctx: BrowserPreviewContext, file: File, spec?: Partial<Pr
     void pdf.destroy()
   }
 }
-export const pdfRenderer: PreviewRenderer<BrowserPreviewContext, File, Blob> = {
-  id: 'pdf',
-  priority: 0,
-  supports: (s => s.extension === 'pdf' || s.mime === 'application/pdf'),
-  async render({ source, spec }: PreviewRenderInput<File>, ctx) {
-    return ctx.finish(await drawPdf(ctx, source.data, spec), true)
-  },
+/**
+ * `workerSrc` is the URL of pdf.js's worker script. The host bundler decides how to
+ * serve it (for Vite: `import url from 'pdfjs-dist/build/pdf.worker.min.mjs?url'`).
+ */
+export function createPdfRenderer(options: { workerSrc: string }): PreviewRenderer<BrowserPreviewContext, File, Blob> {
+  return {
+    id: 'pdf',
+    supports: s => s.extension === 'pdf' || s.mime === 'application/pdf',
+    async render({ source, spec }: PreviewRenderInput<File>, ctx) {
+      return ctx.finish(await drawPdf(ctx, options.workerSrc, source.data, spec), true)
+    },
+  }
 }
