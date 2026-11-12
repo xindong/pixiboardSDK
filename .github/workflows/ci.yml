@@ -26,7 +26,6 @@ jobs:
       - run: pnpm docs:check
       - run: pnpm packages:check
       - run: pnpm format:check
-      - run: pnpm --filter @pixi-board/preview-browser check
       - run: node scripts/check-current-document-only.mjs
       - run: pnpm test:browser-boundary
 
@@ -38,6 +37,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-sdk
       - run: node scripts/run-core-gate.mjs
+      - run: pnpm --filter @pixi-board/preview-browser check
       - run: pnpm --filter @pixi-board/preview-browser test
       - run: pnpm --filter pixiboardjs-site test
 
