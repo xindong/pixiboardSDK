@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0-alpha.7
+
+### Minor Changes
+
+- b9344de: Add `PreviewRenderer` and `PreviewRendererRegistry`: previews are produced by registered renderers, one per format, with no built-in renderers in core. Remove the format-specific `isDocumentPreviewType`, `isPreviewNodeType` and the ZIP special case in `previewStatusLabel`; re-export the registry from `pixiboardjs` (the two removed helpers are no longer exported there either); add `defaultHeight` to `PreviewSpecOptions` in place of the hard-coded model height.
+- fdfb4a4: `pixiboardjs` is now the only published package. Core, capabilities, agent tools and the plugin contract move to subpaths: `pixiboardjs/core`, `pixiboardjs/capabilities`, `pixiboardjs/agent-tools` (schemas at `pixiboardjs/agent-tools/schemas`) and `pixiboardjs/plugin`, with exactly the same exports as `@pixi-board/core`, `@pixi-board/capabilities`, `@pixi-board/agent-tools` and `@pixi-board/plugin-sdk`. Every entry now shares one bundled copy of core and capabilities, so `instanceof` checks and registries behave consistently across entries. The old package names get one final release that forwards to these subpaths and are then deprecated.
+
 ## 0.1.0-alpha.6
 
 ### Patch Changes

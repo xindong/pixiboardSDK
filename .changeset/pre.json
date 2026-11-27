@@ -16,7 +16,8 @@
     "pixiboardjs": "0.1.0-alpha.0",
     "@pixi-board/plugin-api-v3": "0.0.0",
     "@pixi-board/plugin-sdk": "0.1.0-alpha.0",
-    "@pixi-board/renderer-pixi": "0.0.0"
+    "@pixi-board/renderer-pixi": "0.0.0",
+    "@pixi-board/preview-browser": "0.0.0"
   },
   "changesets": [
     "bright-trees-smile",
@@ -25,8 +26,10 @@
     "generic-asset-previews",
     "media-import-preview",
     "p6-publishability",
+    "preview-renderer-registry",
     "public-capabilities-agent-tools",
     "resize-policy-transformer",
+    "single-public-package",
     "site-import-model-preview-fixes",
     "viewport-virtualization-lod"
   ]
