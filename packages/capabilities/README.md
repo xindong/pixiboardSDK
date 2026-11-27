@@ -1,5 +1,7 @@
 # @pixi-board/capabilities
 
+> Internal workspace package, not published. Install `pixiboardjs` and import from `pixiboardjs/capabilities` (ADR 0016).
+
 The permissioned read/write surface over a PixiBoardJS document. UI, plugins and
 agents all go through this one contract, so every mutation lands in the same
 transaction pipeline and produces the same revision, ChangeSet and history entry.

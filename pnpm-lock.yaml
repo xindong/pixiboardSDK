@@ -70,15 +70,6 @@ importers:
       '@pixi-board/adapter-tauri':
         specifier: workspace:*
         version: link:../../packages/adapter-tauri
-      '@pixi-board/agent-tools':
-        specifier: workspace:*
-        version: link:../../packages/agent-tools
-      '@pixi-board/capabilities':
-        specifier: workspace:*
-        version: link:../../packages/capabilities
-      '@pixi-board/core':
-        specifier: workspace:*
-        version: link:../../packages/core
       '@pixi-board/plugin-api-v3':
         specifier: workspace:*
         version: link:../../packages/plugin-api-v3
@@ -124,9 +115,6 @@ importers:
       '@pixi-board/adapter-browser':
         specifier: workspace:*
         version: link:../../packages/adapter-browser
-      '@pixi-board/core':
-        specifier: workspace:*
-        version: link:../../packages/core
       '@pixi-board/renderer-pixi':
         specifier: workspace:*
         version: link:../../packages/renderer-pixi
@@ -235,12 +223,18 @@ importers:
       '@pixi-board/adapter-browser':
         specifier: workspace:*
         version: link:../adapter-browser
+      '@pixi-board/agent-tools':
+        specifier: workspace:*
+        version: link:../agent-tools
       '@pixi-board/capabilities':
         specifier: workspace:*
         version: link:../capabilities
       '@pixi-board/core':
         specifier: workspace:*
         version: link:../core
+      '@pixi-board/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
       '@pixi-board/renderer-pixi':
         specifier: workspace:*
         version: link:../renderer-pixi

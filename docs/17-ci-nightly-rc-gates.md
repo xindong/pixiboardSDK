@@ -2,7 +2,7 @@
 
 ## 证据原则
 
-- 对外发布包固定为 `pixiboardjs`、`@pixi-board/core`、`@pixi-board/plugin-sdk`、`@pixi-board/capabilities`、`@pixi-board/agent-tools`。RC 必须同时上传五份 tarball 和九份 API report，并执行已合入的 API、外部消费与 bundle budget 检查。
+- 对外发布包只有 `pixiboardjs`（[ADR 0016](adr/0016-single-public-package-subpaths.md)）。RC 必须上传主包 tarball、4 份旧包名转发包和九份 API report，并执行已合入的 API、外部消费与 bundle budget 检查。
 - SDK 只接受当前 `BoardDocument` 与 Plugin API v3。PR 与 RC 都执行 `scripts/check-current-document-only.mjs`，扫描 Core、facade、plugin-sdk、plugin-api-v3 的公开源码和 manifest；`sourceVersion`/`schemaVersion` 只允许已审查位置，所有 BoardDocument 或 plugin version 比较必须在 AST 上直接终止为明确拒绝（例如 `DocumentValidationError`），normalize/upgrade/old-manifest helper 与仅改写版本号的分支都会失败关闭。
 - Chromium job 设置 `PIXIBOARD_REQUIRE_BROWSER=1` 并显式安装 Chromium，缺少浏览器时失败而不是 skip。
 - 文件存在性不是测试证据；contract、浏览器、benchmark、Cargo 和打包命令必须真实执行。

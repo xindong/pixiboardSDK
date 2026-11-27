@@ -1,10 +1,12 @@
 # @pixi-board/agent-tools
 
+> Internal workspace package, not published. Install `pixiboardjs` and import from `pixiboardjs/agent-tools` (ADR 0016).
+
 `canvas.read` / `canvas.write` over `@pixi-board/capabilities`, shaped for
 language-model callers.
 
 ```ts
-import { createPixiBoardAgentTools } from "@pixi-board/agent-tools";
+import { createPixiBoardAgentTools } from "pixiboardjs/agent-tools";
 
 const tools = createPixiBoardAgentTools(board.capabilities);
 

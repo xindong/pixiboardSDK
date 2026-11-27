@@ -1,6 +1,8 @@
 # @pixi-board/plugin-sdk
 
-Public Plugin API v3 authoring contract. It exports `definePlugin`, typed
+> Internal workspace package, not published. Install `pixiboardjs` and import from `pixiboardjs/plugin` (ADR 0016).
+
+Plugin API v3 authoring contract, published as `pixiboardjs/plugin`. It exports `definePlugin`, typed
 manifest/context/canvas/event contracts, and no host implementation.
 
 `PluginHost`, permission enforcement, package loading, and process lifecycle

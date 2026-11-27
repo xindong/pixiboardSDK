@@ -1,4 +1,4 @@
-import type { BoardDocument } from "@pixi-board/core";
+import type { BoardDocument } from "pixiboardjs/core";
 
 export type SiteProject = {
   id: string;

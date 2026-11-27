@@ -1,4 +1,4 @@
-import { rotatedRectBounds } from '@pixi-board/core'
+import { rotatedRectBounds } from 'pixiboardjs/core'
 import { loadPixiRuntime } from '@pixi-board/renderer-pixi'
 
 // Two tiny shared textures, generated once; no per-node canvas or animation.

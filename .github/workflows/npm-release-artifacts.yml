@@ -35,12 +35,8 @@ jobs:
       - run: pnpm build:release
       - name: Generate release API reports
         shell: bash
-        run: |
-          pnpm api:report
-          for entry in browser node types; do
-            pnpm --filter pixiboardjs exec api-extractor run --local --config "api-extractor.$entry.json"
-          done
-          pnpm --filter @pixi-board/agent-tools exec api-extractor run --local --config api-extractor.schemas.json
+        # pixiboardjs is the only public package; its api:report covers every subpath entry.
+        run: pnpm api:report
       - run: node scripts/check-current-document-only.mjs
       - run: pnpm release:check
       - uses: actions/upload-artifact@v6

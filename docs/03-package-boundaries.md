@@ -40,6 +40,8 @@ packages/
 
 等接口稳定后再把 capabilities 和 adapters 拆为独立 workspace package。
 
+对外只发布 `pixiboardjs`。`core`、`capabilities`、`agent-tools`、`plugin-sdk` 是私有 workspace 包，以 `pixiboardjs/core`、`/capabilities`、`/agent-tools`（含 `/agent-tools/schemas`）、`/plugin` 子路径提供；所有 workspace 包打进主包的共享 chunk，各子路径共用同一份实现与类型声明（见 [ADR 0016](adr/0016-single-public-package-subpaths.md)）。
+
 `@pixi-board/preview-browser` 是仓库内的私有包（未发布）：浏览器端预览渲染器，依赖 `core` 的 `PreviewRenderer` 接口，被站点使用；`core` 不依赖它，也不含任何格式知识（见 [ADR 0014](adr/0014-preview-renderer-registry.md)）。
 
 ## 依赖方向

@@ -10,13 +10,9 @@
 pnpm add pixiboardjs
 ```
 
-如果需要 Agent 工具契约，再安装：
+Agent 工具契约、统一能力层、headless core 和插件契约都在同一个包里，按子路径导入即可，不需要额外安装：`pixiboardjs/agent-tools`（JSON Schema 在 `pixiboardjs/agent-tools/schemas`）、`pixiboardjs/capabilities`、`pixiboardjs/core`、`pixiboardjs/plugin`。
 
-```sh
-pnpm add @pixi-board/agent-tools
-```
-
-`@pixi-board/capabilities` 适合需要直接接入统一读写能力层的宿主；普通画布应用优先使用 `board.capabilities`，不必自行创建能力实例。
+`pixiboardjs/capabilities` 适合需要直接接入统一读写能力层的宿主；普通画布应用优先使用 `board.capabilities`，不必自行创建能力实例。
 
 ## 第一个画布
 
@@ -292,7 +288,7 @@ const mediaRenderer = (kind: MediaKind): CustomNodeRenderer<MediaProps> => ({
 统一能力层提供 `document`、`nodes`、`assets`、`selection`、`viewport`、`history`、`preview` 和 `capture`。直接调用能力层时，写操作可以带 `origin`，例如 `agent:my-agent`；结果和错误是可序列化的能力契约。
 
 ```ts
-import { createPixiBoardAgentTools } from "@pixi-board/agent-tools";
+import { createPixiBoardAgentTools } from "pixiboardjs/agent-tools";
 
 const tools = createPixiBoardAgentTools(board.capabilities);
 const result = await tools.call("canvas.read", { limit: 50, fields: ["id", "type", "x", "y"] });

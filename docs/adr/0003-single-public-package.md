@@ -11,8 +11,8 @@ SDK 需要清晰的 core、renderer、capabilities 和 adapter 边界，但要�
 
 - 普通用户只安装 `pixiboardjs`。
 - 仓库内部允许拆分多个 workspace package。
-- `@pixi-board/plugin-sdk` 继续作为插件作者的独立公共契约。
-- `@pixi-board/core` 从 Public beta 起同时公开给 headless/高级用户，并与主包在 1.x lockstep version。
+- `@pixi-board/plugin-sdk` 继续作为插件作者的独立公共契约。（已由 [ADR 0016](0016-single-public-package-subpaths.md) 改为 `pixiboardjs/plugin` 子路径。）
+- `@pixi-board/core` 从 Public beta 起同时公开给 headless/高级用户，并与主包在 1.x lockstep version。（已由 [ADR 0016](0016-single-public-package-subpaths.md) 改为 `pixiboardjs/core` 子路径。）
 - renderer、Tauri adapter、plugin host、Agent tools 和 MCP host 初期保持内部或高级包。
 - 主包可以使用 `pixiboardjs/browser` 等 subpath exports 暴露平台 helper。
 

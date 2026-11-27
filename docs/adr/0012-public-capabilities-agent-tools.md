@@ -1,6 +1,6 @@
 # ADR 0012：公开 capabilities 与 agent-tools，删除 mcp-host
 
-- Status: Accepted
+- Status: Superseded in part by [ADR 0016](0016-single-public-package-subpaths.md)（公开包范围）
 - Date: 2026-08-11
 - Supersedes: [ADR 0010](0010-public-package-scope.md) 中关于 `capabilities`、`agent-tools`、`mcp-host` 的可见性决定
 
@@ -32,6 +32,8 @@ ADR 0010 把 `capabilities`、`agent-tools` 和 `mcp-host` 都定为内部包。
 ## 跨副本错误识别
 
 `pixiboardjs` 用 esbuild alias 把 `capabilities` 内联进自己的 dist，所以它抛出的 `CapabilityError` 与从 `@pixi-board/capabilities` 导入的类不是同一个构造函数，`instanceof` 为 false。这个隐患在 `capabilities` 公开前就已存在（`core` 早已公开且同样被内联）。
+
+> 2026-11-26：主包已改为依赖公开的 `core` 与 `capabilities`，不再内联，见 [ADR 0015](0015-main-package-depends-on-public-core.md)。下面的 brand 仍保留，用于不同版本副本共存的情况。
 
 `CapabilityError` 因此带一个跨副本可识别的 brand，并导出 `isCapabilityError(value)`。`agent-tools` 的错误映射与 `mapCoreError` 都改用它，`instanceof` 为真的路径行为不变。
 

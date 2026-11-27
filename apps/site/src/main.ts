@@ -14,7 +14,7 @@ import {
   type PixiBoard,
   type RuntimeRenderer,
 } from "pixiboardjs/browser";
-import { fitMediaRect, NodeTypeRegistry, type AssetRef, type BoardDocument, type BoardNode, type ContentFit } from "@pixi-board/core";
+import { fitMediaRect, NodeTypeRegistry, type AssetRef, type BoardDocument, type BoardNode, type ContentFit } from "pixiboardjs/core";
 import { createPixiApplicationFactory, loadPixiRuntime, PixiBoardRenderer } from "@pixi-board/renderer-pixi";
 import { createIcon } from "./ui/icons";
 import {

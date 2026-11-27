@@ -19,7 +19,6 @@
   },
   "devDependencies": {
     "@pixi-board/adapter-browser": "workspace:*",
-    "@pixi-board/core": "workspace:*",
     "@pixi-board/renderer-pixi": "workspace:*",
     "typescript": "^5.9.2",
     "vite": "^7.0.0"

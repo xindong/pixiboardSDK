@@ -1,4 +1,4 @@
-import type { BoardDocument } from "@pixi-board/core";
+import type { BoardDocument } from "pixiboardjs/core";
 import type { DocumentPersistence } from "pixiboardjs";
 
 /** Narrow desktop contract; a board receives a lease, never the shared store. */

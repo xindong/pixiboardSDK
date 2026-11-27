@@ -7,38 +7,25 @@ import { tmpdir } from "node:os";
 
 const run = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// pixiboardjs is the only public package (ADR 0016): core, capabilities,
+// agent-tools and plugin ship as its subpaths from one shared bundle.
+const entries = ["browser", "node", "types", "core", "capabilities", "agent-tools", "agent-tools-schemas", "plugin"];
 const publicPackages = [
-  { name: "pixiboardjs", dir: resolve(root, "packages/pixiboardjs"), artifacts: ["dist/index.js", "dist/browser.js", "dist/node.js", "dist/types.js", "dist/index.d.ts", "dist/browser.d.ts", "dist/node.d.ts", "dist/types.d.ts"] },
-  { name: "@pixi-board/core", dir: resolve(root, "packages/core"), artifacts: ["dist/index.js", "dist/index.d.ts"] },
-  { name: "@pixi-board/plugin-sdk", dir: resolve(root, "packages/plugin-sdk"), artifacts: ["dist/index.js", "dist/index.d.ts"] },
-  { name: "@pixi-board/capabilities", dir: resolve(root, "packages/capabilities"), artifacts: ["dist/index.js", "dist/index.d.ts"] },
-  { name: "@pixi-board/agent-tools", dir: resolve(root, "packages/agent-tools"), artifacts: ["dist/index.js", "dist/index.d.ts", "dist/schemas.js", "dist/schemas.d.ts"] },
+  { name: "pixiboardjs", dir: resolve(root, "packages/pixiboardjs"), artifacts: ["index", ...entries].flatMap((entry) => [`dist/${entry}.js`, `dist/${entry}.d.ts`]) },
 ];
-const internalDependencies = new Set(["@pixi-board/adapter-browser", "@pixi-board/renderer-pixi", "@pixi-board/plugin-api-v3"]);
-// One report per published entry point, not per package: API Extractor only
-// walks the single entry it is pointed at, so `pixiboardjs`'s subpath exports
-// need their own configs and reports to be covered at all.
+const internalDependencies = new Set([
+  "@pixi-board/adapter-browser", "@pixi-board/renderer-pixi", "@pixi-board/plugin-api-v3",
+  "@pixi-board/core", "@pixi-board/capabilities", "@pixi-board/agent-tools", "@pixi-board/plugin-sdk",
+]);
+// One report per published entry point: API Extractor only walks the single
+// entry it is pointed at, so every subpath needs its own config and report.
 const apiReports = [
   ["pixiboardjs", resolve(root, "packages/pixiboardjs/etc/pixiboardjs.api.md")],
-  ["pixiboardjs-browser", resolve(root, "packages/pixiboardjs/etc/pixiboardjs-browser.api.md")],
-  ["pixiboardjs-node", resolve(root, "packages/pixiboardjs/etc/pixiboardjs-node.api.md")],
-  ["pixiboardjs-types", resolve(root, "packages/pixiboardjs/etc/pixiboardjs-types.api.md")],
-  ["pixi-board-core", resolve(root, "packages/core/etc/pixi-board-core.api.md")],
-  ["pixi-board-plugin-sdk", resolve(root, "packages/plugin-sdk/etc/pixi-board-plugin-sdk.api.md")],
-  ["pixi-board-capabilities", resolve(root, "packages/capabilities/etc/pixi-board-capabilities.api.md")],
-  ["pixi-board-agent-tools", resolve(root, "packages/agent-tools/etc/pixi-board-agent-tools.api.md")],
-  ["pixi-board-agent-tools-schemas", resolve(root, "packages/agent-tools/etc/pixi-board-agent-tools-schemas.api.md")],
+  ...entries.map((entry) => [`pixiboardjs-${entry}`, resolve(root, `packages/pixiboardjs/etc/pixiboardjs-${entry}.api.md`)]),
 ];
 const apiExtractorRuns = [
-  ["@pixi-board/core", []],
   ["pixiboardjs", []],
-  ["pixiboardjs", ["--config", "api-extractor.browser.json"]],
-  ["pixiboardjs", ["--config", "api-extractor.node.json"]],
-  ["pixiboardjs", ["--config", "api-extractor.types.json"]],
-  ["@pixi-board/plugin-sdk", []],
-  ["@pixi-board/capabilities", []],
-  ["@pixi-board/agent-tools", []],
-  ["@pixi-board/agent-tools", ["--config", "api-extractor.schemas.json"]],
+  ...entries.map((entry) => ["pixiboardjs", ["--config", `api-extractor.${entry}.json`]]),
 ];
 const gateDir = await mkdtemp(join(tmpdir(), "pixiboardjs-release-gate-"));
 const releaseArtifactDir = process.env.PIXIBOARD_RELEASE_ARTIFACT_DIR ? resolve(root, process.env.PIXIBOARD_RELEASE_ARTIFACT_DIR) : undefined;
@@ -176,12 +163,21 @@ async function persistReleaseManifest(publicTarballs) {
 async function verifyExternalConsumers(publicTarballs) {
   const fixture = join(gateDir, "consumer");
   await mkdir(join(fixture, "src"), { recursive: true });
+  // Final forwarding releases of the former public packages (ADR 0016).
+  const { stdout: legacyOutput } = await run(process.execPath, [resolve(root, "scripts/build-legacy-shims.mjs"), join(gateDir, "legacy")], { cwd: root });
+  const legacyTarballs = JSON.parse(legacyOutput.trim().split("\n").at(-1));
+  if (releaseArtifactDir) {
+    for (const tarball of Object.values(legacyTarballs)) {
+      await mkdir(join(releaseArtifactDir, "legacy-shims"), { recursive: true });
+      await copyFile(tarball, join(releaseArtifactDir, "legacy-shims", basename(tarball)));
+    }
+  }
   const fixtureManifest = {
     name: "pixiboardjs-release-consumer",
     private: true,
     type: "module",
     scripts: { build: "vite build", check: "tsc --noEmit" },
-    dependencies: Object.fromEntries(Object.entries(publicTarballs).map(([name, file]) => [name, `file:${file}`])),
+    dependencies: Object.fromEntries(Object.entries({ ...publicTarballs, ...legacyTarballs }).map(([name, file]) => [name, `file:${file}`])),
     devDependencies: { typescript: "5.9.3", vite: "^7.0.0" },
   };
   await writeFile(join(fixture, "package.json"), `${JSON.stringify(fixtureManifest, null, 2)}\n`);
@@ -189,20 +185,42 @@ async function verifyExternalConsumers(publicTarballs) {
   await writeFile(join(fixture, "index.html"), '<div id="app"></div><script type="module" src="/src/main.ts"></script>\n');
   await writeFile(join(fixture, "src/main.ts"), [
     'import { createPixiBoard } from "pixiboardjs/browser";',
-    'import { createBoardCore } from "@pixi-board/core";',
-    'import { PLUGIN_API_VERSION, assertV3Manifest } from "@pixi-board/plugin-sdk";',
+    'import { createBoardCore } from "pixiboardjs/core";',
+    'import { createBoardCapabilities } from "pixiboardjs/capabilities";',
+    'import { createPixiBoardAgentTools } from "pixiboardjs/agent-tools";',
+    'import { canvasReadSchema } from "pixiboardjs/agent-tools/schemas";',
+    'import { PLUGIN_API_VERSION, assertV3Manifest } from "pixiboardjs/plugin";',
     'const core = createBoardCore();',
+    // A core from one subpath must type-check where another subpath expects it.
+    'const capabilities = createBoardCapabilities(core);',
+    'void capabilities; void createPixiBoardAgentTools; void canvasReadSchema;',
     'assertV3Manifest({ id: "consumer", name: "Consumer", version: "1.0.0", apiVersion: PLUGIN_API_VERSION, permissions: [] });',
     'document.querySelector("#app")!.textContent = `${typeof createPixiBoard}:${core.document.snapshot().schemaVersion}:${PLUGIN_API_VERSION}`;',
   ].join("\n"));
   await runAndPrint("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: fixture });
-  const imports = ["pixiboardjs", "pixiboardjs/browser", "pixiboardjs/node", "pixiboardjs/types", "@pixi-board/core", "@pixi-board/plugin-sdk"];
+  const imports = ["pixiboardjs", "pixiboardjs/browser", "pixiboardjs/node", "pixiboardjs/types", "pixiboardjs/core", "pixiboardjs/capabilities", "pixiboardjs/agent-tools", "pixiboardjs/agent-tools/schemas", "pixiboardjs/plugin"];
   await runAndPrint(process.execPath, ["--input-type=module", "-e", `for (const name of ${JSON.stringify(imports)}) await import(name); console.log('consumer node imports passed');`], { cwd: fixture });
+  // Every entry must re-export the one bundled core and capabilities.
+  await runAndPrint(process.execPath, ["--input-type=module", "-e", [
+    'const core = await import("pixiboardjs/core");',
+    'const capabilities = await import("pixiboardjs/capabilities");',
+    'for (const name of ["pixiboardjs", "pixiboardjs/node"]) {',
+    '  const entry = await import(name);',
+    '  if (entry.DocumentValidationError !== core.DocumentValidationError) throw new Error(`${name} does not share pixiboardjs/core`);',
+    '  if (entry.CapabilityError !== capabilities.CapabilityError) throw new Error(`${name} does not share pixiboardjs/capabilities`);',
+    '}',
+    // Old package names forward to the same bundled instances.
+    'if ((await import("@pixi-board/core")).DocumentValidationError !== core.DocumentValidationError) throw new Error("@pixi-board/core shim does not forward to pixiboardjs/core");',
+    'if ((await import("@pixi-board/capabilities")).CapabilityError !== capabilities.CapabilityError) throw new Error("@pixi-board/capabilities shim does not forward to pixiboardjs/capabilities");',
+    'if ((await import("@pixi-board/agent-tools/schemas")).canvasReadSchema !== (await import("pixiboardjs/agent-tools/schemas")).canvasReadSchema) throw new Error("@pixi-board/agent-tools shim does not forward");',
+    'if ((await import("@pixi-board/plugin-sdk")).assertV3Manifest !== (await import("pixiboardjs/plugin")).assertV3Manifest) throw new Error("@pixi-board/plugin-sdk shim does not forward");',
+    'console.log("consumer core identity passed (including legacy package names)");',
+  ].join("\n")], { cwd: fixture });
   for (const [packageName, tarball] of Object.entries(publicTarballs)) {
-    const declarationFiles = packageName === "pixiboardjs" ? ["dist/index.d.ts", "dist/browser.d.ts", "dist/node.d.ts", "dist/types.d.ts"] : ["dist/index.d.ts"];
+    const declarationFiles = (await readdir(join(fixture, "node_modules", packageName, "dist"))).filter((file) => file.endsWith(".d.ts")).map((file) => `dist/${file}`);
     for (const declarationFile of declarationFiles) {
       const declaration = await readFile(join(fixture, "node_modules", packageName, declarationFile), "utf8");
-      if (/from ["']@pixi-board\/(adapter-browser|adapter-tauri|renderer-pixi|plugin-api-v3)/.test(declaration)) throw new Error(`consumer declaration leaks a private workspace package: ${packageName}/${declarationFile} (${basename(tarball)})`);
+      if (/from ["']@pixi-board\//.test(declaration)) throw new Error(`consumer declaration leaks a private workspace package: ${packageName}/${declarationFile} (${basename(tarball)})`);
     }
   }
   await runAndPrint("npm", ["run", "check"], { cwd: fixture });

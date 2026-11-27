@@ -61,6 +61,31 @@
       "import": "./dist/types.js",
       "default": "./dist/types.js"
     },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "import": "./dist/core.js",
+      "default": "./dist/core.js"
+    },
+    "./capabilities": {
+      "types": "./dist/capabilities.d.ts",
+      "import": "./dist/capabilities.js",
+      "default": "./dist/capabilities.js"
+    },
+    "./agent-tools": {
+      "types": "./dist/agent-tools.d.ts",
+      "import": "./dist/agent-tools.js",
+      "default": "./dist/agent-tools.js"
+    },
+    "./agent-tools/schemas": {
+      "types": "./dist/agent-tools-schemas.d.ts",
+      "import": "./dist/agent-tools-schemas.js",
+      "default": "./dist/agent-tools-schemas.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js",
+      "default": "./dist/plugin.js"
+    },
     "./package.json": "./package.json"
   },
   "types": "./dist/index.d.ts",
@@ -72,8 +97,10 @@
   },
   "devDependencies": {
     "@pixi-board/adapter-browser": "workspace:*",
+    "@pixi-board/agent-tools": "workspace:*",
     "@pixi-board/capabilities": "workspace:*",
     "@pixi-board/core": "workspace:*",
+    "@pixi-board/plugin-sdk": "workspace:*",
     "@pixi-board/renderer-pixi": "workspace:*",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
@@ -81,7 +108,7 @@
   "scripts": {
     "test": "vitest run --config vitest.config.ts",
     "build": "tsup",
-    "api:report": "api-extractor run --local --verbose"
+    "api:report": "api-extractor run --local --verbose && for entry in browser node types core capabilities agent-tools agent-tools-schemas plugin; do api-extractor run --local --verbose --config api-extractor.$entry.json || exit 1; done"
   },
   "publishConfig": {
     "access": "public"

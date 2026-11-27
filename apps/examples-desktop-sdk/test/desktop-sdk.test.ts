@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NodeTypeRegistry, type NodeTypeDefinition } from "@pixi-board/core";
+import { NodeTypeRegistry, type NodeTypeDefinition } from "pixiboardjs/core";
 import type { PluginDefinition, PluginEvent } from "@pixi-board/plugin-api-v3";
 import { createDesktopBoard, MemoryTauriDocumentPort, type DesktopBoardHost } from "../src/index";
 
