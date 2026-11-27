@@ -1,4 +1,4 @@
-import { NodeTypeRegistry, type BoardDocument } from "@pixi-board/core";
+import { NodeTypeRegistry, type BoardDocument } from "pixiboardjs/core";
 import { TauriAdapterHost } from "@pixi-board/adapter-tauri";
 import { describe, expect, it } from "vitest";
 import { DesktopProjectSessionController } from "../src/project-session-controller";

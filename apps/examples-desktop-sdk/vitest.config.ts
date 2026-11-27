@@ -14,6 +14,10 @@ export default {
       "@pixi-board/plugin-api-v3": resolve(repoRoot, "packages/plugin-api-v3/src/index.ts"),
       "@pixi-board/renderer-pixi": resolve(repoRoot, "packages/renderer-pixi/src/index.ts"),
       "@pixi-board/adapter-tauri": resolve(repoRoot, "packages/adapter-tauri/src/index.ts"),
+      // Subpaths must come before the bare "pixiboardjs" alias, which would otherwise prefix-match them.
+      "pixiboardjs/core": resolve(repoRoot, "packages/pixiboardjs/src/subpaths/core.ts"),
+      "pixiboardjs/capabilities": resolve(repoRoot, "packages/pixiboardjs/src/subpaths/capabilities.ts"),
+      "pixiboardjs/agent-tools": resolve(repoRoot, "packages/pixiboardjs/src/subpaths/agent-tools.ts"),
       pixiboardjs: resolve(repoRoot, "packages/pixiboardjs/src/index.ts"),
     },
   },

@@ -4,7 +4,7 @@ import {
   NativeObjectUrlPort,
   NativeOpfsPort,
 } from "@pixi-board/adapter-browser";
-import type { AssetRecord, AssetVariant, BoardDocument, PreviewSpec } from "@pixi-board/core";
+import type { AssetRecord, AssetVariant, BoardDocument, PreviewSpec } from "pixiboardjs/core";
 import { documentPreviewImport, classifyPreviewFile, hasSitePreviewRenderer, type PreviewImportState } from "./preview";
 import { renderDocumentPreview } from "./preview-registry";
 
@@ -12,7 +12,7 @@ export type MediaKind = "image" | "video" | "audio" | "model" | "html" | "markdo
 export type ModelVertex = [number, number, number];
 
 /** Storage variants this demo writes; mirrors the core `AssetRef["variant"]`. */
-export type { AssetVariant } from "@pixi-board/core";
+export type { AssetVariant } from "pixiboardjs/core";
 
 export type MediaImport = PreviewImportState & {
   assetId: string;

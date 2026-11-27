@@ -7,7 +7,7 @@ import {
   type PreviewQuality,
   type PreviewSpec,
   type PreviewState,
-} from "@pixi-board/core";
+} from "pixiboardjs/core";
 import type { PixiBoard } from "pixiboardjs/browser";
 import type { MediaKind } from "./media";
 import { previewRegistry } from "./preview-registry";

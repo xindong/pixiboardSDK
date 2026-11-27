@@ -9,9 +9,6 @@
   },
   "dependencies": {
     "@pixi-board/adapter-tauri": "workspace:*",
-    "@pixi-board/agent-tools": "workspace:*",
-    "@pixi-board/capabilities": "workspace:*",
-    "@pixi-board/core": "workspace:*",
     "@pixi-board/plugin-api-v3": "workspace:*",
     "pixiboardjs": "workspace:*"
   },

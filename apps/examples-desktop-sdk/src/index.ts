@@ -1,4 +1,4 @@
-import { createPixiBoardAgentTools, type AgentTools } from "@pixi-board/agent-tools";
+import { createPixiBoardAgentTools, type AgentTools } from "pixiboardjs/agent-tools";
 import { PluginHost, type PluginContext, type PluginDefinition, type PluginEvent, type PluginEventSource } from "@pixi-board/plugin-api-v3";
 import { createPixiBoard, type PixiBoard, type PixiBoardOptions } from "pixiboardjs";
 import type { DesktopDocumentLease } from "./ports";
