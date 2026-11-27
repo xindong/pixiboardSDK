@@ -1,6 +1,6 @@
 {
   "name": "@pixi-board/preview-browser",
-  "version": "0.0.0",
+  "version": "0.0.1-alpha.0",
   "private": true,
   "description": "Browser preview renderers for PixiBoardJS: one PreviewRenderer per format, registered through the same public registry as any third-party renderer",
   "type": "module",

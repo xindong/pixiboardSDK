@@ -1,5 +1,12 @@
 # @pixi-board/adapter-contract-tests
 
+## 0.0.1-alpha.6
+
+### Patch Changes
+
+- Updated dependencies [b9344de]
+  - @pixi-board/core@0.1.0-alpha.7
+
 ## 0.0.1-alpha.5
 
 ### Patch Changes

@@ -1,5 +1,14 @@
 # pixiboardjs-site
 
+## 0.1.1-alpha.6
+
+### Patch Changes
+
+- Updated dependencies [b9344de]
+- Updated dependencies [fdfb4a4]
+  - pixiboardjs@0.1.0-alpha.7
+  - @pixi-board/preview-browser@0.0.1-alpha.0
+
 ## 0.1.1-alpha.5
 
 ### Patch Changes

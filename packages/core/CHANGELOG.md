@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-alpha.7
+
+### Minor Changes
+
+- b9344de: Add `PreviewRenderer` and `PreviewRendererRegistry`: previews are produced by registered renderers, one per format, with no built-in renderers in core. Remove the format-specific `isDocumentPreviewType`, `isPreviewNodeType` and the ZIP special case in `previewStatusLabel`; re-export the registry from `pixiboardjs` (the two removed helpers are no longer exported there either); add `defaultHeight` to `PreviewSpecOptions` in place of the hard-coded model height.
+
 ## 0.1.0-alpha.6
 
 ### Patch Changes
