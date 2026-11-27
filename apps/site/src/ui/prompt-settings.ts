@@ -25,10 +25,10 @@ export const DEFAULT_PROMPT_SETTINGS = Object.freeze({
     '修改用 canvas_write({board_id, expected_revision: revision, operations})，冲突时重新读取后重试。',
     '文件节点用 asset_source: {path} 或 {url}（仅公开 HTTP(S)）导入；Markdown/HTML 项目附 root_path 和 relative_path 以带上同包附件。',
     '耗时任务可先建 type="processing" 占位节点（status="running"），完成后用 convert 以同一 id 转为结果，失败则 update 为 status="failed" 并写明原因。',
-    '用户需求在最上方，根据这些信息规划如何完成用户的需求。',
   ].join('\n'),
   nodePreferences: '',
-  nodeTemplate: '{{instruction}}\n\n{{guidance}}\n\n{{context}}',
+  // The user's request comes last, after the context it refers to; preferences follow it.
+  nodeTemplate: '{{guidance}}\n\n{{context}}\n\n以下是用户的需求和偏好，请根据上下文信息规划如何完成用户的需求。\n[用户的处理偏好和需求]\n{{instruction}}',
   includeNodeContent: true,
   includeGeometry: false,
   includeAssets: false,

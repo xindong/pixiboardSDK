@@ -68,5 +68,6 @@ export function renderNodePrompt({ instruction, context, resources }, settings) 
     return variables[key]
   })
   const preferences = settings.nodePreferences?.trim()
-  return preferences ? `${message}\n\n[用户的处理偏好]\n${preferences}` : message
+  // The template ends with the request block, so preferences continue it directly.
+  return preferences ? `${message}\n${preferences}` : message
 }

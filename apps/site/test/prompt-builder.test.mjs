@@ -12,11 +12,12 @@ const context = (nodes, extra = {}) => ({
   boardId: 'b1', revision: 478, node: nodes[0], nodeIds: nodes.map(node => node.id), nodes,
   assets: [], connections: [], truncated: [], ...extra,
 });
-const contextOf = prompt => JSON.parse(prompt.slice(prompt.lastIndexOf('\n') + 1));
+const contextOf = prompt => JSON.parse(prompt.split('\n').find(line => line.startsWith('{')));
 
 test('default single-node prompt carries identity and useful props only', () => {
   const prompt = renderNodePrompt({ instruction: ' 换成蓝色 ', context: context([image]), resources: [] }, DEFAULT_PROMPT_SETTINGS);
-  assert.ok(prompt.startsWith('换成蓝色\n\n[画布节点操作]'));
+  assert.ok(prompt.startsWith('[画布节点操作]'));
+  assert.ok(prompt.endsWith('\n以下是用户的需求和偏好，请根据上下文信息规划如何完成用户的需求。\n[用户的处理偏好和需求]\n换成蓝色'));
   assert.deepEqual(contextOf(prompt), {
     board_id: 'b1', revision: 478,
     nodes: [{ id: 'n1', type: 'image', props: { name: 'a.svg', mimeType: 'image/svg+xml' } }],
@@ -45,4 +46,11 @@ test('multi-node prompt names the primary node and keeps connections', () => {
   assert.deepEqual(data.truncated, ['maxChars']);
   assert.ok(data.nodes[0].props.text.length < 700);
   assert.match(data.nodes[0].props.text, /共 1000 字/);
+});
+
+test('preferences follow the request in the closing block', () => {
+  const settings = { ...DEFAULT_PROMPT_SETTINGS, nodePreferences: ' 修图用 mivo ' };
+  const prompt = renderNodePrompt({ instruction: '带娃', context: context([image]), resources: [] }, settings);
+  assert.ok(prompt.endsWith('[用户的处理偏好和需求]\n带娃\n修图用 mivo'));
+  assert.equal(prompt.includes('[用户的处理偏好]\n'), false);
 });
