@@ -99,12 +99,8 @@ A fuller, copy-pasteable external-consumer example lives in [`apps/examples-vani
 
 An agent doesn't get a side door into the canvas. `canvas.write` lands in the same transaction pipeline a pointer drag does:
 
-```bash
-pnpm add @pixi-board/agent-tools
-```
-
 ```ts
-import { createPixiBoardAgentTools } from "@pixi-board/agent-tools";
+import { createPixiBoardAgentTools } from "pixiboardjs/agent-tools";
 
 const tools = createPixiBoardAgentTools(board.capabilities);
 
@@ -127,14 +123,14 @@ Read paths are agent-shaped too: `canvas.read` returns compact node DTOs with fi
 
 ### Transport is yours
 
-`agent-tools` is a contract, not a server. It hands you two tool definitions with JSON Schemas (`import { canvasReadSchema, canvasWriteSchema } from "@pixi-board/agent-tools/schemas"`) and an async `call(name, input)`. Wiring that to MCP, HTTP, a WebSocket, or a direct function call in your own agent loop is a few lines against whatever harness you already run — so the SDK doesn't ship a server and doesn't chase a moving protocol.
+`agent-tools` is a contract, not a server. It hands you two tool definitions with JSON Schemas (`import { canvasReadSchema, canvasWriteSchema } from "pixiboardjs/agent-tools/schemas"`) and an async `call(name, input)`. Wiring that to MCP, HTTP, a WebSocket, or a direct function call in your own agent loop is a few lines against whatever harness you already run — so the SDK doesn't ship a server and doesn't chase a moving protocol.
 
 ### Or skip the tools entirely
 
 `board.capabilities` is public on its own. If you have your own tool schema, your own DTO shape, or your own agent framework's conventions, build directly against it:
 
 ```ts
-import { createBoardCapabilities, isCapabilityError } from "@pixi-board/capabilities";
+import { createBoardCapabilities, isCapabilityError } from "pixiboardjs/capabilities";
 
 const result = await board.capabilities.nodes.create(
   { nodes: [{ type: "rect", x: 0, y: 0, width: 100, height: 100, rotation: 0, zIndex: 0 }] },
@@ -181,14 +177,14 @@ Same transaction pipeline, same ChangeSet, same undo — you just own the transl
 
 | Package | Description | Visibility |
 |---|---|---|
-| [`pixiboardjs`](packages/pixiboardjs) | The single user-facing package: `createPixiBoard()`, `NodeHandle`, built-in nodes, capabilities facade | Public |
-| [`@pixi-board/core`](packages/core) | Document / store / transaction / history / selection / viewport — no DOM dependency | Public |
+| [`pixiboardjs`](packages/pixiboardjs) | The only published package: `createPixiBoard()`, `NodeHandle`, built-in nodes, plus the subpaths below | Public |
+| [`@pixi-board/core`](packages/core) | Document / store / transaction / history / selection / viewport — no DOM dependency | Internal, published as `pixiboardjs/core` |
 | [`@pixi-board/renderer-pixi`](packages/renderer-pixi) | PixiJS renderer: scene, spatial index, viewport virtualization, texture lifecycle | Internal |
-| [`@pixi-board/capabilities`](packages/capabilities) | Unified permissioned read/write surface for UI / plugins / agents | Public |
-| [`@pixi-board/agent-tools`](packages/agent-tools) | `canvas.read` / `canvas.write` tool contracts and their JSON Schemas | Public |
+| [`@pixi-board/capabilities`](packages/capabilities) | Unified permissioned read/write surface for UI / plugins / agents | Internal, published as `pixiboardjs/capabilities` |
+| [`@pixi-board/agent-tools`](packages/agent-tools) | `canvas.read` / `canvas.write` tool contracts and their JSON Schemas | Internal, published as `pixiboardjs/agent-tools` (+ `/schemas`) |
 | [`@pixi-board/adapter-browser`](packages/adapter-browser) | IndexedDB / OPFS / ObjectURL persistence and asset adapters | Internal |
 | [`@pixi-board/adapter-tauri`](packages/adapter-tauri) | Tauri WebView filesystem adapter | Internal |
-| [`@pixi-board/plugin-sdk`](packages/plugin-sdk) / [`plugin-api-v3`](packages/plugin-api-v3) | Plugin `definePlugin()` and the v3 capability contract | Public / Internal |
+| [`@pixi-board/plugin-sdk`](packages/plugin-sdk) / [`plugin-api-v3`](packages/plugin-api-v3) | Plugin `definePlugin()` and the v3 capability contract | `pixiboardjs/plugin` / Internal |
 
 Full dependency direction and ownership boundaries: [package boundaries](docs/03-package-boundaries.md).
 

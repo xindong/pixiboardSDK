@@ -38,6 +38,8 @@
 - [adr/0011-new-document-format-only.md](adr/0011-new-document-format-only.md)
 - [adr/0012-public-capabilities-agent-tools.md](adr/0012-public-capabilities-agent-tools.md)
 - [adr/0014-preview-renderer-registry.md](adr/0014-preview-renderer-registry.md)
+- [adr/0015-main-package-depends-on-public-core.md](adr/0015-main-package-depends-on-public-core.md)
+- [adr/0016-single-public-package-subpaths.md](adr/0016-single-public-package-subpaths.md)
 
 ## 完成定义
 

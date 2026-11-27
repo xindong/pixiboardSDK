@@ -3,13 +3,8 @@
   "version": "0.1.0-alpha.6",
   "description": "Public PixiBoardJS Plugin API v3 contract",
   "type": "module",
-  "private": false,
+  "private": true,
   "sideEffects": false,
-  "files": [
-    "dist",
-    "etc",
-    "CHANGELOG.md"
-  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -26,10 +21,6 @@
   },
   "scripts": {
     "build": "tsup",
-    "api:report": "api-extractor run --local --verbose",
     "test": "vitest run --config vitest.config.ts"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

@@ -149,7 +149,7 @@ const tools = createPixiBoardAgentTools(board.capabilities);
 await tools.call("canvas.write", input);
 ```
 
-JSON Schema 单独从 `@pixi-board/agent-tools/schemas` 导出，供接入方注册到自己的 tool registry。
+JSON Schema 单独从 `pixiboardjs/agent-tools/schemas` 导出，供接入方注册到自己的 tool registry。
 
 不把 transport 放进 SDK 的原因：协议仍在演进（MCP 本身的握手与能力协商还在变），而画布语义不该跟着协议版本走。工具契约稳定、传输可替换，是这条边界的目的。
 

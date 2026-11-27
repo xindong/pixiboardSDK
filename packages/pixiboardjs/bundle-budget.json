@@ -1,8 +1,14 @@
 {
   "files": {
-    "dist/index.js": 250000,
-    "dist/browser.js": 290000,
-    "dist/node.js": 250000,
-    "dist/types.js": 10000
+    "dist/index.js": 10000,
+    "dist/browser.js": 120000,
+    "dist/node.js": 10000,
+    "dist/types.js": 10000,
+    "dist/core.js": 10000,
+    "dist/capabilities.js": 10000,
+    "dist/agent-tools.js": 20000,
+    "dist/agent-tools-schemas.js": 10000,
+    "dist/plugin.js": 10000,
+    "dist/chunk-*.js": 230000
   }
 }

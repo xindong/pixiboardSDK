@@ -235,12 +235,18 @@ importers:
       '@pixi-board/adapter-browser':
         specifier: workspace:*
         version: link:../adapter-browser
+      '@pixi-board/agent-tools':
+        specifier: workspace:*
+        version: link:../agent-tools
       '@pixi-board/capabilities':
         specifier: workspace:*
         version: link:../capabilities
       '@pixi-board/core':
         specifier: workspace:*
         version: link:../core
+      '@pixi-board/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
       '@pixi-board/renderer-pixi':
         specifier: workspace:*
         version: link:../renderer-pixi

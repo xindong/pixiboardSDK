@@ -115,12 +115,15 @@ Release workflow 必须依赖已经通过验证的 commit/artifact，不能只�
 
 ## NPM 发布
 
-首批公开包：
+唯一公开包为 `pixiboardjs`，core、capabilities、agent-tools、plugin 以子路径提供（[ADR 0016](adr/0016-single-public-package-subpaths.md)）：
 
 ```text
 pixiboardjs
-@pixi-board/plugin-sdk
-@pixi-board/core
+pixiboardjs/core
+pixiboardjs/capabilities
+pixiboardjs/agent-tools
+pixiboardjs/agent-tools/schemas
+pixiboardjs/plugin
 ```
 
 要求：

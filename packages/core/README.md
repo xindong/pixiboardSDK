@@ -1,5 +1,7 @@
 # @pixi-board/core
 
+> Internal workspace package, not published. Install `pixiboardjs` and import from `pixiboardjs/core` (ADR 0016).
+
 Headless document and transaction package for PixiBoardJS. It remains
 independent of DOM, PixiJS, Tauri, plugins and the product UI.
 

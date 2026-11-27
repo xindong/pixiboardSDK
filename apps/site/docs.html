@@ -168,8 +168,8 @@ board.transaction(<span class="code-string">"Edit text"</span>, () =&gt; {
 
         <section class="docs-section" id="agent-tools">
           <div class="section-heading"><span class="section-number">07</span><div><span class="eyebrow">AUTOMATION READY</span><h3>Agent tools</h3></div></div>
-          <p>安装 <code>@pixi-board/agent-tools</code> 后，可以把 <code>canvas.read</code> 和 <code>canvas.write</code> 交给自己的 Agent harness。工具包提供 schema、校验、分页和可序列化错误，但不内置 MCP 或 HTTP server。</p>
-          <div class="docs-code-card"><button class="copy-code" data-copy-target="agent-code">复制</button><pre id="agent-code"><code><span class="code-keyword">import</span> { createPixiBoardAgentTools } <span class="code-keyword">from</span> <span class="code-string">"@pixi-board/agent-tools"</span>;
+          <p>从 <code>pixiboardjs/agent-tools</code> 导入后，可以把 <code>canvas.read</code> 和 <code>canvas.write</code> 交给自己的 Agent harness。工具包提供 schema、校验、分页和可序列化错误，但不内置 MCP 或 HTTP server。</p>
+          <div class="docs-code-card"><button class="copy-code" data-copy-target="agent-code">复制</button><pre id="agent-code"><code><span class="code-keyword">import</span> { createPixiBoardAgentTools } <span class="code-keyword">from</span> <span class="code-string">"pixiboardjs/agent-tools"</span>;
 
 <span class="code-keyword">const</span> tools = createPixiBoardAgentTools(board.capabilities);
 <span class="code-keyword">await</span> tools.call(<span class="code-string">"canvas.write"</span>, {

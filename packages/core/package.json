@@ -1,14 +1,9 @@
 {
   "name": "@pixi-board/core",
   "version": "0.1.0-alpha.6",
-  "private": false,
+  "private": true,
   "type": "module",
   "sideEffects": false,
-  "files": [
-    "dist",
-    "README.md",
-    "CHANGELOG.md"
-  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -20,15 +15,11 @@
   "scripts": {
     "test": "vitest run --config vitest.config.ts",
     "check": "tsc -p tsconfig.json",
-    "build": "tsup",
-    "api:report": "api-extractor run --local --verbose"
+    "build": "tsup"
   },
   "devDependencies": {
     "tsup": "^8.5.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

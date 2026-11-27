@@ -17,6 +17,7 @@
 | TS/Rust schema 漂移 | 中 | 高 | TS canonical schema、fixture shared | 同一项目两端解释不同 | Rust 只负责 IO，schema 解析收口 TS |
 | 长任务取消后迟到写入 | 中 | 高 | AbortSignal/generation token | 切换项目后旧任务写入新实例 | runtime instance ID 校验并拒绝提交 |
 | 无障碍树"可用性"无法自动验证 | 高 | 中高 | axe-core 查静态违规；NVDA/JAWS/VoiceOver 人工过一遍并记录版本 | 静态检查全绿但真人无法完成导航任务 | 不宣称合规，只声明"提供无障碍树"，在 README 标注已验证的 AT 组合 |
+| 演示站与 DSH 宿主的节点提示词默认值漂移 | 中 | 中 | 2026-11-26 演示站已精简节点消息（`nodeGuidance` 缩短、JSON 不缩进且省略空值与默认值、默认不附带位置尺寸和资源引用）；宿主侧待同步 | 同一节点在两端生成的消息内容或长度明显不同；导出的提示词备份导入另一端后效果不同 | 宿主未同步前，两端各自保持自洽；导入备份时节点说明与格式仍以本端默认值为准 |
 
 ## 已确定默认决策
 
@@ -75,8 +76,8 @@
 
 ### Public Release
 
-- Public beta 同时公开 `pixiboardjs`、`@pixi-board/core`、`@pixi-board/plugin-sdk`。
-- Main/Core 在 1.x lockstep version；Plugin SDK 独立 major。
+- 只公开 `pixiboardjs`；core、capabilities、agent-tools、plugin 以子路径提供，旧包名发布一版转发后弃用（[ADR 0016](adr/0016-single-public-package-subpaths.md)）。
+- 插件契约版本以 `PLUGIN_API_VERSION` 表达，随主包发布。
 - v1 只提供 Vanilla 示例，React/Vue wrappers 后续交付。
 - 2026-08-07 registry 查询显示 `pixiboardjs` 未被占用；实际发布预留版本后才算锁定。
 

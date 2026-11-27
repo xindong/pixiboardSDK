@@ -1264,20 +1264,20 @@ export class NodeTypeRegistry {
         props: Props;
     };
     // (undocumented)
-    get<Props extends JsonValue = JsonValue>(type: string): NodeTypeDefinition$1<Props> | undefined;
+    get<Props extends JsonValue = JsonValue>(type: string): NodeTypeDefinition_2<Props> | undefined;
     // (undocumented)
     getBounds<Props extends JsonValue>(node: BoardNode<Props>): WorldBounds;
     // (undocumented)
     has(type: string): boolean;
     // (undocumented)
-    list(): ReadonlyArray<NodeTypeDefinition$1<JsonValue>>;
-    // Warning: (ae-forgotten-export) The symbol "NodeTypeDefinition$1" needs to be exported by the entry point browser.d.ts
+    list(): ReadonlyArray<NodeTypeDefinition_2<JsonValue>>;
+    // Warning: (ae-forgotten-export) The symbol "NodeTypeDefinition_2" needs to be exported by the entry point browser.d.ts
     // Warning: (ae-forgotten-export) The symbol "RegisterNodeTypeOptions" needs to be exported by the entry point browser.d.ts
     //
     // (undocumented)
-    register<Props extends JsonValue>(definition: NodeTypeDefinition$1<Props>, options?: RegisterNodeTypeOptions): () => void;
+    register<Props extends JsonValue>(definition: NodeTypeDefinition_2<Props>, options?: RegisterNodeTypeOptions): () => void;
     // (undocumented)
-    require<Props extends JsonValue = JsonValue>(type: string): NodeTypeDefinition$1<Props>;
+    require<Props extends JsonValue = JsonValue>(type: string): NodeTypeDefinition_2<Props>;
     // (undocumented)
     validateNode<Props extends JsonValue>(node: BoardNode<Props>): BoardNode<Props>;
 }
@@ -1893,20 +1893,20 @@ export type WorldBounds = {
 
 // Warnings were encountered during analysis:
 //
-// dist/types-BHrHC5Wb.d.ts:499:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point browser.d.ts
-// dist/types-BHrHC5Wb.d.ts:499:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point browser.d.ts
-// dist/types-BHrHC5Wb.d.ts:502:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point browser.d.ts
-// dist/types-BHrHC5Wb.d.ts:508:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point browser.d.ts
-// dist/types-BHrHC5Wb.d.ts:508:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point browser.d.ts
-// dist/types-BHrHC5Wb.d.ts:509:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point browser.d.ts
-// dist/types-BHrHC5Wb.d.ts:510:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point browser.d.ts
-// dist/types-BHrHC5Wb.d.ts:513:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point browser.d.ts
-// dist/types-BHrHC5Wb.d.ts:520:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point browser.d.ts
-// dist/types-BHrHC5Wb.d.ts:527:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point browser.d.ts
-// dist/types-BHrHC5Wb.d.ts:555:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point browser.d.ts
-// dist/types-BHrHC5Wb.d.ts:755:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point browser.d.ts
-// dist/types-BHrHC5Wb.d.ts:758:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point browser.d.ts
-// dist/types-BHrHC5Wb.d.ts:759:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point browser.d.ts
+// dist/types-BskqWTyl.d.ts:154:9 - (ae-forgotten-export) The symbol "DocumentLoadOptions_2" needs to be exported by the entry point browser.d.ts
+// dist/types-BskqWTyl.d.ts:154:9 - (ae-forgotten-export) The symbol "WriteOptions" needs to be exported by the entry point browser.d.ts
+// dist/types-BskqWTyl.d.ts:157:13 - (ae-forgotten-export) The symbol "BoardChangeSet" needs to be exported by the entry point browser.d.ts
+// dist/types-BskqWTyl.d.ts:163:9 - (ae-forgotten-export) The symbol "ReadNodesInput" needs to be exported by the entry point browser.d.ts
+// dist/types-BskqWTyl.d.ts:163:9 - (ae-forgotten-export) The symbol "ReadNodesResult" needs to be exported by the entry point browser.d.ts
+// dist/types-BskqWTyl.d.ts:164:9 - (ae-forgotten-export) The symbol "WriteResult" needs to be exported by the entry point browser.d.ts
+// dist/types-BskqWTyl.d.ts:165:13 - (ae-forgotten-export) The symbol "CreateNodeInput" needs to be exported by the entry point browser.d.ts
+// dist/types-BskqWTyl.d.ts:168:13 - (ae-forgotten-export) The symbol "UpdateNodeInput" needs to be exported by the entry point browser.d.ts
+// dist/types-BskqWTyl.d.ts:175:9 - (ae-forgotten-export) The symbol "ReadAssetsResult" needs to be exported by the entry point browser.d.ts
+// dist/types-BskqWTyl.d.ts:182:13 - (ae-forgotten-export) The symbol "AssetRecord" needs to be exported by the entry point browser.d.ts
+// dist/types-BskqWTyl.d.ts:210:9 - (ae-forgotten-export) The symbol "PreviewResult" needs to be exported by the entry point browser.d.ts
+// dist/types.d.ts:193:5 - (ae-forgotten-export) The symbol "BoardCoreOptions" needs to be exported by the entry point browser.d.ts
+// dist/types.d.ts:196:5 - (ae-forgotten-export) The symbol "PreviewService" needs to be exported by the entry point browser.d.ts
+// dist/types.d.ts:197:5 - (ae-forgotten-export) The symbol "CaptureService" needs to be exported by the entry point browser.d.ts
 
 // (No @packageDocumentation comment for this package)
 

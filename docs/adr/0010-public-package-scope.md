@@ -1,6 +1,6 @@
 # ADR 0010：Public Beta 同时公开 Main、Core 和 Plugin SDK
 
-- Status: Accepted
+- Status: Superseded in part by [ADR 0016](0016-single-public-package-subpaths.md)（公开包范围）
 - Date: 2026-08-07
 
 ## Decision

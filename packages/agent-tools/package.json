@@ -2,15 +2,9 @@
   "name": "@pixi-board/agent-tools",
   "version": "0.1.0-alpha.6",
   "description": "canvas.read / canvas.write agent tool contract over PixiBoardJS capabilities, transport-agnostic",
-  "private": false,
+  "private": true,
   "type": "module",
   "sideEffects": false,
-  "files": [
-    "dist",
-    "etc",
-    "README.md",
-    "CHANGELOG.md"
-  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -37,10 +31,6 @@
   "scripts": {
     "test": "vitest run --config vitest.config.ts",
     "check": "tsc -p tsconfig.json",
-    "build": "tsup",
-    "api:report": "api-extractor run --local --verbose && api-extractor run --local --verbose --config api-extractor.schemas.json"
-  },
-  "publishConfig": {
-    "access": "public"
+    "build": "tsup"
   }
 }

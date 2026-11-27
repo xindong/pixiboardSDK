@@ -2,15 +2,9 @@
   "name": "@pixi-board/capabilities",
   "version": "0.1.0-alpha.6",
   "description": "Permissioned read/write surface over a PixiBoardJS document for UI, plugins and agents",
-  "private": false,
+  "private": true,
   "type": "module",
   "sideEffects": false,
-  "files": [
-    "dist",
-    "etc",
-    "README.md",
-    "CHANGELOG.md"
-  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -31,10 +25,6 @@
   "scripts": {
     "test": "vitest run --config vitest.config.ts",
     "check": "tsc -p tsconfig.json",
-    "build": "tsup",
-    "api:report": "api-extractor run --local --verbose"
-  },
-  "publishConfig": {
-    "access": "public"
+    "build": "tsup"
   }
 }
